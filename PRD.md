@@ -84,7 +84,7 @@
    - Update reward: each agent gets reward equal to energy gained (individual, not shared)                                            
    **Verification:** `pytest tests/test_energy.py::test_food_energy -v` passes                                                        
                                                                                                                                       
-   ### US-007: Implement Reproduction Action [ ]                                                                                      
+   ### US-007: Implement Reproduction Action [x]                                                                                      
    **Task:** Add action 5 = reproduce.                                                                                                
    **Files:** `src/environment/env.py`, `src/agents/network.py`                                                                       
    **Changes:**                                                                                                                       

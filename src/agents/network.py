@@ -21,7 +21,7 @@ class ActorCritic(nn.Module):
     """
 
     hidden_dims: Sequence[int] = (64, 64)
-    num_actions: int = 5
+    num_actions: int = 6
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:

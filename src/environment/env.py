@@ -100,7 +100,7 @@ def step(
     Args:
         state: Current environment state.
         actions: Integer actions for each agent, shape (num_agents,) or (max_agents,).
-            0=stay, 1=up, 2=down, 3=left, 4=right.
+            0=stay, 1=up, 2=down, 3=left, 4=right, 5=reproduce.
         config: Master configuration object.
 
     Returns:
@@ -114,13 +114,14 @@ def step(
     padded_actions = padded_actions.at[: actions.shape[0]].set(actions)
 
     # --- 1. Move agents ---
-    # Action deltas: 0=stay, 1=up(-row), 2=down(+row), 3=left(-col), 4=right(+col)
+    # Action deltas: 0=stay, 1=up(-row), 2=down(+row), 3=left(-col), 4=right(+col), 5=reproduce(stay)
     action_deltas = jnp.array([
         [0, 0],   # stay
         [-1, 0],  # up
         [1, 0],   # down
         [0, -1],  # left
         [0, 1],   # right
+        [0, 0],   # reproduce (stay in place)
     ], dtype=jnp.int32)
 
     deltas = action_deltas[padded_actions]  # (max_agents, 2)
@@ -219,12 +220,81 @@ def step(
     new_alive = state.agent_alive & ~starved
     death_count = jnp.sum(starved.astype(jnp.int32))
 
-    # --- 7. Advance step counter and check done ---
+    # --- 7. Reproduction ---
+    # Action 5 = attempt reproduction
+    # Conditions: agent alive, chose action 5, energy >= threshold, free slot exists
+    reproduce_threshold = jnp.float32(config.evolution.reproduce_threshold)
+    reproduce_cost = jnp.float32(config.evolution.reproduce_cost)
+
+    wants_reproduce = (padded_actions == 5)  # (max_agents,)
+    can_reproduce = (
+        new_alive
+        & wants_reproduce
+        & (new_energy >= reproduce_threshold)
+    )  # (max_agents,)
+
+    # Check if there are free slots (any slot where agent_alive == False)
+    num_free_slots = jnp.sum((~new_alive).astype(jnp.int32))
+    any_free_slot = num_free_slots > 0
+
+    # Only allow reproduction if there is at least one free slot
+    # Process one reproduction at a time using scan to handle slot allocation
+    # For simplicity, process agents in order; each successful reproduction
+    # fills one slot and reduces available slots.
+
+    def _process_reproductions(carry, agent_idx):
+        """Process one agent's reproduction attempt sequentially."""
+        alive, energy, ids, parent_ids, positions, next_id, key = carry
+
+        # Check if this agent wants and can reproduce
+        eligible = (
+            can_reproduce[agent_idx]
+            & (jnp.sum((~alive).astype(jnp.int32)) > 0)  # free slot exists
+        )
+
+        # Find first free slot
+        free_mask = ~alive  # (max_agents,)
+        # Use argmax on free_mask to get first True index; if none free, returns 0
+        # but eligible check ensures at least one free slot
+        free_slot = jnp.argmax(free_mask.astype(jnp.int32))
+
+        # Deduct reproduce_cost from parent
+        new_energy_val = jnp.where(eligible, energy[agent_idx] - reproduce_cost, energy[agent_idx])
+        energy = energy.at[agent_idx].set(new_energy_val)
+
+        # Spawn offspring in free slot
+        key, spawn_key = jax.random.split(key)
+        # Offspring position: random adjacent cell of parent (clipped to grid)
+        offset = jax.random.randint(spawn_key, (2,), -1, 2)
+        child_pos = jnp.clip(positions[agent_idx] + offset, 0, grid_size - 1)
+
+        # Update offspring slot (only if eligible)
+        alive = jnp.where(eligible, alive.at[free_slot].set(True), alive)
+        energy = jnp.where(eligible, energy.at[free_slot].set(reproduce_cost), energy)
+        positions = jnp.where(eligible, positions.at[free_slot].set(child_pos), positions)
+        ids = jnp.where(eligible, ids.at[free_slot].set(next_id), ids)
+        parent_ids = jnp.where(eligible, parent_ids.at[free_slot].set(ids[agent_idx]), parent_ids)
+        next_id = jnp.where(eligible, next_id + 1, next_id)
+
+        return (alive, energy, ids, parent_ids, positions, next_id, key), eligible
+
+    # Split key for reproduction
+    repro_key, post_repro_key = jax.random.split(state.key)
+
+    init_carry = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
+                  new_positions, state.next_agent_id, repro_key)
+    (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _), births_per_agent = (
+        jax.lax.scan(_process_reproductions, init_carry, jnp.arange(max_agents))
+    )
+    birth_count = jnp.sum(births_per_agent.astype(jnp.int32))
+    new_key = post_repro_key
+
+    # --- 8. Advance step counter and check done ---
     new_step = state.step + 1
     done = new_step >= config.env.max_steps
 
-    # --- 8. Split PRNG key ---
-    new_key, _ = jax.random.split(state.key)
+    # --- 9. Split PRNG key ---
+    # (key already split during reproduction above)
 
     new_state = EnvState(
         agent_positions=new_positions,
@@ -235,9 +305,9 @@ def step(
         key=new_key,
         agent_energy=new_energy,
         agent_alive=new_alive,
-        agent_ids=state.agent_ids,
-        agent_parent_ids=state.agent_parent_ids,
-        next_agent_id=state.next_agent_id,
+        agent_ids=new_ids,
+        agent_parent_ids=new_parent_ids,
+        next_agent_id=new_next_id,
     )
 
     num_collected = jnp.sum(newly_collected.astype(jnp.float32))
@@ -245,6 +315,7 @@ def step(
         "food_collected_this_step": num_collected,
         "total_food_collected": jnp.sum(food_collected.astype(jnp.float32)),
         "deaths_this_step": death_count,
+        "births_this_step": birth_count,
     }
 
     return new_state, rewards, done, info

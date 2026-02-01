@@ -105,3 +105,22 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 79 tests pass, mypy clean.
 
 ---
+
+### US-007: Implement Reproduction Action ✓
+**What:** Added action 5 (reproduce) to the environment. Updated `ActorCritic` to output 6 actions. Reproduction succeeds when an alive agent chooses action 5, has energy >= `reproduce_threshold`, and a free slot exists. On success, `reproduce_cost` is deducted from the parent and an offspring is spawned in the first free slot with energy equal to `reproduce_cost`, a new unique ID, and a position adjacent to the parent.
+**Decisions:**
+- Action 5 = reproduce; agent stays in place (same as action 0 for movement).
+- Reproduction is processed sequentially via `jax.lax.scan` over all agent indices — this handles slot allocation correctly (each birth fills a slot, reducing availability for subsequent agents in the same step).
+- Reproduction check happens after energy drain and death (section 7), so agents that just died cannot reproduce, and energy threshold is checked against post-drain energy.
+- Offspring position: random offset of (-1, 0, or 1) in each axis from parent, clipped to grid bounds.
+- Offspring gets energy = `reproduce_cost` (the energy transferred from parent).
+- `births_this_step` added to info dict.
+- PRNG key is split from `state.key` for reproduction randomness.
+- Note: US-008 (offspring spawning details) is effectively handled here too since the scan approach naturally spawns offspring during reproduction. US-008 may only need tests.
+**Files changed:**
+- `src/agents/network.py` — Changed default `num_actions` from 5 to 6
+- `src/environment/env.py` — Added action 5 to action_deltas, added reproduction logic (section 7) with `jax.lax.scan`, updated state construction to use reproduction outputs, added `births_this_step` to info dict
+- `tests/test_reproduction.py` — Created with 11 tests covering: action exists, energy deduction, failure below threshold, failure with no free slots, offspring spawning, offspring near parent, dead agents can't reproduce, no action 5 = no birth, multiple agents reproducing, JIT compatibility, interaction with energy drain
+**Issues:** None. All 90 tests pass, mypy clean.
+
+---

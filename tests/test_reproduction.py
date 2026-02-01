@@ -1,0 +1,378 @@
+"""Tests for reproduction mechanics (US-007, US-008)."""
+
+import jax
+import jax.numpy as jnp
+
+from src.configs import Config
+from src.environment.env import reset, step
+from src.environment.state import EnvState
+from src.field.field import create_field
+
+
+def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
+    """Helper to create a controlled EnvState with specific positions."""
+    max_agents = config.evolution.max_agents
+    num_food = len(food_pos)
+    config.env.num_food = num_food
+    num_agents = len(agent_pos)
+    config.env.num_agents = num_agents
+    grid_size = config.env.grid_size
+    key = jax.random.PRNGKey(0)
+
+    agent_positions = jnp.zeros((max_agents, 2), dtype=jnp.int32)
+    agent_positions = agent_positions.at[:num_agents].set(
+        jnp.array(agent_pos, dtype=jnp.int32)
+    )
+
+    food_positions = jnp.array(food_pos, dtype=jnp.int32)
+    food_collected = jnp.zeros((num_food,), dtype=jnp.bool_)
+
+    field_state = create_field(
+        height=grid_size, width=grid_size, channels=config.field.num_channels
+    )
+
+    if energy is None:
+        energy_vals = jnp.float32(config.evolution.starting_energy)
+    else:
+        energy_vals = jnp.array(energy, dtype=jnp.float32)
+
+    agent_energy = jnp.zeros((max_agents,), dtype=jnp.float32)
+    if isinstance(energy_vals, jnp.ndarray) and energy_vals.ndim > 0:
+        agent_energy = agent_energy.at[:num_agents].set(energy_vals[:num_agents])
+    else:
+        agent_energy = agent_energy.at[:num_agents].set(energy_vals)
+
+    agent_alive = jnp.zeros((max_agents,), dtype=jnp.bool_)
+    agent_alive = agent_alive.at[:num_agents].set(True)
+
+    agent_ids = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    agent_ids = agent_ids.at[:num_agents].set(
+        jnp.arange(num_agents, dtype=jnp.int32)
+    )
+
+    agent_parent_ids = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    next_agent_id = jnp.int32(num_agents)
+
+    return EnvState(
+        agent_positions=agent_positions,
+        food_positions=food_positions,
+        food_collected=food_collected,
+        field_state=field_state,
+        step=jnp.int32(0),
+        key=key,
+        agent_energy=agent_energy,
+        agent_alive=agent_alive,
+        agent_ids=agent_ids,
+        agent_parent_ids=agent_parent_ids,
+        next_agent_id=next_agent_id,
+    )
+
+
+class TestReproductionAction:
+    """Tests for US-007: Reproduction action."""
+
+    def test_reproduce_action_exists(self):
+        """Test that action 5 (reproduce) is valid and agent stays in place."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0  # No drain for simplicity
+        config.evolution.reproduce_threshold = 200  # Too high to trigger
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[19, 19]],  # Far away
+        )
+
+        # Action 5 = reproduce (but threshold too high, so no spawn)
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # Agent should stay in place (reproduce = stay)
+        assert jnp.all(new_state.agent_positions[0] == jnp.array([5, 5]))
+
+    def test_reproduce_deducts_energy(self):
+        """Test that successful reproduction deducts reproduce_cost from parent."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 8
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # Parent energy should be 160 - 80 = 80
+        assert jnp.isclose(new_state.agent_energy[0], 80.0)
+        # A birth should have occurred
+        assert info["births_this_step"] == 1
+
+    def test_reproduce_fails_below_threshold(self):
+        """Test that reproduction fails when energy < threshold."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 8
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[19, 19]],
+            energy=[100.0],  # Below threshold of 150
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # Energy should be unchanged (no drain, no reproduction)
+        assert jnp.isclose(new_state.agent_energy[0], 100.0)
+        # No births
+        assert info["births_this_step"] == 0
+
+    def test_reproduce_fails_no_free_slots(self):
+        """Test that reproduction fails when all slots are occupied."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 200
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        # max_agents = num_agents, so no free slots
+        config.evolution.max_agents = 2
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5], [10, 10]],
+            food_pos=[[19, 19]],
+            energy=[200.0, 200.0],
+        )
+
+        actions = jnp.array([5, 0], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # Energy should be unchanged — reproduction failed
+        assert jnp.isclose(new_state.agent_energy[0], 200.0)
+        # No births
+        assert info["births_this_step"] == 0
+
+    def test_reproduce_spawns_offspring(self):
+        """Test that successful reproduction creates an offspring in a free slot."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        # 1 agent, 3 free slots
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # A birth should have occurred
+        assert info["births_this_step"] == 1
+
+        # Offspring should be in slot 1 (first free slot)
+        assert new_state.agent_alive[1]
+        # Offspring energy = reproduce_cost
+        assert jnp.isclose(new_state.agent_energy[1], 80.0)
+        # Offspring ID = next_agent_id (which was 1 since 1 agent existed)
+        assert new_state.agent_ids[1] == 1
+        # Offspring parent ID = parent's ID (0)
+        assert new_state.agent_parent_ids[1] == 0
+        # next_agent_id should have incremented
+        assert new_state.next_agent_id == 2
+
+    def test_reproduce_offspring_near_parent(self):
+        """Test that offspring spawns near parent position."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # Offspring should be within 1 cell of parent (offset is -1 to 1)
+        parent_pos = new_state.agent_positions[0]
+        child_pos = new_state.agent_positions[1]
+        dist = jnp.abs(parent_pos - child_pos)
+        assert jnp.all(dist <= 1), f"Child at {child_pos} too far from parent at {parent_pos}"
+
+    def test_reproduce_dead_agent_cannot_reproduce(self):
+        """Test that dead agents cannot reproduce even with action 5."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 200
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[200.0],
+        )
+
+        # Kill the agent
+        new_alive = state.agent_alive.at[0].set(False)
+        state = state.replace(agent_alive=new_alive)
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # No births — agent is dead
+        assert info["births_this_step"] == 0
+
+    def test_reproduce_no_action_5_no_birth(self):
+        """Test that agents choosing non-reproduce actions don't trigger reproduction."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 200
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[200.0],
+        )
+
+        # Action 0 = stay, not reproduce
+        actions = jnp.array([0], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # No births
+        assert info["births_this_step"] == 0
+        # Energy unchanged
+        assert jnp.isclose(new_state.agent_energy[0], 200.0)
+
+    def test_reproduce_multiple_agents(self):
+        """Test that multiple agents can reproduce in the same step."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 8
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5], [15, 15]],
+            food_pos=[[19, 19]],
+            energy=[160.0, 160.0],
+        )
+
+        # Both agents reproduce
+        actions = jnp.array([5, 5], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # Two births should have occurred
+        assert info["births_this_step"] == 2
+        # Both parents should have lost energy
+        assert jnp.isclose(new_state.agent_energy[0], 80.0)
+        assert jnp.isclose(new_state.agent_energy[1], 80.0)
+        # Two new agents should be alive
+        alive_count = jnp.sum(new_state.agent_alive.astype(jnp.int32))
+        assert alive_count == 4  # 2 original + 2 offspring
+
+    def test_reproduce_jit_compatible(self):
+        """Test that reproduction works under JIT compilation."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+
+        @jax.jit
+        def jit_step(s, a):
+            return step(s, a, config)
+
+        new_state, _, _, info = jit_step(state, actions)
+
+        assert info["births_this_step"] == 1
+        assert jnp.isclose(new_state.agent_energy[0], 80.0)
+        assert new_state.agent_alive[1]
+
+    def test_reproduce_with_energy_drain(self):
+        """Test reproduction interacts correctly with energy drain."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 5
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        # Energy drain happens before reproduction check:
+        # 160 - 5 = 155, then 155 >= 150 so reproduce, 155 - 80 = 75
+        assert info["births_this_step"] == 1
+        assert jnp.isclose(new_state.agent_energy[0], 75.0)
