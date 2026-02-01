@@ -98,8 +98,26 @@
 - Typecheck passes (mypy clean)
 - Files changed: src/environment/vec_env.py (new)
 
+### US-REVIEW-01: Review Environment Epic [x]
+- All 25 environment tests pass (14 test_env.py + 11 test_field.py)
+- Mypy typecheck clean: no issues found in 15 source files
+- Manual verification:
+  - Created env with default config (8 agents, 20x20 grid, 10 food, 4 field channels)
+  - Reset produces correct shapes: agent_positions (8,2), food_positions (10,2), field (20,20,4), obs (8,501)
+  - Stepped 10 times: step counter increments, rewards fire on food collection, done=False before max_steps
+- Field verification:
+  - Initial field sum = 0.0 (correct)
+  - After 1 step: field sum = 32.0, 32 nonzero cells (8 agents × 4 channels = 32 writes)
+  - After 6 steps: field sum = 169.54, 572 nonzero cells (diffusion spreading values)
+  - Field values show clear gradient around agent positions (diffusion working)
+- Food collection verification:
+  - 8 out of 10 food collected in 50 random-action steps
+  - food_collected mask correctly tracks which food items are consumed
+  - Rewards are shared across all agents (+1 per food item)
+- No issues found. Environment epic is solid and ready for training integration.
+
 ## Current Task
-US-REVIEW-01: Review Environment Epic
+US-012: Implement actor-critic network
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)

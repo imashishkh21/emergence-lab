@@ -186,17 +186,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-REVIEW-01: Review Environment Epic [ ]
+### US-REVIEW-01: Review Environment Epic [x]
 
 **Description:** Review US-004 through US-011 as a cohesive system.
 
 **Acceptance Criteria:**
-- [ ] All environment tests pass: `pytest tests/test_env.py tests/test_field.py -v`
-- [ ] Manually verify: create env, reset, step 10 times, print state shapes
-- [ ] Check: field values change after agent writes
-- [ ] Check: food collection works
-- [ ] If issues found: create fix tasks (US-XXXa)
-- [ ] Typecheck passes
+- [x] All environment tests pass: `pytest tests/test_env.py tests/test_field.py -v`
+- [x] Manually verify: create env, reset, step 10 times, print state shapes
+- [x] Check: field values change after agent writes
+- [x] Check: food collection works
+- [x] If issues found: create fix tasks (US-XXXa)
+- [x] Typecheck passes
 
 ---
 
