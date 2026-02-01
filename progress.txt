@@ -124,3 +124,14 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 90 tests pass, mypy clean.
 
 ---
+
+### US-008: Implement Offspring Spawning ✓
+**What:** Verified offspring spawning implementation (already completed in US-007) and added dedicated `TestSpawn` test class with 10 tests covering all US-008 acceptance criteria.
+**Decisions:**
+- The spawning logic was already fully implemented in US-007's `_process_reproductions` scan function — it finds the first empty slot, sets offspring position (random adjacent to parent, clipped to grid), energy (`reproduce_cost`), alive flag, unique ID, and parent ID.
+- Added `TestSpawn` class to `tests/test_reproduction.py` with 10 focused tests: first empty slot selection, adjacent position, grid boundary clipping, energy equals reproduce_cost, alive flag set, unique ID assignment, parent ID tracking, dead slot reuse, multi-generation spawning, and JIT compatibility.
+**Files changed:**
+- `tests/test_reproduction.py` — Added `TestSpawn` class with 10 tests for offspring spawning
+**Issues:** None. All 100 tests pass, mypy clean.
+
+---

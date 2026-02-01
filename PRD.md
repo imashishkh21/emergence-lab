@@ -94,7 +94,7 @@
    - On success: deduct `reproduce_cost` from parent                                                                                  
    **Verification:** `pytest tests/test_reproduction.py -v` passes. Create this test file.                                            
                                                                                                                                       
-   ### US-008: Implement Offspring Spawning [ ]                                                                                       
+   ### US-008: Implement Offspring Spawning [x]                                                                                       
    **Task:** Create offspring when reproduction succeeds.                                                                             
    **Files:** `src/environment/env.py`                                                                                                
    **Changes:**                                                                                                                       

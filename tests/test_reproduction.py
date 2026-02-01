@@ -376,3 +376,290 @@ class TestReproductionAction:
         # 160 - 5 = 155, then 155 >= 150 so reproduce, 155 - 80 = 75
         assert info["births_this_step"] == 1
         assert jnp.isclose(new_state.agent_energy[0], 75.0)
+
+
+class TestSpawn:
+    """Tests for US-008: Offspring spawning."""
+
+    def test_spawn_fills_first_empty_slot(self):
+        """Offspring is placed in the first slot where agent_alive == False."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 8
+
+        # 2 agents alive at slots 0 and 1; slots 2-7 are free
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5], [15, 15]],
+            food_pos=[[19, 19]],
+            energy=[160.0, 100.0],
+        )
+
+        # Only agent 0 reproduces (agent 1 below threshold)
+        actions = jnp.array([5, 0], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        assert info["births_this_step"] == 1
+        # Offspring should be in slot 2 (first free slot after 0, 1)
+        assert new_state.agent_alive[2]
+        # Slots 3-7 should still be empty
+        assert not jnp.any(new_state.agent_alive[3:])
+
+    def test_spawn_position_adjacent_to_parent(self):
+        """Offspring position is within 1 cell (random adjacent) of parent."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        parent_pos = new_state.agent_positions[0]
+        child_pos = new_state.agent_positions[1]
+        dist = jnp.abs(parent_pos - child_pos)
+        assert jnp.all(dist <= 1), f"Child {child_pos} not adjacent to parent {parent_pos}"
+
+    def test_spawn_position_clipped_to_grid(self):
+        """Offspring position is clipped to grid boundaries when parent is at edge."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        # Parent at corner (0, 0) — offspring can't go negative
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[0, 0]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        child_pos = new_state.agent_positions[1]
+        assert jnp.all(child_pos >= 0), f"Child position {child_pos} out of bounds (negative)"
+        assert jnp.all(child_pos < 20), f"Child position {child_pos} out of bounds (>= grid_size)"
+
+    def test_spawn_energy_equals_reproduce_cost(self):
+        """Offspring receives energy equal to reproduce_cost."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        assert jnp.isclose(new_state.agent_energy[1], 80.0)
+
+    def test_spawn_alive_flag_set(self):
+        """Offspring has agent_alive set to True."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        assert new_state.agent_alive[1]
+
+    def test_spawn_gets_unique_id(self):
+        """Offspring gets agent_ids[slot] = next_agent_id, counter incremented."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+        # next_agent_id starts at 1 (num_agents=1)
+        assert state.next_agent_id == 1
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # Offspring ID should be 1 (the value of next_agent_id before birth)
+        assert new_state.agent_ids[1] == 1
+        # Counter should now be 2
+        assert new_state.next_agent_id == 2
+
+    def test_spawn_parent_id_set(self):
+        """Offspring's agent_parent_ids is set to the parent's agent ID."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # Parent is agent 0 with ID 0
+        assert new_state.agent_parent_ids[1] == 0
+
+    def test_spawn_reuses_dead_agent_slot(self):
+        """Offspring can spawn into a slot previously occupied by a dead agent."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        # 3 agents: agent 1 is dead (slot reusable)
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5], [10, 10], [15, 15]],
+            food_pos=[[19, 19]],
+            energy=[160.0, 50.0, 100.0],
+        )
+        # Kill agent 1
+        new_alive = state.agent_alive.at[1].set(False)
+        new_energy = state.agent_energy.at[1].set(0.0)
+        state = state.replace(agent_alive=new_alive, agent_energy=new_energy)
+
+        # Agent 0 reproduces
+        actions = jnp.array([5, 0, 0], dtype=jnp.int32)
+        new_state, _, _, info = step(state, actions, config)
+
+        assert info["births_this_step"] == 1
+        # Offspring should be in slot 1 (the dead agent's slot — first free)
+        assert new_state.agent_alive[1]
+        assert jnp.isclose(new_state.agent_energy[1], 80.0)
+        # New agent ID should be next_agent_id (3, since 3 agents were initialized)
+        assert new_state.agent_ids[1] == 3
+        assert new_state.agent_parent_ids[1] == 0
+
+    def test_spawn_multiple_generations(self):
+        """Test that offspring can themselves reproduce (multi-generation)."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 8
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        # Gen 1: agent 0 reproduces -> offspring at slot 1
+        actions = jnp.array([5], dtype=jnp.int32)
+        state, _, _, info = step(state, actions, config)
+        assert info["births_this_step"] == 1
+        assert state.agent_alive[1]
+
+        # Give offspring enough energy to reproduce
+        new_energy = state.agent_energy.at[1].set(160.0)
+        state = state.replace(agent_energy=new_energy)
+
+        # Gen 2: offspring (slot 1) reproduces -> grandchild at slot 2
+        actions_gen2 = jnp.array([0, 5], dtype=jnp.int32)
+        state, _, _, info = step(state, actions_gen2, config)
+        assert info["births_this_step"] == 1
+        assert state.agent_alive[2]
+        # Grandchild's parent should be agent at slot 1 (ID=1)
+        assert state.agent_parent_ids[2] == 1
+
+    def test_spawn_jit_compatible(self):
+        """Test that spawning works correctly under JIT."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 160
+        config.evolution.food_energy = 0
+        config.evolution.energy_per_step = 0
+        config.evolution.reproduce_threshold = 150
+        config.evolution.reproduce_cost = 80
+        config.evolution.max_agents = 4
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[10, 10]],
+            food_pos=[[19, 19]],
+            energy=[160.0],
+        )
+
+        actions = jnp.array([5], dtype=jnp.int32)
+
+        @jax.jit
+        def jit_step(s, a):
+            return step(s, a, config)
+
+        new_state, _, _, info = jit_step(state, actions)
+
+        assert info["births_this_step"] == 1
+        assert new_state.agent_alive[1]
+        assert jnp.isclose(new_state.agent_energy[1], 80.0)
+        assert new_state.agent_ids[1] == 1
+        assert new_state.agent_parent_ids[1] == 0
+        assert new_state.next_agent_id == 2
