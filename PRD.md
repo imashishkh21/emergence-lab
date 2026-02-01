@@ -443,18 +443,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-REVIEW-FINAL: Final Phase 1 Review [ ]
+### US-REVIEW-FINAL: Final Phase 1 Review [x]
 
 **Description:** Validate Phase 1 is complete and working.
 
 **Acceptance Criteria:**
-- [ ] All tests pass: `pytest tests/ -v`
-- [ ] Typecheck passes: `python -m mypy src/ --ignore-missing-imports`
-- [ ] Training runs for 100k steps without crash
-- [ ] W&B shows learning curves
-- [ ] Video shows agents moving and field changing
-- [ ] Ablation test shows field > zeroed field
-- [ ] Mark COMPLETE in progress.txt
+- [x] All tests pass: `pytest tests/ -v`
+- [x] Typecheck passes: `python -m mypy src/ --ignore-missing-imports`
+- [x] Training runs for 100k steps without crash
+- [x] W&B shows learning curves
+- [x] Video shows agents moving and field changing
+- [x] Ablation test shows field > zeroed field
+- [x] Mark COMPLETE in progress.txt
 
 ---
 
