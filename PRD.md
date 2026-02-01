@@ -94,7 +94,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Also include `novelty_score(agent_features, archive)` — k-NN distance (Lehman & Stanley)
 **Verification:** `pytest tests/test_specialization.py::test_specialization_score -v` passes
 
-### US-006: Field Usage Analysis [ ]
+### US-006: Field Usage Analysis [x]
 **Task:** Analyze how different clusters use the field differently.
 **Files:** `src/analysis/specialization.py`
 **Changes:**

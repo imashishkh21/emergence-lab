@@ -1208,3 +1208,275 @@ class TestNoveltyScore:
         scores = novelty_score(agents, archive, k=0)
 
         np.testing.assert_array_equal(scores, 0.0)
+
+
+class TestFieldUsage:
+    """US-006: Field usage analysis tests."""
+
+    def _make_trajectory(
+        self,
+        num_steps: int = 50,
+        num_agents: int = 6,
+        actions: np.ndarray | None = None,
+        positions: np.ndarray | None = None,
+        alive_mask: np.ndarray | None = None,
+        field_values: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Helper to create trajectory dicts for field usage tests."""
+        rng = np.random.RandomState(42)
+        if actions is None:
+            actions = rng.randint(0, 6, size=(num_steps, num_agents))
+        if positions is None:
+            positions = rng.randint(0, 32, size=(num_steps, num_agents, 2))
+        if alive_mask is None:
+            alive_mask = np.ones((num_steps, num_agents), dtype=bool)
+        traj: dict[str, np.ndarray] = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rng.uniform(0, 1, size=(num_steps, num_agents)),
+            "alive_mask": alive_mask,
+            "energy": rng.uniform(1, 10, size=(num_steps, num_agents)),
+        }
+        if field_values is not None:
+            traj["field_values"] = field_values
+        return traj
+
+    def test_returns_required_keys(self):
+        """analyze_field_usage returns per_cluster, cluster_roles, num_clusters."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory()
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        assert "per_cluster" in result
+        assert "cluster_roles" in result
+        assert "num_clusters" in result
+
+    def test_num_clusters_matches_labels(self):
+        """num_clusters should match the number of unique cluster labels."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory()
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        assert result["num_clusters"] == 3
+
+    def test_per_cluster_has_all_stats(self):
+        """Each cluster's dict has all expected stat keys."""
+        from src.analysis.specialization import analyze_field_usage
+
+        field_values = np.random.RandomState(10).uniform(0, 1, size=(50, 6))
+        traj = self._make_trajectory(field_values=field_values)
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        expected_keys = {
+            "write_frequency",
+            "mean_field_value",
+            "field_value_std",
+            "movement_rate",
+            "spatial_spread",
+            "field_action_correlation",
+        }
+        for cid in [0, 1, 2]:
+            assert set(result["per_cluster"][cid].keys()) == expected_keys
+
+    def test_cluster_roles_assigned(self):
+        """Each cluster should get a role: writer, reader, or balanced."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory()
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        valid_roles = {"writer", "reader", "balanced"}
+        for role in result["cluster_roles"].values():
+            assert role in valid_roles
+
+    def test_write_frequency_range(self):
+        """Write frequency should be in [0, 1]."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory()
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        for stats in result["per_cluster"].values():
+            assert 0.0 <= stats["write_frequency"] <= 1.0
+
+    def test_all_alive_write_frequency_one(self):
+        """When all agents are alive all steps, write_frequency should be 1.0."""
+        from src.analysis.specialization import analyze_field_usage
+
+        alive = np.ones((50, 4), dtype=bool)
+        traj = self._make_trajectory(num_agents=4, alive_mask=alive)
+        labels = np.array([0, 0, 1, 1])
+        result = analyze_field_usage(traj, labels)
+
+        for stats in result["per_cluster"].values():
+            assert stats["write_frequency"] == pytest.approx(1.0, abs=1e-6)
+
+    def test_dead_agent_zero_stats(self):
+        """Cluster with only dead agents should have zero stats."""
+        from src.analysis.specialization import analyze_field_usage
+
+        alive = np.ones((50, 4), dtype=bool)
+        alive[:, 2:] = False  # Agents 2,3 are dead
+        traj = self._make_trajectory(num_agents=4, alive_mask=alive)
+        labels = np.array([0, 0, 1, 1])
+        result = analyze_field_usage(traj, labels)
+
+        dead_stats = result["per_cluster"][1]
+        assert dead_stats["write_frequency"] == pytest.approx(0.0, abs=1e-6)
+        assert dead_stats["movement_rate"] == pytest.approx(0.0, abs=1e-6)
+        assert dead_stats["spatial_spread"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_stationary_agents_low_movement(self):
+        """Agents that never move should have movement_rate 0."""
+        from src.analysis.specialization import analyze_field_usage
+
+        positions = np.zeros((50, 2, 2), dtype=int)
+        positions[:, 0] = [5, 5]
+        positions[:, 1] = [10, 10]
+        traj = self._make_trajectory(num_agents=2, positions=positions)
+        labels = np.array([0, 0])
+        result = analyze_field_usage(traj, labels)
+
+        assert result["per_cluster"][0]["movement_rate"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_moving_agents_positive_movement(self):
+        """Agents that move every step should have high movement_rate."""
+        from src.analysis.specialization import analyze_field_usage
+
+        positions = np.zeros((50, 2, 2), dtype=int)
+        for t in range(50):
+            positions[t, 0] = [t % 32, 0]  # Moves every step
+            positions[t, 1] = [0, t % 32]
+        traj = self._make_trajectory(num_agents=2, positions=positions)
+        labels = np.array([0, 0])
+        result = analyze_field_usage(traj, labels)
+
+        assert result["per_cluster"][0]["movement_rate"] > 0.9
+
+    def test_high_field_readers_detected(self):
+        """Agents in high-field areas with low movement should be classified as readers."""
+        from src.analysis.specialization import analyze_field_usage
+
+        num_agents = 4
+        num_steps = 100
+
+        # Group 0: stationary, high field values (readers)
+        positions = np.zeros((num_steps, num_agents, 2), dtype=int)
+        positions[:, 0] = [5, 5]
+        positions[:, 1] = [5, 6]
+
+        # Group 1: moving, low field values (writers)
+        for t in range(num_steps):
+            positions[t, 2] = [t % 32, 0]
+            positions[t, 3] = [0, t % 32]
+
+        field_values = np.zeros((num_steps, num_agents))
+        field_values[:, 0] = 1.0  # High field for readers
+        field_values[:, 1] = 0.8
+        field_values[:, 2] = 0.1  # Low field for writers
+        field_values[:, 3] = 0.05
+
+        traj = self._make_trajectory(
+            num_agents=num_agents,
+            num_steps=num_steps,
+            positions=positions,
+            field_values=field_values,
+        )
+        labels = np.array([0, 0, 1, 1])
+        result = analyze_field_usage(traj, labels)
+
+        # Cluster 0 (stationary + high field) should be reader
+        assert result["cluster_roles"][0] == "reader"
+        # Cluster 1 (moving + low field) should be writer
+        assert result["cluster_roles"][1] == "writer"
+
+    def test_without_field_values(self):
+        """Analysis works without field_values (just no field-based stats)."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory()  # No field_values
+        assert "field_values" not in traj
+
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        # Should still return valid structure
+        assert result["num_clusters"] == 3
+        for stats in result["per_cluster"].values():
+            assert stats["mean_field_value"] == pytest.approx(0.0, abs=1e-6)
+            assert stats["field_value_std"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_single_cluster(self):
+        """Works with a single cluster (all agents same label)."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory(num_agents=4)
+        labels = np.zeros(4, dtype=int)
+        result = analyze_field_usage(traj, labels)
+
+        assert result["num_clusters"] == 1
+        assert 0 in result["per_cluster"]
+        assert 0 in result["cluster_roles"]
+
+    def test_spatial_spread_range(self):
+        """Spatial spread should be in (0, 1] for alive agents."""
+        from src.analysis.specialization import analyze_field_usage
+
+        traj = self._make_trajectory()
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        for stats in result["per_cluster"].values():
+            assert 0.0 < stats["spatial_spread"] <= 1.0
+
+    def test_field_action_correlation_range(self):
+        """Field-action correlation should be in [-1, 1]."""
+        from src.analysis.specialization import analyze_field_usage
+
+        field_values = np.random.RandomState(15).uniform(0, 2, size=(50, 6))
+        traj = self._make_trajectory(field_values=field_values)
+        labels = np.array([0, 0, 1, 1, 2, 2])
+        result = analyze_field_usage(traj, labels)
+
+        for stats in result["per_cluster"].values():
+            assert -1.0 <= stats["field_action_correlation"] <= 1.0
+
+    def test_pipeline_features_to_field_usage(self):
+        """Full pipeline: extract_behavior_features -> cluster -> analyze_field_usage."""
+        from src.analysis.specialization import (
+            analyze_field_usage,
+            cluster_agents,
+            extract_behavior_features,
+        )
+
+        rng = np.random.RandomState(99)
+        num_steps, num_agents = 100, 8
+
+        # Create distinguishable agents
+        actions = rng.randint(0, 6, size=(num_steps, num_agents))
+        positions = rng.randint(0, 32, size=(num_steps, num_agents, 2))
+        field_values = rng.uniform(0, 1, size=(num_steps, num_agents))
+
+        traj = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rng.uniform(0, 1, size=(num_steps, num_agents)),
+            "alive_mask": np.ones((num_steps, num_agents), dtype=bool),
+            "energy": rng.uniform(10, 100, size=(num_steps, num_agents)),
+            "field_values": field_values,
+        }
+
+        features = extract_behavior_features(traj)
+        clustering = cluster_agents(features, n_clusters=2)
+        result = analyze_field_usage(traj, clustering["labels"])
+
+        assert result["num_clusters"] >= 1
+        for stats in result["per_cluster"].values():
+            assert all(np.isfinite(v) for v in stats.values())

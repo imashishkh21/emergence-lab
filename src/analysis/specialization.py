@@ -517,3 +517,179 @@ def novelty_score(
         scores[i] = float(np.mean(knn_dists))
 
     return scores
+
+
+def analyze_field_usage(
+    trajectories: dict[str, np.ndarray],
+    cluster_labels: np.ndarray,
+) -> dict[str, Any]:
+    """Analyze how different behavioral clusters use the shared field.
+
+    Computes per-cluster field usage statistics to identify "writers"
+    (agents that contribute to field presence in new areas) vs "readers"
+    (agents that navigate toward high-field areas).
+
+    Since all alive agents write to the field automatically, the distinction
+    comes from:
+    - **Write patterns**: How much agents move (spreading field deposits) vs
+      staying (concentrating deposits).
+    - **Read patterns**: How strongly agent movement correlates with field
+      values (do they follow the field?).
+
+    Args:
+        trajectories: Trajectory dict with keys:
+            - 'actions': (T, num_agents) int
+            - 'positions': (T, num_agents, 2) int
+            - 'alive_mask': (T, num_agents) bool
+            Required for full analysis:
+            - 'field_values': (T, num_agents) float — field value at position
+        cluster_labels: Cluster label per agent, shape (num_agents,).
+
+    Returns:
+        Dict with keys:
+            - 'per_cluster': Dict mapping cluster_id -> {
+                'write_frequency': float — fraction of steps agents are alive
+                    (alive agents auto-write),
+                'mean_field_value': float — mean field value at agent positions,
+                'field_value_std': float — std of field values at positions,
+                'movement_rate': float — fraction of steps with position change,
+                'spatial_spread': float — mean unique positions per agent,
+                'field_action_correlation': float — correlation between field
+                    value and subsequent movement (higher = more field-guided),
+              }
+            - 'cluster_roles': Dict mapping cluster_id -> str
+                ('writer', 'reader', or 'balanced') based on heuristics.
+            - 'num_clusters': int — number of clusters analyzed.
+    """
+    actions = np.asarray(trajectories["actions"])           # (T, A)
+    positions = np.asarray(trajectories["positions"])       # (T, A, 2)
+    alive_mask = np.asarray(trajectories["alive_mask"])     # (T, A)
+    has_field = "field_values" in trajectories
+    if has_field:
+        field_values = np.asarray(trajectories["field_values"])  # (T, A)
+
+    cluster_labels = np.asarray(cluster_labels)
+    num_agents = actions.shape[1]
+    num_steps = actions.shape[0]
+
+    unique_clusters = sorted(set(int(c) for c in cluster_labels))
+    per_cluster: dict[int, dict[str, float]] = {}
+    cluster_roles: dict[int, str] = {}
+
+    for cid in unique_clusters:
+        agent_indices = np.where(cluster_labels == cid)[0]
+
+        # Collect per-agent stats, then average across cluster
+        write_freqs: list[float] = []
+        mean_fields: list[float] = []
+        field_stds: list[float] = []
+        movement_rates: list[float] = []
+        spatial_spreads: list[float] = []
+        field_action_corrs: list[float] = []
+
+        for a in agent_indices:
+            alive_steps = alive_mask[:, a].astype(bool)
+            n_alive = int(np.sum(alive_steps))
+
+            if n_alive == 0:
+                write_freqs.append(0.0)
+                mean_fields.append(0.0)
+                field_stds.append(0.0)
+                movement_rates.append(0.0)
+                spatial_spreads.append(0.0)
+                field_action_corrs.append(0.0)
+                continue
+
+            # Write frequency: fraction of total steps this agent is alive
+            write_freqs.append(n_alive / num_steps)
+
+            # Field values at agent positions (when alive)
+            if has_field:
+                agent_field = field_values[alive_steps, a]
+                mean_fields.append(float(np.mean(agent_field)))
+                field_stds.append(float(np.std(agent_field)))
+            else:
+                mean_fields.append(0.0)
+                field_stds.append(0.0)
+
+            # Movement rate: fraction of alive steps where position changed
+            agent_pos = positions[:, a, :]  # (T, 2)
+            alive_pos = agent_pos[alive_steps]  # (n_alive, 2)
+            if n_alive >= 2:
+                moved = np.any(np.diff(alive_pos, axis=0) != 0, axis=1)
+                movement_rates.append(float(np.mean(moved)))
+            else:
+                movement_rates.append(0.0)
+
+            # Spatial spread: unique positions / alive steps
+            unique_pos = len(set(map(tuple, alive_pos)))
+            spatial_spreads.append(unique_pos / n_alive)
+
+            # Field-action correlation: do higher field values predict staying?
+            # Correlation between field_value[t] and whether agent moved at step t+1
+            if has_field and n_alive >= 3:
+                agent_field_alive = field_values[alive_steps, a]
+                # Did the agent move on the next alive step?
+                moved_arr = np.concatenate(
+                    [np.any(np.diff(alive_pos, axis=0) != 0, axis=1).astype(float),
+                     [0.0]]
+                )
+                # Correlation between field value and movement
+                if np.std(agent_field_alive) > 1e-10 and np.std(moved_arr) > 1e-10:
+                    corr = float(np.corrcoef(agent_field_alive, moved_arr)[0, 1])
+                    if np.isfinite(corr):
+                        field_action_corrs.append(corr)
+                    else:
+                        field_action_corrs.append(0.0)
+                else:
+                    field_action_corrs.append(0.0)
+            else:
+                field_action_corrs.append(0.0)
+
+        # Average across agents in cluster
+        stats: dict[str, float] = {
+            "write_frequency": float(np.mean(write_freqs)) if write_freqs else 0.0,
+            "mean_field_value": float(np.mean(mean_fields)) if mean_fields else 0.0,
+            "field_value_std": float(np.mean(field_stds)) if field_stds else 0.0,
+            "movement_rate": float(np.mean(movement_rates)) if movement_rates else 0.0,
+            "spatial_spread": float(np.mean(spatial_spreads)) if spatial_spreads else 0.0,
+            "field_action_correlation": (
+                float(np.mean(field_action_corrs)) if field_action_corrs else 0.0
+            ),
+        }
+        per_cluster[cid] = stats
+
+        # Classify cluster role based on heuristics
+        cluster_roles[cid] = _classify_cluster_role(stats)
+
+    return {
+        "per_cluster": per_cluster,
+        "cluster_roles": cluster_roles,
+        "num_clusters": len(unique_clusters),
+    }
+
+
+def _classify_cluster_role(stats: dict[str, float]) -> str:
+    """Classify a cluster as 'writer', 'reader', or 'balanced'.
+
+    Heuristic based on movement rate and field correlation:
+    - Writers: high movement (spread field deposits), low field dependence
+    - Readers: low movement (exploit known areas), high field values
+    - Balanced: neither extreme
+
+    Args:
+        stats: Per-cluster statistics dict from analyze_field_usage.
+
+    Returns:
+        One of 'writer', 'reader', or 'balanced'.
+    """
+    high_movement = stats["movement_rate"] > 0.6
+    low_movement = stats["movement_rate"] < 0.4
+    high_field = stats["mean_field_value"] > 0.5
+
+    if high_movement and not high_field:
+        return "writer"
+    elif low_movement and high_field:
+        return "reader"
+    else:
+        return "balanced"

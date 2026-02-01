@@ -102,3 +102,21 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 247/247 tests pass
 
 ---
+
+### US-006: Field Usage Analysis ✓
+**What:** Implemented `analyze_field_usage()` and `_classify_cluster_role()` in `src/analysis/specialization.py`.
+**Decisions:**
+- Since all alive agents write to the field automatically (not action-dependent), "write frequency" = fraction of steps an agent is alive
+- Per-cluster statistics computed: write_frequency, mean_field_value, field_value_std, movement_rate, spatial_spread, field_action_correlation
+- Movement rate: fraction of alive steps where position changed (distinguishes movers from sitters)
+- Spatial spread: unique positions / alive steps (how spread out an agent's trajectory is)
+- Field-action correlation: Pearson correlation between field_value[t] and whether agent moved at step t+1 — captures whether agents are "guided" by the field
+- Role classification heuristic: writers = high movement + low field values, readers = low movement + high field values, balanced = neither extreme
+- Gracefully handles missing field_values key (returns 0.0 for field-based stats)
+- Dead agents contribute zero to all metrics
+**Files changed:**
+- `src/analysis/specialization.py` — added `analyze_field_usage`, `_classify_cluster_role`
+- `tests/test_specialization.py` — added `TestFieldUsage` class with 15 tests covering: required keys, num_clusters, per-cluster stats, cluster roles, write_frequency range, all-alive frequency, dead agent stats, stationary/moving agents, reader/writer detection, without field_values, single cluster, spatial_spread range, field_action_correlation range, full pipeline
+**Validation:** mypy clean (31 files), 262/262 tests pass
+
+---
