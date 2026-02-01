@@ -430,16 +430,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-027: Full integration test [ ]
+### US-027: Full integration test [x]
 
 **Description:** As a developer, I need end-to-end validation.
 
 **Acceptance Criteria:**
-- [ ] Create `tests/test_integration.py`
-- [ ] Test: init → train 1000 steps → evaluate → render → analyze
-- [ ] Completes in < 2 minutes
-- [ ] All assertions pass
-- [ ] `pytest tests/test_integration.py -v` passes
+- [x] Create `tests/test_integration.py`
+- [x] Test: init → train 1000 steps → evaluate → render → analyze
+- [x] Completes in < 2 minutes
+- [x] All assertions pass
+- [x] `pytest tests/test_integration.py -v` passes
 
 ---
 

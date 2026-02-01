@@ -336,8 +336,26 @@
 - Mypy clean (27 source files, no issues)
 - Files changed: README.md (rewritten)
 
+### US-027: Full integration test [x]
+- Rewrote tests/test_integration.py with 3 comprehensive integration tests
+- test_full_pipeline: complete end-to-end test covering init → train (~1000 steps) → evaluate → render → analyze
+  - Initializes training state with small config (4 envs, 32 steps, 4 agents, 10x10 grid)
+  - Trains for multiple PPO updates, verifies no NaN/Inf in all metrics
+  - Evaluates with deterministic policy, checks finite reward
+  - Renders frames and records video episode, verifies shapes/types
+  - Analyzes field metrics (entropy, structure, mutual information), checks value ranges
+  - Tests EmergenceTracker integration (update, get_metrics, get_summary)
+  - Runs ablation test (normal/zeroed/random, 2 episodes each), verifies results
+- test_training_stability: verifies 5 training updates produce no NaN/Inf
+- test_video_save: records episode and saves MP4 to temp file, verifies file exists with non-zero size
+- Removed previous stub test_checkpoint_save_load (referenced non-existent src/utils/checkpointing module)
+- All 3 tests pass in ~16 seconds (well under 2-minute limit)
+- All 56 tests pass across the entire test suite
+- Mypy clean (27 source files, no issues)
+- Files changed: tests/test_integration.py (rewritten)
+
 ## Current Task
-US-027: Full integration test
+US-REVIEW-FINAL: Final Phase 1 Review
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
