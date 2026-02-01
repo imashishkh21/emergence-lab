@@ -200,19 +200,19 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-012: Implement actor-critic network [ ]
+### US-012: Implement actor-critic network [x]
 
 **Description:** As a developer, I need neural network for agent policy.
 
 **Acceptance Criteria:**
-- [ ] Create `src/agents/network.py`
-- [ ] `ActorCritic` is a Flax `nn.Module`
-- [ ] MLP backbone with LayerNorm and Tanh activations
-- [ ] Actor head outputs logits for 5 actions
-- [ ] Critic head outputs scalar value
-- [ ] Orthogonal init: `sqrt(2)` for hidden, `0.01` for actor, `1.0` for critic
-- [ ] Tests pass: `pytest tests/test_agent.py::TestNetwork -v`
-- [ ] Typecheck passes
+- [x] Create `src/agents/network.py`
+- [x] `ActorCritic` is a Flax `nn.Module`
+- [x] MLP backbone with LayerNorm and Tanh activations
+- [x] Actor head outputs logits for 5 actions
+- [x] Critic head outputs scalar value
+- [x] Orthogonal init: `sqrt(2)` for hidden, `0.01` for actor, `1.0` for critic
+- [x] Tests pass: `pytest tests/test_agent.py::TestNetwork -v`
+- [x] Typecheck passes
 
 ---
 

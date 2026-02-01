@@ -116,8 +116,20 @@
   - Rewards are shared across all agents (+1 per food item)
 - No issues found. Environment epic is solid and ready for training integration.
 
+### US-012: Implement actor-critic network [x]
+- Created src/agents/network.py with ActorCritic as a Flax nn.Module
+- Architecture: shared MLP backbone -> actor head (logits) + critic head (scalar value)
+- Backbone: Dense -> LayerNorm -> Tanh for each hidden layer, configurable hidden_dims
+- Actor head: Dense(num_actions) with orthogonal init scale 0.01 (small logits initially)
+- Critic head: Dense(1) with orthogonal init scale 1.0, squeezed to scalar
+- Hidden layers use orthogonal init with scale sqrt(2) (standard for ReLU/Tanh networks)
+- All bias initializers are zeros
+- Works with single obs (obs_dim,) and batched via vmap (batch, obs_dim)
+- All 4 TestNetwork tests pass, mypy clean (16 source files, no issues)
+- Files changed: src/agents/network.py (new)
+
 ## Current Task
-US-012: Implement actor-critic network
+US-013: Implement action sampling
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
