@@ -8,6 +8,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from scipy.stats import entropy as scipy_entropy
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
 
 
 def flatten_agent_params(agent_params: Any, agent_idx: int) -> np.ndarray:
@@ -234,3 +237,133 @@ def extract_behavior_features(trajectory: dict[str, np.ndarray]) -> np.ndarray:
         features[a, 6] = float(stay_actions) / n_alive
 
     return features
+
+
+def cluster_agents(
+    behavior_features: np.ndarray,
+    n_clusters: int = 3,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Cluster agents by behavioral features using K-means.
+
+    Features are standardized (zero mean, unit variance) before clustering
+    to ensure all features contribute equally regardless of scale.
+
+    Args:
+        behavior_features: Array of shape (num_agents, num_features).
+        n_clusters: Number of clusters to form.
+        random_state: Random seed for K-means reproducibility.
+
+    Returns:
+        Dict with keys:
+            - 'labels': Cluster label per agent, shape (num_agents,).
+            - 'centroids': Cluster centers in standardized space,
+              shape (n_clusters, num_features).
+            - 'silhouette': Silhouette score in [-1, 1]. Higher = better
+              separated clusters. Returns 0.0 if clustering is degenerate
+              (fewer unique points than clusters, or only 1 effective cluster).
+            - 'n_clusters': Actual number of clusters used.
+    """
+    features = np.asarray(behavior_features, dtype=np.float64)
+    n_samples, n_features = features.shape
+
+    # Clamp n_clusters to number of unique sample points
+    unique_rows = np.unique(features, axis=0)
+    effective_k = min(n_clusters, len(unique_rows))
+
+    if effective_k < 2:
+        # Degenerate: all identical or single agent — one cluster
+        return {
+            "labels": np.zeros(n_samples, dtype=int),
+            "centroids": features[:1].copy() if n_samples > 0 else np.empty((0, n_features)),
+            "silhouette": 0.0,
+            "n_clusters": 1,
+        }
+
+    # Standardize features
+    scaler = StandardScaler()
+    scaled = scaler.fit_transform(features)
+
+    km = KMeans(n_clusters=effective_k, random_state=random_state, n_init=10)
+    labels = km.fit_predict(scaled)
+
+    # Silhouette requires at least 2 distinct labels AND n_samples > n_labels
+    n_unique_labels = len(set(labels))
+    if n_unique_labels < 2 or n_samples <= n_unique_labels:
+        sil = 0.0
+    else:
+        sil = float(silhouette_score(scaled, labels))
+
+    return {
+        "labels": labels,
+        "centroids": km.cluster_centers_,
+        "silhouette": sil,
+        "n_clusters": effective_k,
+    }
+
+
+def find_optimal_clusters(
+    behavior_features: np.ndarray,
+    max_k: int = 5,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Find the optimal number of behavioral clusters using silhouette score.
+
+    Tries k=2..max_k and picks the k with the highest silhouette score.
+    If the data has fewer than 3 unique points, returns k=1 (or k=2 if
+    exactly 2 unique points).
+
+    Args:
+        behavior_features: Array of shape (num_agents, num_features).
+        max_k: Maximum number of clusters to try (inclusive).
+
+    Returns:
+        Dict with keys:
+            - 'optimal_k': Best number of clusters.
+            - 'labels': Cluster labels at optimal k, shape (num_agents,).
+            - 'centroids': Cluster centers at optimal k.
+            - 'silhouette': Best silhouette score.
+            - 'silhouette_scores': Dict mapping k -> silhouette score for all
+              tested k values.
+    """
+    features = np.asarray(behavior_features, dtype=np.float64)
+    n_samples = features.shape[0]
+
+    unique_rows = np.unique(features, axis=0)
+    n_unique = len(unique_rows)
+
+    # Need at least 2 unique points and n_samples >= 2 for meaningful clustering
+    if n_unique < 2 or n_samples < 2:
+        result = cluster_agents(features, n_clusters=1, random_state=random_state)
+        return {
+            "optimal_k": 1,
+            "labels": result["labels"],
+            "centroids": result["centroids"],
+            "silhouette": 0.0,
+            "silhouette_scores": {},
+        }
+
+    # Try k from 2 to min(max_k, n_unique)
+    upper_k = min(max_k, n_unique)
+    silhouette_scores: dict[int, float] = {}
+    best_k = 2
+    best_sil = -1.0
+    best_result: dict[str, Any] | None = None
+
+    for k in range(2, upper_k + 1):
+        result = cluster_agents(features, n_clusters=k, random_state=random_state)
+        sil = result["silhouette"]
+        silhouette_scores[k] = sil
+        if sil > best_sil:
+            best_sil = sil
+            best_k = k
+            best_result = result
+
+    assert best_result is not None
+    return {
+        "optimal_k": best_k,
+        "labels": best_result["labels"],
+        "centroids": best_result["centroids"],
+        "silhouette": best_sil,
+        "silhouette_scores": silhouette_scores,
+    }

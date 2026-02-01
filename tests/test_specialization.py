@@ -407,6 +407,202 @@ class TestBehaviorFeatures:
         assert not np.allclose(features[0], features[1])
 
 
+class TestClustering:
+    """US-004: Behavioral clustering tests."""
+
+    def test_cluster_agents_returns_required_keys(self):
+        """cluster_agents returns labels, centroids, silhouette, n_clusters."""
+        from src.analysis.specialization import cluster_agents
+
+        rng = np.random.RandomState(0)
+        features = rng.randn(10, 7)
+        result = cluster_agents(features, n_clusters=3)
+
+        assert "labels" in result
+        assert "centroids" in result
+        assert "silhouette" in result
+        assert "n_clusters" in result
+
+    def test_cluster_agents_label_shape(self):
+        """Labels should have shape (num_agents,) with values in [0, k)."""
+        from src.analysis.specialization import cluster_agents
+
+        rng = np.random.RandomState(1)
+        features = rng.randn(20, 7)
+        result = cluster_agents(features, n_clusters=3)
+
+        assert result["labels"].shape == (20,)
+        assert set(result["labels"]).issubset({0, 1, 2})
+
+    def test_cluster_agents_centroid_shape(self):
+        """Centroids should have shape (n_clusters, num_features)."""
+        from src.analysis.specialization import cluster_agents
+
+        rng = np.random.RandomState(2)
+        features = rng.randn(15, 7)
+        result = cluster_agents(features, n_clusters=3)
+
+        assert result["centroids"].shape == (result["n_clusters"], 7)
+
+    def test_cluster_agents_silhouette_range(self):
+        """Silhouette score should be in [-1, 1]."""
+        from src.analysis.specialization import cluster_agents
+
+        rng = np.random.RandomState(3)
+        features = rng.randn(30, 7)
+        result = cluster_agents(features, n_clusters=3)
+
+        assert -1.0 <= result["silhouette"] <= 1.0
+
+    def test_cluster_agents_well_separated(self):
+        """Well-separated clusters should give high silhouette score."""
+        from src.analysis.specialization import cluster_agents
+
+        # Create 3 well-separated clusters with large offsets on all features
+        rng = np.random.RandomState(4)
+        c1 = rng.randn(30, 7) * 0.5 + np.array([10, 10, 0, 0, 0, 0, 0])
+        c2 = rng.randn(30, 7) * 0.5 + np.array([0, 0, 10, 10, 0, 0, 0])
+        c3 = rng.randn(30, 7) * 0.5 + np.array([0, 0, 0, 0, 10, 10, 0])
+        features = np.vstack([c1, c2, c3])
+
+        result = cluster_agents(features, n_clusters=3)
+
+        assert result["silhouette"] > 0.5
+        assert result["n_clusters"] == 3
+
+    def test_cluster_agents_identical_features(self):
+        """Identical features should produce 1 cluster gracefully."""
+        from src.analysis.specialization import cluster_agents
+
+        features = np.ones((10, 7))
+        result = cluster_agents(features, n_clusters=3)
+
+        assert result["n_clusters"] == 1
+        assert result["silhouette"] == 0.0
+        assert np.all(result["labels"] == 0)
+
+    def test_cluster_agents_two_agents(self):
+        """Clustering with only 2 agents should work."""
+        from src.analysis.specialization import cluster_agents
+
+        features = np.array([[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                             [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+        result = cluster_agents(features, n_clusters=2)
+
+        assert result["labels"].shape == (2,)
+        assert result["n_clusters"] == 2
+
+    def test_cluster_agents_k_clamped_to_unique(self):
+        """n_clusters should be clamped to number of unique points."""
+        from src.analysis.specialization import cluster_agents
+
+        # Only 2 unique rows, but ask for 5 clusters
+        features = np.vstack([np.ones((5, 7)), np.zeros((5, 7))])
+        result = cluster_agents(features, n_clusters=5)
+
+        assert result["n_clusters"] == 2
+
+    def test_find_optimal_clusters_returns_required_keys(self):
+        """find_optimal_clusters returns optimal_k, labels, centroids, silhouette, silhouette_scores."""
+        from src.analysis.specialization import find_optimal_clusters
+
+        rng = np.random.RandomState(10)
+        features = rng.randn(20, 7)
+        result = find_optimal_clusters(features, max_k=4)
+
+        assert "optimal_k" in result
+        assert "labels" in result
+        assert "centroids" in result
+        assert "silhouette" in result
+        assert "silhouette_scores" in result
+
+    def test_find_optimal_clusters_picks_correct_k(self):
+        """find_optimal_clusters should identify the right number of clusters."""
+        from src.analysis.specialization import find_optimal_clusters
+
+        # Create 3 obvious clusters with large separation and low noise
+        rng = np.random.RandomState(11)
+        c1 = rng.randn(30, 7) * 0.3 + np.array([10, 10, 0, 0, 0, 0, 0])
+        c2 = rng.randn(30, 7) * 0.3 + np.array([0, 0, 10, 10, 0, 0, 0])
+        c3 = rng.randn(30, 7) * 0.3 + np.array([0, 0, 0, 0, 10, 10, 0])
+        features = np.vstack([c1, c2, c3])
+
+        result = find_optimal_clusters(features, max_k=5)
+
+        assert result["optimal_k"] == 3
+        assert result["silhouette"] > 0.7
+
+    def test_find_optimal_clusters_silhouette_scores_dict(self):
+        """silhouette_scores should map each tested k to its score."""
+        from src.analysis.specialization import find_optimal_clusters
+
+        rng = np.random.RandomState(12)
+        features = rng.randn(30, 7)
+        result = find_optimal_clusters(features, max_k=5)
+
+        # Should have scores for k=2,3,4,5
+        assert set(result["silhouette_scores"].keys()) == {2, 3, 4, 5}
+        for sil in result["silhouette_scores"].values():
+            assert -1.0 <= sil <= 1.0
+
+    def test_find_optimal_clusters_identical_data(self):
+        """Identical data should return k=1."""
+        from src.analysis.specialization import find_optimal_clusters
+
+        features = np.ones((10, 7))
+        result = find_optimal_clusters(features, max_k=5)
+
+        assert result["optimal_k"] == 1
+        assert result["silhouette"] == 0.0
+
+    def test_find_optimal_clusters_single_agent(self):
+        """Single agent should return k=1."""
+        from src.analysis.specialization import find_optimal_clusters
+
+        features = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]])
+        result = find_optimal_clusters(features, max_k=5)
+
+        assert result["optimal_k"] == 1
+
+    def test_cluster_agents_reproducible(self):
+        """Same random_state should produce identical results."""
+        from src.analysis.specialization import cluster_agents
+
+        rng = np.random.RandomState(20)
+        features = rng.randn(20, 7)
+
+        r1 = cluster_agents(features, n_clusters=3, random_state=42)
+        r2 = cluster_agents(features, n_clusters=3, random_state=42)
+
+        np.testing.assert_array_equal(r1["labels"], r2["labels"])
+        np.testing.assert_array_equal(r1["centroids"], r2["centroids"])
+
+    def test_pipeline_features_to_clusters(self):
+        """Full pipeline: extract_behavior_features -> cluster_agents."""
+        from src.analysis.specialization import (
+            extract_behavior_features,
+            cluster_agents,
+        )
+
+        # Create trajectories for agents with different behaviors
+        rng = np.random.RandomState(30)
+        num_steps, num_agents = 100, 6
+        actions = rng.randint(0, 6, size=(num_steps, num_agents))
+        positions = rng.randint(0, 32, size=(num_steps, num_agents, 2))
+        traj = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rng.uniform(0, 1, size=(num_steps, num_agents)),
+            "alive_mask": np.ones((num_steps, num_agents), dtype=bool),
+            "energy": rng.uniform(10, 100, size=(num_steps, num_agents)),
+        }
+        features = extract_behavior_features(traj)
+        result = cluster_agents(features, n_clusters=2)
+
+        assert result["labels"].shape == (num_agents,)
+        assert result["n_clusters"] >= 1
+
+
 class TestTrajectoryRecording:
     """US-003: Trajectory recording tests."""
 

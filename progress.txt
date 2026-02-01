@@ -66,3 +66,20 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 212/212 tests pass
 
 ---
+
+### US-004: Behavioral Clustering ✓
+**What:** Implemented `cluster_agents()` and `find_optimal_clusters()` in `src/analysis/specialization.py` for K-means-based behavioral clustering with silhouette score evaluation.
+**Decisions:**
+- Features are standardized (StandardScaler: zero mean, unit variance) before clustering so all features contribute equally regardless of scale
+- `cluster_agents()` uses sklearn KMeans with n_init=10 for robust convergence
+- n_clusters is clamped to the number of unique data points to avoid degenerate K-means
+- Silhouette score guard: returns 0.0 when n_samples <= n_labels (sklearn requires n_samples > n_labels)
+- `find_optimal_clusters()` tries k=2..min(max_k, n_unique) and picks the k with the highest silhouette score
+- Degenerate cases (all identical features, single agent) gracefully return k=1 with silhouette=0.0
+- Returns dict with labels, centroids (in standardized space), silhouette score, and n_clusters
+**Files changed:**
+- `src/analysis/specialization.py` — added `cluster_agents`, `find_optimal_clusters`; added sklearn imports (KMeans, silhouette_score, StandardScaler)
+- `tests/test_specialization.py` — added `TestClustering` class with 15 tests covering: required keys, label shapes, centroid shapes, silhouette range, well-separated clusters, identical features, two agents, k clamping, find_optimal keys, correct k detection, silhouette_scores dict, identical data, single agent, reproducibility, full pipeline
+**Validation:** mypy clean (31 files), 227/227 tests pass
+
+---

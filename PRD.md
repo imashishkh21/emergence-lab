@@ -74,7 +74,7 @@ With shared field + evolution, agents should differentiate into roles:
 - `record_episode(network, params, config, key)` returns trajectory data
 **Verification:** `pytest tests/test_specialization.py::test_trajectory_recording -v` passes
 
-### US-004: Behavioral Clustering [ ]
+### US-004: Behavioral Clustering [x]
 **Task:** Cluster agents by behavioral features to detect specialization.
 **Files:** `src/analysis/specialization.py`
 **Changes:**
