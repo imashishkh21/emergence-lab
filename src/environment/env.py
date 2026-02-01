@@ -186,8 +186,8 @@ def step(
 
     # --- 3. Compute reward ---
     # Individual reward: each agent gets reward equal to energy gained
-    # Slice to (num_agents,) for compatibility with training
-    rewards = energy_gained[:config.env.num_agents]
+    # Full (max_agents,) shape — dead agents get 0 reward
+    rewards = jnp.where(state.agent_alive, energy_gained, 0.0)
 
     # --- 4. Update field ---
     # Step field dynamics (diffuse + decay)

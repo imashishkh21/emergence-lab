@@ -244,9 +244,10 @@ class TestRollout:
         )
         
         # Check batch shapes
-        # Shape: (num_steps, num_envs, num_agents)
-        assert batch['rewards'].shape == (16, 4, 2)
-        assert batch['actions'].shape == (16, 4, 2)
+        # Shape: (num_steps, num_envs, max_agents)
+        max_agents = config.evolution.max_agents
+        assert batch['rewards'].shape == (16, 4, max_agents)
+        assert batch['actions'].shape == (16, 4, max_agents)
 
 
 class TestTrainStep:

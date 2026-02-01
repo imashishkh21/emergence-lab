@@ -117,7 +117,7 @@
    - On reproduction: `child_params = mutate_params(parent_params, key, std)`                                                         
    **Verification:** `pytest tests/test_reproduction.py::test_inheritance -v` passes                                                  
                                                                                                                                       
-   ### US-010: Update Observations for Variable Population [ ]                                                                        
+   ### US-010: Update Observations for Variable Population [x]                                                                        
    **Task:** Handle dead agents in observations.                                                                                      
    **Files:** `src/environment/obs.py`                                                                                                
    **Changes:**                                                                                                                       

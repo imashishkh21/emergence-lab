@@ -154,3 +154,23 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 109 tests pass, mypy clean.
 
 ---
+
+### US-010: Update Observations for Variable Population ✓
+**What:** Updated `get_observations` to return `(max_agents, obs_dim)` with energy observation, dead agent masking, and full `max_agents`-width arrays throughout the pipeline.
+**Decisions:**
+- `obs_dim` increased by 1 to include normalized agent energy (position 3 in obs vector, index 2).
+- `get_observations` now computes observations for all `max_agents` slots and zeros out dead agents via `jnp.where(alive_mask, obs, 0.0)`.
+- `_compute_food_obs` updated to operate on all `max_agents` (dead agents get zeroed by the outer alive mask).
+- Energy normalized as `clip(energy / max_energy, 0, 1)` — always in [0, 1].
+- Rewards changed from `(num_agents,)` to `(max_agents,)` — dead agents get 0 reward via `jnp.where(agent_alive, energy_gained, 0.0)`. This keeps obs/actions/rewards dimensions consistent.
+- Updated downstream test assertions for new reward and observation shapes (`max_agents` instead of `num_agents`).
+- Created `tests/test_obs.py` with 20 tests: obs_dim includes energy, phase1 comparison, max_agents shape, different max_agents, energy normalized/max/zero/clamped, dead agents zero obs, killed agent zero, alive nonzero, mixed alive/dead, all obs in range, position normalized, energy nonneg, dead food obs zero, JIT compat, obs_dim consistency, after step, after death.
+**Files changed:**
+- `src/environment/obs.py` — Updated `obs_dim` (+1 for energy), `get_observations` (max_agents, energy, alive mask), `_compute_food_obs` (max_agents)
+- `src/environment/env.py` — Changed rewards from `energy_gained[:num_agents]` to `jnp.where(agent_alive, energy_gained, 0.0)` for `(max_agents,)` shape
+- `tests/test_obs.py` — Created with 20 tests across 7 test classes
+- `tests/test_env.py` — Updated shape assertions for rewards and observations to use `max_agents`
+- `tests/test_training.py` — Updated rollout batch shape assertions to use `max_agents`
+**Issues:** None. All 129 tests pass, mypy clean.
+
+---

@@ -212,7 +212,7 @@ class TestEnvStep:
         assert new_state.step == 1
         
         # Rewards should be array of correct shape
-        assert rewards.shape == (config.env.num_agents,)
+        assert rewards.shape == (config.evolution.max_agents,)
         
         # Dones should be boolean
         assert dones.dtype == jnp.bool_
@@ -264,17 +264,17 @@ class TestObservations:
     def test_observations(self):
         """Test that observations have correct shape."""
         from src.environment.env import reset
-        from src.environment.obs import get_observations
+        from src.environment.obs import get_observations, obs_dim
         from src.configs import Config
-        
+
         config = Config()
         key = jax.random.PRNGKey(42)
-        
+
         state = reset(key, config)
         obs = get_observations(state, config)
-        
-        # Should have one observation per agent
-        assert obs.shape[0] == config.env.num_agents
+
+        # Should have one observation per agent slot (max_agents)
+        assert obs.shape == (config.evolution.max_agents, obs_dim(config))
     
     def test_observations_normalized(self):
         """Test that observations are normalized."""
@@ -331,7 +331,7 @@ class TestVecEnv:
         )
         new_states, rewards, dones, info = vec_env.step(states, actions)
         
-        assert rewards.shape == (8, config.env.num_agents)
+        assert rewards.shape == (8, config.evolution.max_agents)
         assert new_states.agent_positions.shape == (8, config.evolution.max_agents, 2)
     
     def test_vec_env_jit_compatible(self):
