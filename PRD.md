@@ -46,16 +46,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-002: Set up dependencies and virtual environment [ ]
+### US-002: Set up dependencies and virtual environment [x]
 
 **Description:** As a developer, I need dependencies installed so I can run the project.
 
 **Acceptance Criteria:**
-- [ ] `scripts/setup.sh` creates venv if not exists
-- [ ] Installs package with `pip install -e .`
-- [ ] `./scripts/setup.sh` completes without error
-- [ ] `python -c "import jax; print(jax.devices())"` works after setup
-- [ ] Typecheck passes
+- [x] `scripts/setup.sh` creates venv if not exists
+- [x] Installs package with `pip install -e .`
+- [x] `./scripts/setup.sh` completes without error
+- [x] `python -c "import jax; print(jax.devices())"` works after setup
+- [x] Typecheck passes
 
 ---
 

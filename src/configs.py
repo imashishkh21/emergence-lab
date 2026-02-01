@@ -1,7 +1,7 @@
 """Configuration dataclasses for Emergence Lab."""
 
-from dataclasses import dataclass, field
-from typing import Literal, Optional
+from dataclasses import dataclass, field as dataclass_field
+from typing import Literal
 import yaml
 
 
@@ -41,7 +41,7 @@ class TrainConfig:
     num_steps: int = 128
     num_epochs: int = 4
     minibatch_size: int = 256
-    
+
     # PPO specific
     learning_rate: float = 3e-4
     lr_schedule: Literal["constant", "linear"] = "linear"
@@ -74,40 +74,41 @@ class AnalysisConfig:
 @dataclass
 class Config:
     """Master configuration combining all sub-configs."""
-    env: EnvConfig = field(default_factory=EnvConfig)
-    field: FieldConfig = field(default_factory=FieldConfig)
-    agent: AgentConfig = field(default_factory=AgentConfig)
-    train: TrainConfig = field(default_factory=TrainConfig)
-    log: LogConfig = field(default_factory=LogConfig)
-    analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
-    
+    env: EnvConfig = dataclass_field(default_factory=EnvConfig)
+    field: FieldConfig = dataclass_field(default_factory=FieldConfig)
+    agent: AgentConfig = dataclass_field(default_factory=AgentConfig)
+    train: TrainConfig = dataclass_field(default_factory=TrainConfig)
+    log: LogConfig = dataclass_field(default_factory=LogConfig)
+    analysis: AnalysisConfig = dataclass_field(default_factory=AnalysisConfig)
+
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
         """Load config from YAML file."""
         with open(path) as f:
             data = yaml.safe_load(f)
-        
+
+        agent_data = data.get("agent", {})
+        if "hidden_dims" in agent_data:
+            agent_data["hidden_dims"] = tuple(agent_data["hidden_dims"])
+
         return cls(
             env=EnvConfig(**data.get("env", {})),
             field=FieldConfig(**data.get("field", {})),
-            agent=AgentConfig(**{
-                k: tuple(v) if k == "hidden_dims" else v 
-                for k, v in data.get("agent", {}).items()
-            }),
+            agent=AgentConfig(**agent_data),
             train=TrainConfig(**data.get("train", {})),
             log=LogConfig(**data.get("log", {})),
             analysis=AnalysisConfig(**data.get("analysis", {})),
         )
-    
+
     def to_yaml(self, path: str) -> None:
         """Save config to YAML file."""
         import dataclasses
-        
-        def to_dict(obj):
-            if dataclasses.is_dataclass(obj):
+
+        def to_dict(obj: object) -> object:
+            if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
                 return {k: to_dict(v) for k, v in dataclasses.asdict(obj).items()}
             return obj
-        
+
         with open(path, 'w') as f:
             yaml.dump(to_dict(self), f, default_flow_style=False)
 

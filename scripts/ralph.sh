@@ -44,7 +44,7 @@ for i in $(seq 1 $ITERATIONS); do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     # Run Claude Code with the prompt file
-    cat PROMPT.md | claude --print
+    cat PROMPT.md | claude --print --dangerously-skip-permissions
     
     # Check for completion signal
     if grep -q "COMPLETE:" progress.txt 2>/dev/null; then
