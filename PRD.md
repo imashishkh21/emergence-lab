@@ -417,16 +417,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-026: Update README with quick start [ ]
+### US-026: Update README with quick start [x]
 
 **Description:** As a user, I need documentation to get started.
 
 **Acceptance Criteria:**
-- [ ] README explains what this project tests
-- [ ] Quick start: install, train, visualize commands
-- [ ] Expected results section
-- [ ] How to interpret field visualizations
-- [ ] Following README starts training successfully
+- [x] README explains what this project tests
+- [x] Quick start: install, train, visualize commands
+- [x] Expected results section
+- [x] How to interpret field visualizations
+- [x] Following README starts training successfully
 
 ---
 

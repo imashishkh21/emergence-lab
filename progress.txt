@@ -320,8 +320,24 @@
 - Mypy clean (27 source files, no issues)
 - Files changed: scripts/train.sh (new)
 
+### US-026: Update README with quick start [x]
+- Rewrote README.md with accurate project documentation
+- Sections added:
+  1. Project overview explaining the shared learnable field hypothesis
+  2. "How It Works" — per-timestep simulation loop
+  3. Quick Start — install, train, evaluate commands
+  4. Project structure — annotated tree of all modules
+  5. Expected results — training metrics, field behavior phases, ablation interpretation
+  6. Interpreting field visualizations — heatmap legend, pattern meanings
+  7. Configuration table — all key parameters with defaults
+  8. Tech stack listing
+- Fixed inaccurate `--config` CLI flag (training uses tyro, not argparse with config files)
+- Verified training starts successfully following README instructions
+- Mypy clean (27 source files, no issues)
+- Files changed: README.md (rewritten)
+
 ## Current Task
-US-026: Update README with quick start
+US-027: Full integration test
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
