@@ -1,7 +1,20 @@
-# Phase 2 Progress                                                                                                           
+# Phase 2 Progress: Evolutionary Pressure                                                                                    
                                                                                                                                       
-   ## Session Start: Sun Feb  1 16:41:39 IST 2026                                                                                                          
+   ## Session Start                                                                                                                   
+   Date: 2026-02-01                                                                                                                   
+   Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zeroed (22.88)                                          
                                                                                                                                       
-   Starting Phase 2: Evolutionary Pressure                                                                                            
+   ## Key Technical Decisions                                                                                                         
+                                                                                                                                      
+   1. **JAX Static Shapes**: Use fixed max_agents array with alive mask instead of dynamic population                                 
+   2. **Weight Inheritance**: Per-agent params with vmapped forward pass                                                              
+   3. **Reproduction**: Action 5 triggers reproduction if energy >= threshold                                                         
+   4. **Death**: Energy <= 0 sets alive = False, slot reusable                                                                        
+                                                                                                                                      
+   ---                                                                                                                                
+                                                                                                                                      
+   ## Task Log                                                                                                                        
+                                                                                                                                      
+   (Tasks will be logged here as Ralph completes them)                                                                                
                                                                                                                                       
    ---
