@@ -71,17 +71,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-004: Implement FieldState dataclass [ ]
+### US-004: Implement FieldState dataclass [x]
 
 **Description:** As a developer, I need a data structure for the shared field so agents can read/write it.
 
 **Acceptance Criteria:**
-- [ ] Create `src/field/field.py`
-- [ ] `FieldState` is a `@flax.struct.dataclass`
-- [ ] Contains `values: jnp.ndarray` with shape `(H, W, C)`
-- [ ] `create_field(height, width, channels)` function returns initialized FieldState
-- [ ] Tests pass: `pytest tests/test_field.py::TestFieldState -v`
-- [ ] Typecheck passes
+- [x] Create `src/field/field.py`
+- [x] `FieldState` is a `@flax.struct.dataclass`
+- [x] Contains `values: jnp.ndarray` with shape `(H, W, C)`
+- [x] `create_field(height, width, channels)` function returns initialized FieldState
+- [x] Tests pass: `pytest tests/test_field.py::TestFieldState -v`
+- [x] Typecheck passes
 
 ---
 

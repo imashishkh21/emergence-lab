@@ -1,0 +1,65 @@
+# Ralph Progress Log
+
+## Completed Tasks
+
+### US-001: Create project structure [x]
+- Created src/ folder with submodules: environment, agents, training, field, analysis
+- All __init__.py files in place
+- `python -c "import src"` works
+
+### US-003: Create base config dataclasses [x]
+- Created src/configs.py with all config dataclasses
+- EnvConfig, FieldConfig, AgentConfig, TrainConfig, LogConfig, AnalysisConfig, Config
+- Config.from_yaml() and to_yaml() implemented
+- Typecheck passes
+
+### US-002: Set up dependencies and virtual environment [x]
+- Verified scripts/setup.sh creates venv, installs deps, verifies JAX
+- Fixed mypy errors in src/configs.py: renamed `field` import to `dataclass_field` to avoid name collision with Config.field attribute
+- Added types-PyYAML to dev dependencies in pyproject.toml
+- Fixed `to_dict` type annotation and AgentConfig construction for mypy compliance
+- All acceptance criteria pass: setup.sh runs clean, pip install -e . works, jax.devices() returns [CpuDevice(id=0)], mypy passes
+
+### US-004: Implement FieldState dataclass [x]
+- Created src/field/field.py with FieldState as @flax.struct.dataclass
+- FieldState contains `values: jnp.ndarray` with shape (H, W, C)
+- Implemented `create_field(height, width, channels)` factory function returning zero-initialized FieldState
+- All TestFieldState tests pass (2/2)
+- Typecheck passes
+
+## Current Task
+US-005: Implement field dynamics (diffusion + decay)
+
+## Decisions Made
+- Using JAX/Flax/Optax stack (not PyTorch)
+- Dataclasses + YAML for config (not Hydra)
+- W&B for experiment tracking
+- Field has 4 channels by default
+- 8 agents, 20x20 grid as starting point
+- Shared rewards (team-based)
+
+## Files Changed
+- src/__init__.py
+- src/configs.py (fixed mypy errors: renamed field import, fixed to_dict, fixed AgentConfig construction)
+- src/environment/__init__.py
+- src/agents/__init__.py
+- src/training/__init__.py
+- src/field/__init__.py
+- src/analysis/__init__.py
+- configs/default.yaml
+- scripts/setup.sh
+- pyproject.toml (added types-PyYAML to dev deps)
+- tests/*.py (test stubs)
+- src/field/field.py (FieldState dataclass and create_field)
+
+## Key Design Notes
+- The FIELD is the key innovation (shared medium between agents)
+- Field has its own dynamics (diffusion + decay)
+- Agents read/write to field locally
+- We test if field develops structure encoding collective knowledge
+- Ablation test will show if field matters
+
+## Notes for Future Tasks
+- US-004 through US-006: Field implementation is critical — this is our novel contribution
+- US-009: Environment step must update field each timestep
+- US-022-024: Analysis is how we prove emergence — metrics must be meaningful
