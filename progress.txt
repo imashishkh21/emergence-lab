@@ -293,8 +293,25 @@
 - TestAblation::test_ablation_interface passes, mypy clean (26 source files)
 - Files changed: src/analysis/ablation.py (new)
 
+### US-024: Implement emergence detection [x]
+- Created src/analysis/emergence.py with EmergenceTracker class, EmergenceEvent and MetricHistory dataclasses
+- EmergenceTracker tracks field_entropy and field_structure metrics over training via rolling window
+- Phase transition detection uses z-score method: flags when a new metric value exceeds z_threshold (default 3.0)
+  standard deviations from the rolling window mean (default window_size=20)
+- EmergenceEvent records step, metric_name, old_value, new_value, z_score for each detected transition
+- get_metrics() returns dict with 'emergence/entropy', 'emergence/structure', 'emergence/num_events' for W&B logging
+- get_summary() returns overall statistics and event list for end-of-training reporting
+- Integrated into training loop (src/training/train.py):
+  - EmergenceTracker initialized before training loop
+  - Updated at analysis.emergence_check_interval steps using first env's field state
+  - Detected events printed via tqdm.write() during training
+  - Emergence metrics logged to W&B alongside training metrics
+  - Summary printed at training completion if any events detected
+- All 7 analysis tests pass (including 2 new EmergenceTracker tests), mypy clean (27 source files)
+- Files changed: src/analysis/emergence.py (new), src/training/train.py (added emergence tracking integration)
+
 ## Current Task
-US-024: Implement emergence detection
+US-025: Create training launch script
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -330,6 +347,7 @@ US-024: Implement emergence detection
 - src/utils/video.py (record_episode, save_video)
 - src/analysis/field_metrics.py (field_entropy, field_structure, field_food_mi)
 - src/analysis/ablation.py (ablation_test, print_ablation_results, CLI main)
+- src/analysis/emergence.py (EmergenceTracker, EmergenceEvent, MetricHistory)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)

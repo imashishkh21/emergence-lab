@@ -17,6 +17,7 @@ from src.environment.vec_env import VecEnv
 from src.training.gae import compute_gae
 from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
+from src.analysis.emergence import EmergenceTracker
 from src.utils.logging import finish_wandb, init_wandb, log_metrics
 
 
@@ -309,6 +310,9 @@ def train(config: Config) -> RunnerState:
     runner_state = create_train_state(config, key)
     print("Training state initialized.")
 
+    # Initialize emergence tracker
+    emergence_tracker = EmergenceTracker(config)
+
     # JIT-compile train_step with config captured in closure
     print("JIT compiling train_step...")
 
@@ -364,7 +368,28 @@ def train(config: Config) -> RunnerState:
                 print(f"\nWARNING: NaN/Inf detected at step {total_env_steps}!")
                 break
 
+        # Emergence tracking at configured interval
+        if total_env_steps % config.analysis.emergence_check_interval < steps_per_iter:
+            # Use field from the first environment for metrics
+            first_env_field = jax.tree.map(lambda x: x[0], runner_state.env_state.field_state)
+            new_events = emergence_tracker.update(first_env_field, step=total_env_steps)
+            for event in new_events:
+                tqdm.write(f"EMERGENCE: {event}")
+
+            # Log emergence metrics to W&B
+            if config.log.wandb:
+                emergence_metrics = emergence_tracker.get_metrics()
+                log_metrics(emergence_metrics, step=total_env_steps)
+
     pbar.close()
+
+    # Print emergence summary
+    emergence_summary = emergence_tracker.get_summary()
+    if emergence_summary["total_events"] > 0:
+        print()
+        print("Emergence Events Detected:")
+        for event_str in emergence_summary["events"]:
+            print(f"  {event_str}")
 
     print()
     print("=" * 60)

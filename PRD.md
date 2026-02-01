@@ -390,16 +390,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-024: Implement emergence detection [ ]
+### US-024: Implement emergence detection [x]
 
 **Description:** As a developer, I need to detect when emergence happens.
 
 **Acceptance Criteria:**
-- [ ] Create `src/analysis/emergence.py`
-- [ ] `EmergenceTracker` class tracks field metrics over training
-- [ ] Detects phase transitions (sudden metric changes)
-- [ ] Integrates with training loop to log emergence events
-- [ ] Typecheck passes
+- [x] Create `src/analysis/emergence.py`
+- [x] `EmergenceTracker` class tracks field metrics over training
+- [x] Detects phase transitions (sudden metric changes)
+- [x] Integrates with training loop to log emergence events
+- [x] Typecheck passes
 
 ---
 
