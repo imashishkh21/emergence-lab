@@ -28,6 +28,23 @@ Quick test showed:
 - Field active and accumulating
 - Births/deaths working
 
+## Full Test Suite (verified overnight)
+
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| test_env.py | 28 | ✅ PASS |
+| test_field.py | 10 | ✅ PASS |
+| test_agent.py | 9 | ✅ PASS |
+| test_energy.py | 21 | ✅ PASS |
+| test_reproduction.py | 29 | ✅ PASS |
+| test_lineage.py | 33 | ✅ PASS |
+| test_obs.py | 20 | ✅ PASS |
+| test_training.py | 10 | ✅ PASS |
+| test_analysis.py | 7 | ✅ PASS |
+| **TOTAL** | **167+** | ✅ ALL PASS |
+
+(test_integration.py skipped - OOM on MacBook, needs Mac Mini)
+
 ## To Run on Mac Mini
 
 ```bash
@@ -44,7 +61,8 @@ python -m src.analysis.ablation --checkpoint checkpoints/params.pkl --num-episod
 ## Phase 2 Status: COMPLETE ✅
 
 All 17 tasks done by Ralph:
-- 174 tests passing
+- 174 tests passing (Mac Mini)
+- 167+ tests verified (MacBook Pro overnight)
 - Evolution working (birth/death/reproduction)
 - Population dynamics confirmed
 - Checkpoint saving works
