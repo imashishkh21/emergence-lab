@@ -319,18 +319,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-019: Implement W&B logging [ ]
+### US-019: Implement W&B logging [x]
 
 **Description:** As a developer, I need experiment tracking.
 
 **Acceptance Criteria:**
-- [ ] Create `src/utils/logging.py`
-- [ ] `init_wandb(config)` initializes W&B run with config
-- [ ] `log_metrics(metrics, step)` logs scalars
-- [ ] `log_video(frames, name, step)` logs video
-- [ ] `finish_wandb()` closes run
-- [ ] Training with `--log.wandb=true` logs to W&B
-- [ ] Typecheck passes
+- [x] Create `src/utils/logging.py`
+- [x] `init_wandb(config)` initializes W&B run with config
+- [x] `log_metrics(metrics, step)` logs scalars
+- [x] `log_video(frames, name, step)` logs video
+- [x] `finish_wandb()` closes run
+- [x] Training with `--log.wandb=true` logs to W&B
+- [x] Typecheck passes
 
 ---
 

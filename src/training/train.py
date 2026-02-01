@@ -17,6 +17,7 @@ from src.environment.vec_env import VecEnv
 from src.training.gae import compute_gae
 from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
+from src.utils.logging import finish_wandb, init_wandb, log_metrics
 
 
 def create_train_state(config: Config, key: jax.Array) -> RunnerState:
@@ -297,6 +298,12 @@ def train(config: Config) -> RunnerState:
     print(f"Log interval: {config.log.log_interval} steps")
     print()
 
+    # Initialize W&B if enabled
+    if config.log.wandb:
+        print("Initializing W&B...")
+        init_wandb(config)
+        print("W&B initialized.")
+
     # Initialize training state
     print("Initializing training state...")
     runner_state = create_train_state(config, key)
@@ -348,6 +355,10 @@ def train(config: Config) -> RunnerState:
                 steps=total_env_steps,
             )
 
+            # Log to W&B
+            if config.log.wandb:
+                log_metrics(metrics, step=total_env_steps)
+
             # Check for NaN/Inf
             if jnp.isnan(loss) or jnp.isinf(loss):
                 print(f"\nWARNING: NaN/Inf detected at step {total_env_steps}!")
@@ -363,6 +374,10 @@ def train(config: Config) -> RunnerState:
     for k, v in sorted(metrics.items()):
         print(f"  {k}: {float(v):.6f}")
     print("=" * 60)
+
+    # Finish W&B run
+    if config.log.wandb:
+        finish_wandb()
 
     final_state: RunnerState = runner_state
     return final_state

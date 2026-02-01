@@ -219,8 +219,24 @@
   - Reward is near 0 as expected early in training (small grid, few iterations)
 - No issues found. Training epic is solid and ready for visualization/analysis integration.
 
+### US-019: Implement W&B logging [x]
+- Created src/utils/logging.py with four public functions: init_wandb, log_metrics, log_video, finish_wandb
+- init_wandb(config): creates a W&B run under config.log.project, logs all hyperparameters as flat dict
+- log_metrics(metrics, step): converts JAX arrays to Python floats and logs to W&B
+- log_video(frames, name, step): stacks RGB frames into (T,C,H,W) array and logs as wandb.Video
+- finish_wandb(): closes the current W&B run
+- Integrated W&B logging into src/training/train.py:
+  - init_wandb called at training start when config.log.wandb=True
+  - log_metrics called at each log_interval
+  - finish_wandb called at training end
+- Used lazy `import wandb` inside each function to avoid import overhead when wandb disabled
+- Used dataclasses.asdict(config) for mypy-clean config flattening
+- Training with --log.no-wandb runs without error (10k steps test)
+- All 18 training+agent tests pass, mypy clean (22 source files)
+- Files changed: src/utils/logging.py (new), src/training/train.py (added W&B integration)
+
 ## Current Task
-US-019: Implement W&B logging
+US-020: Implement environment rendering
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -251,7 +267,8 @@ US-019: Implement W&B logging
 - src/agents/network.py (ActorCritic module)
 - src/agents/policy.py (sample_actions, get_deterministic_actions)
 - src/training/rollout.py (RunnerState, collect_rollout)
-- src/training/train.py (create_train_state, train_step)
+- src/training/train.py (create_train_state, train_step, W&B integration)
+- src/utils/logging.py (init_wandb, log_metrics, log_video, finish_wandb)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
