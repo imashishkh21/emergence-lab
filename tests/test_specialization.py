@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from src.analysis.lineage import LineageTracker
 from src.configs import Config
 
 
@@ -1732,3 +1733,263 @@ class TestSpecializationTracker:
         assert len(tracker.history["weight_divergence"]) == 20
         assert len(tracker.steps) == 20
         assert tracker.steps == list(range(0, 20000, 1000))
+
+
+class TestLineageCorrelation:
+    """US-008: Lineage-strategy correlation tests."""
+
+    def _make_lineage_tracker(self) -> LineageTracker:
+        """Helper: create a LineageTracker with two lineages.
+
+        Lineage A (root=0): agents 0, 10, 11, 12
+        Lineage B (root=1): agents 1, 20, 21, 22
+        """
+        tracker = LineageTracker()
+        # Original agents (root ancestors)
+        tracker.register_birth(0, parent_id=-1, step=0)
+        tracker.register_birth(1, parent_id=-1, step=0)
+
+        # Lineage A children
+        tracker.register_birth(10, parent_id=0, step=100)
+        tracker.register_birth(11, parent_id=0, step=200)
+        tracker.register_birth(12, parent_id=10, step=300)  # grandchild
+
+        # Lineage B children
+        tracker.register_birth(20, parent_id=1, step=100)
+        tracker.register_birth(21, parent_id=1, step=200)
+        tracker.register_birth(22, parent_id=20, step=300)  # grandchild
+
+        return tracker
+
+    def test_returns_required_keys(self):
+        """correlate_lineage_strategy returns all expected keys."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        # All lineage A in cluster 0, all lineage B in cluster 1
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        labels = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert "lineage_cluster_map" in result
+        assert "lineage_homogeneity" in result
+        assert "specialist_lineages" in result
+        assert "mean_homogeneity" in result
+        assert "num_lineages" in result
+        assert "num_specialist_lineages" in result
+
+    def test_perfect_lineage_cluster_alignment(self):
+        """When each lineage maps to one cluster, homogeneity should be 1.0."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        labels = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        # Both lineages should have homogeneity 1.0
+        for hom in result["lineage_homogeneity"].values():
+            assert hom == pytest.approx(1.0)
+        assert result["mean_homogeneity"] == pytest.approx(1.0)
+
+    def test_mixed_lineage_lower_homogeneity(self):
+        """When lineage members are in different clusters, homogeneity < 1."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        # Lineage A: 2 in cluster 0, 2 in cluster 1 -> homogeneity = 0.5
+        labels = np.array([0, 0, 1, 1, 1, 1, 0, 0])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert result["lineage_homogeneity"][0] == pytest.approx(0.5)
+        assert result["lineage_homogeneity"][1] == pytest.approx(0.5)
+
+    def test_specialist_lineages_detected(self):
+        """Lineages with >= 70% in one cluster are specialist lineages."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        # Lineage A: 3/4 in cluster 0 -> 75% -> specialist
+        # Lineage B: 2/4 in cluster 1 -> 50% -> not specialist
+        labels = np.array([0, 0, 0, 1, 1, 1, 0, 0])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert result["num_specialist_lineages"] == 1
+        specialist_roots = [s[0] for s in result["specialist_lineages"]]
+        assert 0 in specialist_roots  # Lineage A is specialist
+        assert 1 not in specialist_roots
+
+    def test_specialist_lineage_dominant_cluster(self):
+        """Specialist lineage should report the dominant cluster."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        labels = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        # Find lineage A's entry
+        for root_id, dominant_cluster, hom in result["specialist_lineages"]:
+            if root_id == 0:
+                assert dominant_cluster == 0
+                assert hom == pytest.approx(1.0)
+            elif root_id == 1:
+                assert dominant_cluster == 1
+                assert hom == pytest.approx(1.0)
+
+    def test_num_lineages_correct(self):
+        """num_lineages should match distinct root ancestors."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        labels = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert result["num_lineages"] == 2
+
+    def test_lineage_cluster_map_structure(self):
+        """lineage_cluster_map should map root -> {cluster: count}."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        labels = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        # Lineage A: all in cluster 0
+        assert result["lineage_cluster_map"][0] == {0: 4}
+        # Lineage B: all in cluster 1
+        assert result["lineage_cluster_map"][1] == {1: 4}
+
+    def test_single_agent_lineage_no_homogeneity(self):
+        """Lineages with only 1 member should not appear in homogeneity."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = LineageTracker()
+        tracker.register_birth(0, parent_id=-1, step=0)
+        tracker.register_birth(1, parent_id=-1, step=0)
+
+        # Each lineage has only 1 agent
+        agent_ids = np.array([0, 1])
+        labels = np.array([0, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert result["num_lineages"] == 2
+        assert len(result["lineage_homogeneity"]) == 0
+        assert result["mean_homogeneity"] == 0.0
+        assert result["num_specialist_lineages"] == 0
+
+    def test_grandchildren_traced_to_root(self):
+        """Grandchildren should be correctly traced to the root ancestor."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        # Only include grandchildren (12 from lineage A, 22 from lineage B)
+        # plus one direct child each
+        agent_ids = np.array([10, 12, 20, 22])
+        labels = np.array([0, 0, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        # agent 10 (parent=0), 12 (parent=10, grandparent=0) -> root 0
+        # agent 20 (parent=1), 22 (parent=20, grandparent=1) -> root 1
+        assert result["num_lineages"] == 2
+        assert result["lineage_cluster_map"][0] == {0: 2}
+        assert result["lineage_cluster_map"][1] == {1: 2}
+
+    def test_unknown_agent_treated_as_own_root(self):
+        """Agents not in the tracker should be treated as their own lineage."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = LineageTracker()
+        tracker.register_birth(0, parent_id=-1, step=0)
+        tracker.register_birth(10, parent_id=0, step=100)
+
+        # Agent 99 is not in the tracker
+        agent_ids = np.array([0, 10, 99])
+        labels = np.array([0, 0, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert result["num_lineages"] == 2  # root 0 and root 99
+        assert 99 in result["lineage_cluster_map"]
+
+    def test_homogeneity_range(self):
+        """All homogeneity values should be in [0, 1]."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+        # Mixed assignments
+        rng = np.random.RandomState(42)
+        labels = rng.randint(0, 3, size=8)
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        for hom in result["lineage_homogeneity"].values():
+            assert 0.0 <= hom <= 1.0
+        assert 0.0 <= result["mean_homogeneity"] <= 1.0
+
+    def test_accepts_list_agent_ids(self):
+        """agent_ids can be a plain Python list."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = self._make_lineage_tracker()
+        agent_ids = [0, 10, 11, 12, 1, 20, 21, 22]
+        labels = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert result["num_lineages"] == 2
+        assert result["mean_homogeneity"] == pytest.approx(1.0)
+
+    def test_specialist_lineages_sorted_by_homogeneity(self):
+        """Specialist lineages should be sorted by homogeneity descending."""
+        from src.analysis.specialization import correlate_lineage_strategy
+
+        tracker = LineageTracker()
+        # Lineage A: 3 agents
+        tracker.register_birth(0, parent_id=-1, step=0)
+        tracker.register_birth(10, parent_id=0, step=100)
+        tracker.register_birth(11, parent_id=0, step=200)
+        # Lineage B: 4 agents
+        tracker.register_birth(1, parent_id=-1, step=0)
+        tracker.register_birth(20, parent_id=1, step=100)
+        tracker.register_birth(21, parent_id=1, step=200)
+        tracker.register_birth(22, parent_id=1, step=300)
+
+        # Lineage A: 3/3 = 100% in cluster 0
+        # Lineage B: 3/4 = 75% in cluster 1
+        agent_ids = np.array([0, 10, 11, 1, 20, 21, 22])
+        labels = np.array([0, 0, 0, 1, 1, 1, 0])
+        result = correlate_lineage_strategy(tracker, labels, agent_ids)
+
+        assert len(result["specialist_lineages"]) == 2
+        # First should be highest homogeneity
+        assert result["specialist_lineages"][0][2] >= result["specialist_lineages"][1][2]
+
+    def test_pipeline_clustering_to_lineage(self):
+        """Full pipeline: cluster_agents -> correlate_lineage_strategy."""
+        from src.analysis.specialization import (
+            cluster_agents,
+            correlate_lineage_strategy,
+        )
+
+        tracker = self._make_lineage_tracker()
+        rng = np.random.RandomState(42)
+
+        # Create features — lineage A is cluster-like, lineage B is cluster-like
+        features_a = rng.randn(4, 7) * 0.3 + np.array([5, 5, 0, 0, 0, 0, 0])
+        features_b = rng.randn(4, 7) * 0.3 + np.array([0, 0, 5, 5, 0, 0, 0])
+        features = np.vstack([features_a, features_b])
+
+        clustering = cluster_agents(features, n_clusters=2)
+        agent_ids = np.array([0, 10, 11, 12, 1, 20, 21, 22])
+
+        result = correlate_lineage_strategy(
+            tracker, clustering["labels"], agent_ids
+        )
+
+        assert result["num_lineages"] == 2
+        assert 0.0 <= result["mean_homogeneity"] <= 1.0
+        # Well-separated features → lineages should be specialists
+        assert result["num_specialist_lineages"] >= 1

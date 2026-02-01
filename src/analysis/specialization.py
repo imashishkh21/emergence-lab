@@ -13,6 +13,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+from src.analysis.lineage import LineageTracker
 from src.configs import Config
 
 
@@ -695,6 +696,103 @@ def _classify_cluster_role(stats: dict[str, float]) -> str:
         return "reader"
     else:
         return "balanced"
+
+
+def correlate_lineage_strategy(
+    lineage_tracker: LineageTracker,
+    cluster_labels: np.ndarray,
+    agent_ids: np.ndarray | list[int],
+) -> dict[str, Any]:
+    """Analyze whether agents from the same lineage cluster together.
+
+    Checks if lineage (shared ancestry) predicts behavioral strategy
+    (cluster membership). Identifies "specialist lineages" where most
+    members adopt the same strategy.
+
+    A lineage is defined by the root ancestor (parent_id == -1). Each
+    agent is assigned to its root ancestor's lineage by traversing the
+    parent chain upward.
+
+    Args:
+        lineage_tracker: LineageTracker with registered births/deaths.
+        cluster_labels: Cluster label per agent, shape ``(num_agents,)``.
+            Must align with ``agent_ids`` (same ordering).
+        agent_ids: Agent IDs corresponding to each row in ``cluster_labels``.
+            Shape ``(num_agents,)`` or list of length ``num_agents``.
+
+    Returns:
+        Dict with keys:
+
+        - ``'lineage_cluster_map'``: Dict mapping ``root_ancestor_id`` to
+          dict of ``{cluster_id: count}`` showing how the lineage's
+          members are distributed across clusters.
+        - ``'lineage_homogeneity'``: Dict mapping ``root_ancestor_id`` to
+          a float in ``[0, 1]``. 1.0 means all members are in the same
+          cluster. Only includes lineages with 2+ members in the set.
+        - ``'specialist_lineages'``: List of ``(root_ancestor_id, dominant_cluster,
+          homogeneity)`` tuples for lineages where >= 70% of members share
+          a cluster and the lineage has 2+ members.
+        - ``'mean_homogeneity'``: Mean homogeneity across lineages with 2+
+          members (0.0 if no such lineages exist).
+        - ``'num_lineages'``: Total number of distinct lineages found.
+        - ``'num_specialist_lineages'``: Count of specialist lineages.
+    """
+    agent_ids = np.asarray(agent_ids, dtype=int)
+    cluster_labels = np.asarray(cluster_labels, dtype=int)
+
+    # Map each agent to its root ancestor
+    def _find_root(aid: int) -> int:
+        current = aid
+        while current in lineage_tracker.records:
+            parent = lineage_tracker.records[current].parent_id
+            if parent < 0:
+                return current
+            current = parent
+        # Agent not found in tracker — treat as its own root
+        return aid
+
+    # Build lineage -> cluster distribution
+    lineage_cluster_map: dict[int, dict[int, int]] = {}
+    for aid, cluster in zip(agent_ids, cluster_labels):
+        root = _find_root(int(aid))
+        if root not in lineage_cluster_map:
+            lineage_cluster_map[root] = {}
+        cid = int(cluster)
+        lineage_cluster_map[root][cid] = lineage_cluster_map[root].get(cid, 0) + 1
+
+    # Compute homogeneity per lineage (only for lineages with 2+ members)
+    lineage_homogeneity: dict[int, float] = {}
+    for root, cluster_dist in lineage_cluster_map.items():
+        total = sum(cluster_dist.values())
+        if total >= 2:
+            max_count = max(cluster_dist.values())
+            lineage_homogeneity[root] = max_count / total
+
+    # Identify specialist lineages (>= 70% in one cluster, 2+ members)
+    specialist_lineages: list[tuple[int, int, float]] = []
+    for root, homogeneity in lineage_homogeneity.items():
+        if homogeneity >= 0.7:
+            cluster_dist = lineage_cluster_map[root]
+            dominant_cluster = max(cluster_dist, key=cluster_dist.get)  # type: ignore[arg-type]
+            specialist_lineages.append((root, dominant_cluster, homogeneity))
+
+    # Sort specialists by homogeneity descending
+    specialist_lineages.sort(key=lambda x: x[2], reverse=True)
+
+    # Mean homogeneity
+    if lineage_homogeneity:
+        mean_homogeneity = float(np.mean(list(lineage_homogeneity.values())))
+    else:
+        mean_homogeneity = 0.0
+
+    return {
+        "lineage_cluster_map": lineage_cluster_map,
+        "lineage_homogeneity": lineage_homogeneity,
+        "specialist_lineages": specialist_lineages,
+        "mean_homogeneity": mean_homogeneity,
+        "num_lineages": len(lineage_cluster_map),
+        "num_specialist_lineages": len(specialist_lineages),
+    }
 
 
 @dataclass

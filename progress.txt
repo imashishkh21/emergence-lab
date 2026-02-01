@@ -141,3 +141,21 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 277/277 tests pass
 
 ---
+
+### US-008: Lineage-Strategy Correlation ✓
+**What:** Implemented `correlate_lineage_strategy()` in `src/analysis/specialization.py` to analyze whether agents from the same lineage (shared ancestry) cluster into the same behavioral strategies.
+**Decisions:**
+- A "lineage" is defined by the root ancestor (parent_id == -1) — each agent is traced upward through the parent chain to its root
+- Computes per-lineage "homogeneity": fraction of members in the most common cluster (1.0 = all in same cluster)
+- Only computes homogeneity for lineages with 2+ members in the agent set (single-member lineages are excluded from homogeneity stats)
+- "Specialist lineage" threshold: >= 70% of members in the same cluster (consistent with PRD species detection criteria)
+- Specialist lineages are sorted by homogeneity descending for easy inspection
+- Agents not found in the LineageTracker are treated as their own root (graceful handling of unknown agents)
+- Returns comprehensive dict: lineage_cluster_map, lineage_homogeneity, specialist_lineages, mean_homogeneity, num_lineages, num_specialist_lineages
+- Added `from src.analysis.lineage import LineageTracker` import to specialization.py
+**Files changed:**
+- `src/analysis/specialization.py` — added `correlate_lineage_strategy()` function and `LineageTracker` import
+- `tests/test_specialization.py` — added `TestLineageCorrelation` class with 14 tests covering: required keys, perfect alignment (homogeneity=1.0), mixed clusters (homogeneity<1), specialist detection, dominant cluster reporting, num_lineages count, cluster_map structure, single-agent lineage exclusion, grandchild root tracing, unknown agent handling, homogeneity range, list agent_ids, sorted specialists, full pipeline (cluster_agents → correlate_lineage_strategy)
+**Validation:** mypy clean (31 files), 291/291 tests pass
+
+---

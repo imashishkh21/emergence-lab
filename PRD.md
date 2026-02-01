@@ -115,7 +115,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Log to training metrics
 **Verification:** Training output shows specialization metrics
 
-### US-008: Lineage-Strategy Correlation [ ]
+### US-008: Lineage-Strategy Correlation [x]
 **Task:** Do dominant lineages have distinct strategies?
 **Files:** `src/analysis/specialization.py`
 **Changes:**
