@@ -1,5 +1,7 @@
 """Training step and loop for PPO with shared field dynamics."""
 
+import os
+import pickle
 import sys
 import time
 from typing import Any
@@ -399,6 +401,14 @@ def train(config: Config) -> RunnerState:
     for k, v in sorted(metrics.items()):
         print(f"  {k}: {float(v):.6f}")
     print("=" * 60)
+
+    # Save checkpoint
+    checkpoint_dir = config.log.checkpoint_dir
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_path = os.path.join(checkpoint_dir, "params.pkl")
+    with open(checkpoint_path, "wb") as f:
+        pickle.dump(runner_state.params, f)
+    print(f"Checkpoint saved to {checkpoint_path}")
 
     # Finish W&B run
     if config.log.wandb:
