@@ -87,8 +87,19 @@
 - All TestObservations tests pass (2/2), mypy clean
 - Files changed: src/environment/obs.py (new)
 
+### US-011: Vectorize environment with vmap [x]
+- Created src/environment/vec_env.py with VecEnv class
+- VecEnv.__init__ takes Config, creates vmapped versions of reset() and step()
+- reset(key) splits the key into num_envs sub-keys, vmaps over them
+- step(states, actions) vmaps over (state, actions) pairs, config is shared
+- Uses jax.vmap lambdas that close over self.config so config is not mapped
+- Batch shapes: (num_envs, num_agents, ...) for positions, rewards, etc.
+- All 3 TestVecEnv tests pass (reset, step, JIT-compatible)
+- Typecheck passes (mypy clean)
+- Files changed: src/environment/vec_env.py (new)
+
 ## Current Task
-US-011: Vectorize environment with vmap
+US-REVIEW-01: Review Environment Epic
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)

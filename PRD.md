@@ -172,17 +172,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-011: Vectorize environment with vmap [ ]
+### US-011: Vectorize environment with vmap [x]
 
 **Description:** As a developer, I need parallel environments for efficient training.
 
 **Acceptance Criteria:**
-- [ ] Create `src/environment/vec_env.py`
-- [ ] `VecEnv` class with `reset(key)` and `step(states, actions)`
-- [ ] Uses `jax.vmap` to parallelize across `num_envs`
-- [ ] Batch shapes: `(num_envs, num_agents, ...)`
-- [ ] Tests pass: `pytest tests/test_env.py::TestVecEnv -v`
-- [ ] Typecheck passes
+- [x] Create `src/environment/vec_env.py`
+- [x] `VecEnv` class with `reset(key)` and `step(states, actions)`
+- [x] Uses `jax.vmap` to parallelize across `num_envs`
+- [x] Batch shapes: `(num_envs, num_agents, ...)`
+- [x] Tests pass: `pytest tests/test_env.py::TestVecEnv -v`
+- [x] Typecheck passes
 
 ---
 
