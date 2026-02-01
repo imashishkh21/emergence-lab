@@ -275,8 +275,26 @@
 - All 4 TestFieldMetrics tests pass, mypy clean (25 source files)
 - Files changed: src/analysis/field_metrics.py (new)
 
+### US-023: Implement ablation test [x]
+- Created src/analysis/ablation.py with ablation_test(), print_ablation_results(), and CLI main()
+- ablation_test(network, params, config, num_episodes, seed) runs episodes under 3 field conditions:
+  1. Normal: field operates as trained (diffusion + decay + agent writes)
+  2. Zeroed: field values replaced with zeros before each observation (agents see no field info)
+  3. Random: field values replaced with uniform random noise before each observation
+- Returns dict mapping condition name to AblationResult dataclass (mean_reward, std_reward, episode_rewards)
+- _run_episode() runs a single episode with deterministic policy, applying field ablation before get_observations()
+- _replace_field() constructs new EnvState with replaced field_state (mypy-compatible, no .replace())
+- CLI entry point: python -m src.analysis.ablation --checkpoint=path [--config=yaml] [--num-episodes=20] [--seed=0]
+  - Loads pickled params from checkpoint file
+  - Optionally loads Config from YAML (defaults otherwise)
+  - Creates ActorCritic network matching config, verifies params with dummy forward pass
+- print_ablation_results() shows table + gap analysis (normal vs zeroed, normal vs random)
+- End-to-end verification: random policy shows normal=17.3, zeroed=10.7, random=16.0 (field helps even untrained)
+- TestAblation::test_ablation_interface passes, mypy clean (26 source files)
+- Files changed: src/analysis/ablation.py (new)
+
 ## Current Task
-US-023: Implement ablation test
+US-024: Implement emergence detection
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -311,6 +329,7 @@ US-023: Implement ablation test
 - src/utils/logging.py (init_wandb, log_metrics, log_video, finish_wandb)
 - src/utils/video.py (record_episode, save_video)
 - src/analysis/field_metrics.py (field_entropy, field_structure, field_food_mi)
+- src/analysis/ablation.py (ablation_test, print_ablation_results, CLI main)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)

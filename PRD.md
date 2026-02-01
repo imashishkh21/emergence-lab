@@ -376,17 +376,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-023: Implement ablation test [ ]
+### US-023: Implement ablation test [x]
 
 **Description:** As a developer, I need to test if the field matters.
 
 **Acceptance Criteria:**
-- [ ] Create `src/analysis/ablation.py`
-- [ ] `ablation_test(network, params, env, config, num_episodes=20)`
-- [ ] Tests 3 conditions: normal field, zeroed field, random field
-- [ ] Returns mean rewards per condition with std
-- [ ] `python -m src.analysis.ablation --checkpoint=path` works
-- [ ] Typecheck passes
+- [x] Create `src/analysis/ablation.py`
+- [x] `ablation_test(network, params, env, config, num_episodes=20)`
+- [x] Tests 3 conditions: normal field, zeroed field, random field
+- [x] Returns mean rewards per condition with std
+- [x] `python -m src.analysis.ablation --checkpoint=path` works
+- [x] Typecheck passes
 
 ---
 
