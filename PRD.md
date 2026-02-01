@@ -362,17 +362,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-022: Implement field analysis metrics [ ]
+### US-022: Implement field analysis metrics [x]
 
 **Description:** As a developer, I need to measure field properties.
 
 **Acceptance Criteria:**
-- [ ] Create `src/analysis/field_metrics.py`
-- [ ] `field_entropy(field)` computes spatial entropy
-- [ ] `field_structure(field)` measures autocorrelation (structure > random)
-- [ ] `field_food_mi(field, food_positions)` estimates mutual information
-- [ ] Tests pass: `pytest tests/test_analysis.py -v`
-- [ ] Typecheck passes
+- [x] Create `src/analysis/field_metrics.py`
+- [x] `field_entropy(field)` computes spatial entropy
+- [x] `field_structure(field)` measures autocorrelation (structure > random)
+- [x] `field_food_mi(field, food_positions)` estimates mutual information
+- [x] Tests pass: `pytest tests/test_analysis.py -v`
+- [x] Typecheck passes
 
 ---
 

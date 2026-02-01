@@ -262,8 +262,21 @@
 - Mypy clean (24 source files, no issues)
 - Files changed: src/utils/video.py (new)
 
+### US-022: Implement field analysis metrics [x]
+- Created src/analysis/field_metrics.py with three public functions
+- field_entropy(field): computes spatial entropy by treating absolute field values as a probability distribution
+  over spatial locations per channel, then averaging entropy across channels. High entropy = uniform, low = concentrated.
+- field_structure(field): measures spatial autocorrelation via Pearson correlation between each cell and the mean
+  of its 4 cardinal neighbors (using jnp.roll). Averaged across channels, clamped to [0, 1]. Smooth fields > random.
+- field_food_mi(field, food_positions): estimates mutual information between discretized field values and a binary
+  food presence indicator. Uses 10-bin discretization, computes MI = H(field) + H(food) - H(joint). Non-negative.
+- All functions JIT-compatible (field_entropy and field_structure directly; field_food_mi uses Python loops over
+  fixed bin count which unrolls at trace time)
+- All 4 TestFieldMetrics tests pass, mypy clean (25 source files)
+- Files changed: src/analysis/field_metrics.py (new)
+
 ## Current Task
-US-022: Implement field analysis metrics
+US-023: Implement ablation test
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -297,6 +310,7 @@ US-022: Implement field analysis metrics
 - src/training/train.py (create_train_state, train_step, W&B integration)
 - src/utils/logging.py (init_wandb, log_metrics, log_video, finish_wandb)
 - src/utils/video.py (record_episode, save_video)
+- src/analysis/field_metrics.py (field_entropy, field_structure, field_food_mi)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
