@@ -403,17 +403,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-025: Create training launch script [ ]
+### US-025: Create training launch script [x]
 
 **Description:** As a developer, I need easy training launch.
 
 **Acceptance Criteria:**
-- [ ] Create `scripts/train.sh`
-- [ ] Activates venv
-- [ ] Sets JAX flags for performance
-- [ ] Runs training with passed arguments
-- [ ] `./scripts/train.sh --train.total_steps=100000` works
-- [ ] Typecheck passes
+- [x] Create `scripts/train.sh`
+- [x] Activates venv
+- [x] Sets JAX flags for performance
+- [x] Runs training with passed arguments
+- [x] `./scripts/train.sh --train.total_steps=100000` works
+- [x] Typecheck passes
 
 ---
 

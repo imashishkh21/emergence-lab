@@ -310,8 +310,18 @@
 - All 7 analysis tests pass (including 2 new EmergenceTracker tests), mypy clean (27 source files)
 - Files changed: src/analysis/emergence.py (new), src/training/train.py (added emergence tracking integration)
 
+### US-025: Create training launch script [x]
+- Created scripts/train.sh as a training launch wrapper
+- Script activates .venv, sets JAX performance flags (XLA_FLAGS, JAX_PLATFORM_NAME, XLA_PYTHON_CLIENT_PREALLOCATE)
+- Passes all CLI arguments through to `python -m src.training.train` (tyro CLI)
+- Detects project directory relative to script location (works from any CWD)
+- Fails with clear error message if .venv not found (directs user to run setup.sh)
+- Verified: `./scripts/train.sh --train.total-steps=10000` runs and completes successfully
+- Mypy clean (27 source files, no issues)
+- Files changed: scripts/train.sh (new)
+
 ## Current Task
-US-025: Create training launch script
+US-026: Update README with quick start
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
