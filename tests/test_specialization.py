@@ -936,3 +936,275 @@ class TestTrajectoryRecording:
         max_agents = config.evolution.max_agents
         assert np.all(traj["alive_mask"][0, :num_agents])  # first agents alive
         assert not np.any(traj["alive_mask"][0, num_agents:])  # rest dead
+
+
+class TestSpecializationScore:
+    """US-005: Specialization score tests."""
+
+    def test_returns_required_keys(self):
+        """specialization_score returns all expected keys."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(0)
+        features = rng.randn(10, 7)
+        result = specialization_score(features)
+
+        assert "score" in result
+        assert "silhouette_component" in result
+        assert "divergence_component" in result
+        assert "variance_component" in result
+        assert "optimal_k" in result
+
+    def test_score_range_zero_to_one(self):
+        """Score should be in [0, 1]."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(1)
+        features = rng.randn(20, 7)
+        result = specialization_score(features)
+
+        assert 0.0 <= result["score"] <= 1.0
+
+    def test_identical_agents_low_score(self):
+        """Identical agents should produce a low specialization score."""
+        from src.analysis.specialization import specialization_score
+
+        features = np.ones((10, 7))
+        result = specialization_score(features)
+
+        # All identical → silhouette=0, variance=0
+        assert result["score"] == pytest.approx(0.0, abs=0.01)
+        assert result["silhouette_component"] == pytest.approx(0.0, abs=0.01)
+        assert result["variance_component"] == pytest.approx(0.0, abs=0.01)
+
+    def test_well_separated_clusters_high_score(self):
+        """Well-separated clusters should produce a high specialization score."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(2)
+        c1 = rng.randn(20, 7) * 0.3 + np.array([10, 10, 0, 0, 0, 0, 0])
+        c2 = rng.randn(20, 7) * 0.3 + np.array([0, 0, 10, 10, 0, 0, 0])
+        c3 = rng.randn(20, 7) * 0.3 + np.array([0, 0, 0, 0, 10, 10, 0])
+        features = np.vstack([c1, c2, c3])
+
+        result = specialization_score(features)
+
+        assert result["score"] > 0.6
+        assert result["optimal_k"] == 3
+
+    def test_single_agent_zero_score(self):
+        """Single agent should have score 0."""
+        from src.analysis.specialization import specialization_score
+
+        features = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]])
+        result = specialization_score(features)
+
+        assert result["score"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_with_agent_params(self):
+        """Score should include weight divergence component when params provided."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(3)
+        features = rng.randn(4, 7)
+
+        # Create per-agent params with different weights
+        keys = jax.random.split(jax.random.PRNGKey(0), 4)
+        kernels = jnp.stack([jax.random.normal(k, (32, 16)) for k in keys])
+        params = {"layer": {"kernel": kernels}}
+
+        result = specialization_score(features, agent_params=params)
+
+        assert 0.0 <= result["score"] <= 1.0
+        assert result["divergence_component"] > 0.0
+
+    def test_without_agent_params_divergence_zero(self):
+        """Without agent_params, divergence component should be 0."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(4)
+        features = rng.randn(10, 7)
+
+        result = specialization_score(features, agent_params=None)
+
+        assert result["divergence_component"] == 0.0
+
+    def test_components_in_range(self):
+        """All components should be in [0, 1]."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(5)
+        features = rng.randn(15, 7)
+        result = specialization_score(features)
+
+        assert 0.0 <= result["silhouette_component"] <= 1.0
+        assert 0.0 <= result["divergence_component"] <= 1.0
+        assert 0.0 <= result["variance_component"] <= 1.0
+
+    def test_higher_diversity_higher_score(self):
+        """More diverse population should score higher than uniform."""
+        from src.analysis.specialization import specialization_score
+
+        # Uniform population
+        uniform = np.ones((20, 7)) + np.random.RandomState(6).randn(20, 7) * 0.01
+        # Diverse population
+        rng = np.random.RandomState(7)
+        c1 = rng.randn(10, 7) * 0.3 + np.array([5, 5, 0, 0, 0, 0, 0])
+        c2 = rng.randn(10, 7) * 0.3 + np.array([0, 0, 5, 5, 0, 0, 0])
+        diverse = np.vstack([c1, c2])
+
+        score_uniform = specialization_score(uniform)["score"]
+        score_diverse = specialization_score(diverse)["score"]
+
+        assert score_diverse > score_uniform
+
+    def test_custom_weights(self):
+        """Custom weights should affect the final score."""
+        from src.analysis.specialization import specialization_score
+
+        rng = np.random.RandomState(8)
+        features = rng.randn(15, 7)
+
+        # All weight on silhouette
+        r1 = specialization_score(features, w_silhouette=1.0, w_divergence=0.0, w_variance=0.0)
+        # All weight on variance
+        r2 = specialization_score(features, w_silhouette=0.0, w_divergence=0.0, w_variance=1.0)
+
+        # Scores should differ (components are different)
+        assert r1["score"] != pytest.approx(r2["score"], abs=1e-6)
+
+    def test_pipeline_features_to_score(self):
+        """Full pipeline: extract_behavior_features -> specialization_score."""
+        from src.analysis.specialization import (
+            extract_behavior_features,
+            specialization_score,
+        )
+
+        rng = np.random.RandomState(9)
+        # Create agents with different behaviors
+        num_steps, num_agents = 100, 6
+        actions = rng.randint(0, 6, size=(num_steps, num_agents))
+        positions = rng.randint(0, 32, size=(num_steps, num_agents, 2))
+        traj = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rng.uniform(0, 1, size=(num_steps, num_agents)),
+            "alive_mask": np.ones((num_steps, num_agents), dtype=bool),
+            "energy": rng.uniform(10, 100, size=(num_steps, num_agents)),
+        }
+        features = extract_behavior_features(traj)
+        result = specialization_score(features)
+
+        assert 0.0 <= result["score"] <= 1.0
+        assert result["optimal_k"] >= 1
+
+
+class TestNoveltyScore:
+    """US-005: Novelty score (Lehman & Stanley) tests."""
+
+    def test_output_shape(self):
+        """novelty_score returns array of shape (num_agents,)."""
+        from src.analysis.specialization import novelty_score
+
+        agents = np.random.RandomState(0).randn(5, 7)
+        archive = np.random.RandomState(1).randn(20, 7)
+        scores = novelty_score(agents, archive, k=5)
+
+        assert scores.shape == (5,)
+
+    def test_all_scores_nonnegative(self):
+        """Novelty scores should be non-negative (distances)."""
+        from src.analysis.specialization import novelty_score
+
+        agents = np.random.RandomState(2).randn(10, 7)
+        archive = np.random.RandomState(3).randn(30, 7)
+        scores = novelty_score(agents, archive, k=5)
+
+        assert np.all(scores >= 0.0)
+
+    def test_identical_to_archive_low_novelty(self):
+        """Agent features identical to archive should have low novelty."""
+        from src.analysis.specialization import novelty_score
+
+        archive = np.random.RandomState(4).randn(20, 7)
+        # Use first 5 archive entries as agent features
+        agents = archive[:5].copy()
+        scores = novelty_score(agents, archive, k=5)
+
+        # These agents ARE in the archive, so at least one neighbor is distance 0
+        # Overall novelty should be low
+        assert np.all(scores < 5.0)
+
+    def test_novel_agent_high_novelty(self):
+        """Agent far from archive should have high novelty."""
+        from src.analysis.specialization import novelty_score
+
+        archive = np.zeros((20, 7))
+        # Agent very far away
+        agents = np.full((1, 7), 100.0)
+        scores = novelty_score(agents, archive, k=5)
+
+        assert scores[0] > 10.0
+
+    def test_empty_archive_zero_scores(self):
+        """Empty archive returns zero novelty scores."""
+        from src.analysis.specialization import novelty_score
+
+        agents = np.random.RandomState(5).randn(5, 7)
+        archive = np.empty((0, 7))
+        scores = novelty_score(agents, archive, k=5)
+
+        np.testing.assert_array_equal(scores, 0.0)
+
+    def test_k_larger_than_archive(self):
+        """When k > archive_size, uses all archive entries."""
+        from src.analysis.specialization import novelty_score
+
+        agents = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+        archive = np.array([[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+        # k=10 but only 2 archive entries
+        scores = novelty_score(agents, archive, k=10)
+
+        assert scores.shape == (1,)
+        assert scores[0] > 0.0
+
+    def test_different_k_values(self):
+        """Different k values should produce different scores."""
+        from src.analysis.specialization import novelty_score
+
+        rng = np.random.RandomState(6)
+        agents = rng.randn(5, 7)
+        # Archive with some close and some far points
+        archive_close = rng.randn(10, 7) * 0.1
+        archive_far = rng.randn(10, 7) * 10.0
+        archive = np.vstack([archive_close, archive_far])
+
+        scores_k1 = novelty_score(agents, archive, k=1)
+        scores_k10 = novelty_score(agents, archive, k=10)
+
+        # With k=1, only nearest neighbor; with k=10, includes farther points
+        # So k=10 scores should generally be >= k=1 scores
+        # (not strictly true for every agent, but on average)
+        assert not np.allclose(scores_k1, scores_k10)
+
+    def test_single_agent_single_archive(self):
+        """Minimal case: 1 agent, 1 archive entry."""
+        from src.analysis.specialization import novelty_score
+
+        agents = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+        archive = np.array([[3.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+        scores = novelty_score(agents, archive, k=5)
+
+        # Distance should be sqrt(9+16) = 5.0
+        assert scores[0] == pytest.approx(5.0, abs=1e-6)
+
+    def test_k_zero_returns_zeros(self):
+        """k=0 should return zero scores."""
+        from src.analysis.specialization import novelty_score
+
+        agents = np.random.RandomState(7).randn(5, 7)
+        archive = np.random.RandomState(8).randn(20, 7)
+        scores = novelty_score(agents, archive, k=0)
+
+        np.testing.assert_array_equal(scores, 0.0)

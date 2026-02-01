@@ -83,7 +83,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Return cluster labels, centroids, silhouette score
 **Verification:** `pytest tests/test_specialization.py::test_clustering -v` passes
 
-### US-005: Specialization Score [ ]
+### US-005: Specialization Score [x]
 **Task:** Single metric for "how specialized is this population?"
 **Files:** `src/analysis/specialization.py`
 **Changes:**

@@ -83,3 +83,22 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 227/227 tests pass
 
 ---
+
+### US-005: Specialization Score ✓
+**What:** Implemented `specialization_score()` and `novelty_score()` in `src/analysis/specialization.py`.
+**Decisions:**
+- `specialization_score()` combines three normalized [0,1] components with configurable weights:
+  - Silhouette component (weight 0.5): optimal clustering silhouette score clamped to [0,1] (negative values = poor clustering → 0)
+  - Weight divergence component (weight 0.25): mean cosine distance / 2.0 (cosine distance range is [0,2])
+  - Behavioral variance component (weight 0.25): tanh(mean variance of standardized features) — maps naturally to [0,1]
+- When `agent_params` is None, divergence weight is redistributed equally to silhouette and variance components
+- `novelty_score()` implements Lehman & Stanley (2011) k-NN distance metric
+  - Uses `scipy.spatial.distance.cdist` for efficient Euclidean distance computation
+  - Uses `np.argpartition` for O(n) k-nearest selection vs O(n log n) full sort
+  - Gracefully handles edge cases: empty archive, k=0, k > archive_size
+**Files changed:**
+- `src/analysis/specialization.py` — added `specialization_score`, `novelty_score`; added `scipy.spatial.distance.cdist` import
+- `tests/test_specialization.py` — added `TestSpecializationScore` (11 tests) and `TestNoveltyScore` (9 tests) covering: required keys, score range, identical/separated clusters, single agent, with/without params, component ranges, diversity ordering, custom weights, pipeline, output shape, non-negativity, identical-to-archive, novel agent, empty archive, k edge cases, single agent/archive, k=0
+**Validation:** mypy clean (31 files), 247/247 tests pass
+
+---

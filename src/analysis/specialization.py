@@ -7,6 +7,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import numpy as np
+from scipy.spatial.distance import cdist
 from scipy.stats import entropy as scipy_entropy
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
@@ -367,3 +368,152 @@ def find_optimal_clusters(
         "silhouette": best_sil,
         "silhouette_scores": silhouette_scores,
     }
+
+
+def specialization_score(
+    behavior_features: np.ndarray,
+    agent_params: Any | None = None,
+    alive_mask: np.ndarray | None = None,
+    w_silhouette: float = 0.5,
+    w_divergence: float = 0.25,
+    w_variance: float = 0.25,
+) -> dict[str, Any]:
+    """Compute a single 0-1 specialization score for a population.
+
+    Combines three signals:
+    - Silhouette score from optimal clustering (how well-separated are clusters)
+    - Weight divergence between agents (how different are their neural networks)
+    - Behavioral variance (how spread out are feature vectors)
+
+    All three components are normalized to [0, 1] and combined with weights.
+
+    Args:
+        behavior_features: Array of shape (num_agents, num_features).
+        agent_params: Optional per-agent parameters pytree for weight divergence.
+            If None, the weight divergence component is set to 0 and its weight
+            is redistributed equally to silhouette and variance.
+        alive_mask: Optional boolean mask for weight divergence computation.
+        w_silhouette: Weight for silhouette component (default 0.5).
+        w_divergence: Weight for weight divergence component (default 0.25).
+        w_variance: Weight for behavioral variance component (default 0.25).
+
+    Returns:
+        Dict with keys:
+            - 'score': Float in [0, 1]. 0 = all identical, 1 = fully specialized.
+            - 'silhouette_component': Silhouette score mapped to [0, 1].
+            - 'divergence_component': Mean weight divergence mapped to [0, 1].
+            - 'variance_component': Behavioral variance mapped to [0, 1].
+            - 'optimal_k': Number of clusters found.
+    """
+    features = np.asarray(behavior_features, dtype=np.float64)
+    n_samples = features.shape[0]
+
+    # --- Silhouette component ---
+    # find_optimal_clusters returns silhouette in [-1, 1].
+    # Negative values indicate mis-clustered data; clamp to [0, 1].
+    # 0 = no meaningful clusters, 1 = perfectly separated.
+    if n_samples < 2:
+        sil_component = 0.0
+        optimal_k = 1
+    else:
+        clustering = find_optimal_clusters(features)
+        sil_component = float(np.clip(clustering["silhouette"], 0.0, 1.0))
+        optimal_k = clustering["optimal_k"]
+
+    # --- Weight divergence component ---
+    if agent_params is not None:
+        div_result = compute_weight_divergence(agent_params, alive_mask)
+        # Cosine distance is in [0, 2]; normalize to [0, 1]
+        div_component = float(np.clip(div_result["mean_divergence"] / 2.0, 0.0, 1.0))
+    else:
+        div_component = 0.0
+
+    # --- Behavioral variance component ---
+    # Use mean feature-wise variance, normalized via sigmoid-like mapping
+    if n_samples < 2:
+        var_component = 0.0
+    else:
+        # Standardize features first so variance is comparable across features
+        scaler = StandardScaler()
+        scaled = scaler.fit_transform(features)
+        # Mean variance of standardized features is 1.0 for "normal" data
+        # Use tanh to map to [0, 1]: tanh(mean_var) gives ~0.76 for mean_var=1.0
+        mean_var = float(np.mean(np.var(scaled, axis=0)))
+        var_component = float(np.tanh(mean_var))
+
+    # --- Combine components ---
+    if agent_params is None:
+        # Redistribute divergence weight
+        effective_w_sil = w_silhouette + w_divergence / 2.0
+        effective_w_var = w_variance + w_divergence / 2.0
+        score = effective_w_sil * sil_component + effective_w_var * var_component
+    else:
+        score = (
+            w_silhouette * sil_component
+            + w_divergence * div_component
+            + w_variance * var_component
+        )
+
+    # Clamp to [0, 1]
+    score = float(np.clip(score, 0.0, 1.0))
+
+    return {
+        "score": score,
+        "silhouette_component": sil_component,
+        "divergence_component": div_component,
+        "variance_component": var_component,
+        "optimal_k": optimal_k,
+    }
+
+
+def novelty_score(
+    agent_features: np.ndarray,
+    archive: np.ndarray,
+    k: int = 5,
+) -> np.ndarray:
+    """Compute novelty scores using k-nearest neighbor distance in behavior space.
+
+    Implements the novelty metric from Lehman & Stanley (2011):
+        novelty(x) = (1/k) * sum(dist(x, neighbor_i) for i in range(k))
+
+    Args:
+        agent_features: Array of shape (num_agents, num_features) — current
+            population's behavioral feature vectors.
+        archive: Array of shape (archive_size, num_features) — previously
+            observed behavioral feature vectors. Can include the current
+            population as well.
+        k: Number of nearest neighbors to use (default 5).
+
+    Returns:
+        Array of shape (num_agents,) with novelty scores. Higher = more novel.
+        Returns zeros if archive has fewer than k entries.
+    """
+    agent_features = np.asarray(agent_features, dtype=np.float64)
+    archive = np.asarray(archive, dtype=np.float64)
+
+    n_agents = agent_features.shape[0]
+    n_archive = archive.shape[0]
+
+    if n_archive == 0 or k <= 0:
+        return np.zeros(n_agents, dtype=np.float64)
+
+    # Effective k: can't use more neighbors than available in archive
+    effective_k = min(k, n_archive)
+
+    # Compute pairwise Euclidean distances between agents and archive
+    distances = cdist(agent_features, archive, metric="euclidean")
+
+    # For each agent, find k-nearest neighbors in archive
+    # np.partition is O(n) vs O(n log n) for full sort
+    scores = np.zeros(n_agents, dtype=np.float64)
+    for i in range(n_agents):
+        d = distances[i]
+        # Partition to find k smallest distances
+        if effective_k >= len(d):
+            knn_dists = d
+        else:
+            knn_indices = np.argpartition(d, effective_k)[:effective_k]
+            knn_dists = d[knn_indices]
+        scores[i] = float(np.mean(knn_dists))
+
+    return scores
