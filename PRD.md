@@ -18,6 +18,22 @@ With shared field + evolution, agents should differentiate into roles:
 3. Field usage patterns differ between clusters
 4. Specialization improves collective efficiency vs uniform population
 
+## Implementation Notes
+
+**Current codebase provides:**
+- Per-agent positions, energy, alive status (EnvState)
+- Births/deaths tracking (info dict)
+- Field read in observations (via read_local)
+- Field write happens uniformly for all agents (write_local in step)
+- Lineage tracking (lineage.py)
+- Emergence detection (emergence.py)
+
+**New functionality needed:**
+- Trajectory recording to capture per-agent action/position/energy over time
+- Behavioral feature extraction from trajectories
+- Clustering algorithms (use sklearn, added to deps)
+- Visualization (use matplotlib, already in deps)
+
 ---
 
 ## User Stories
