@@ -306,16 +306,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-REVIEW-02: Review Training Epic [ ]
+### US-REVIEW-02: Review Training Epic [x]
 
 **Description:** Review US-012 through US-018 as a cohesive system.
 
 **Acceptance Criteria:**
-- [ ] All training tests pass: `pytest tests/test_agent.py tests/test_training.py -v`
-- [ ] Training runs for 10k steps without NaN/Inf
-- [ ] Loss decreases over time (or reward increases)
-- [ ] If issues found: create fix tasks
-- [ ] Typecheck passes
+- [x] All training tests pass: `pytest tests/test_agent.py tests/test_training.py -v`
+- [x] Training runs for 10k steps without NaN/Inf
+- [x] Loss decreases over time (or reward increases)
+- [x] If issues found: create fix tasks
+- [x] Typecheck passes
 
 ---
 
