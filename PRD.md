@@ -47,7 +47,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Track divergence over training iterations
 **Verification:** `pytest tests/test_specialization.py::test_weight_divergence -v` passes
 
-### US-002: Behavioral Feature Extraction [ ]
+### US-002: Behavioral Feature Extraction [x]
 **Task:** Extract behavioral features from agent trajectories for clustering.
 **Files:** `src/analysis/specialization.py`
 **Changes:**

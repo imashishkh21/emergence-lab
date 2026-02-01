@@ -188,3 +188,220 @@ class TestWeightDivergence:
         # Should be 10*5 + 5*3 = 65 elements
         assert flat.shape == (65,)
         assert isinstance(flat, np.ndarray)
+
+
+class TestBehaviorFeatures:
+    """US-002: Behavioral feature extraction tests."""
+
+    def _make_trajectory(
+        self,
+        num_steps: int = 50,
+        num_agents: int = 4,
+        actions: np.ndarray | None = None,
+        positions: np.ndarray | None = None,
+        rewards: np.ndarray | None = None,
+        alive_mask: np.ndarray | None = None,
+        energy: np.ndarray | None = None,
+        births: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Helper to create trajectory dicts with sensible defaults."""
+        rng = np.random.RandomState(42)
+        if actions is None:
+            actions = rng.randint(0, 6, size=(num_steps, num_agents))
+        if positions is None:
+            positions = rng.randint(0, 32, size=(num_steps, num_agents, 2))
+        if rewards is None:
+            rewards = rng.uniform(0, 1, size=(num_steps, num_agents))
+        if alive_mask is None:
+            alive_mask = np.ones((num_steps, num_agents), dtype=bool)
+        if energy is None:
+            energy = rng.uniform(1, 10, size=(num_steps, num_agents))
+        traj: dict[str, np.ndarray] = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rewards,
+            "alive_mask": alive_mask,
+            "energy": energy,
+        }
+        if births is not None:
+            traj["births"] = births
+        return traj
+
+    def test_output_shape(self):
+        """Features should have shape (num_agents, 7)."""
+        from src.analysis.specialization import extract_behavior_features
+
+        traj = self._make_trajectory(num_steps=50, num_agents=4)
+        features = extract_behavior_features(traj)
+        assert features.shape == (4, 7)
+
+    def test_all_features_finite(self):
+        """All features should be finite (no NaN/inf)."""
+        from src.analysis.specialization import extract_behavior_features
+
+        traj = self._make_trajectory(num_steps=100, num_agents=6)
+        features = extract_behavior_features(traj)
+        assert np.all(np.isfinite(features))
+
+    def test_dead_agent_zero_features(self):
+        """An agent that is never alive should have all-zero features."""
+        from src.analysis.specialization import extract_behavior_features
+
+        alive = np.ones((50, 3), dtype=bool)
+        alive[:, 2] = False  # Agent 2 never alive
+        traj = self._make_trajectory(num_steps=50, num_agents=3, alive_mask=alive)
+        features = extract_behavior_features(traj)
+        np.testing.assert_array_equal(features[2], 0.0)
+
+    def test_deterministic_agent_low_entropy(self):
+        """An agent that always takes the same action should have 0 entropy."""
+        from src.analysis.specialization import extract_behavior_features
+
+        actions = np.zeros((100, 2), dtype=int)  # Both agents always action 0
+        traj = self._make_trajectory(num_steps=100, num_agents=2, actions=actions)
+        features = extract_behavior_features(traj)
+        # Movement entropy should be 0 for deterministic agent
+        assert features[0, 0] == pytest.approx(0.0, abs=1e-10)
+        assert features[1, 0] == pytest.approx(0.0, abs=1e-10)
+
+    def test_uniform_actions_high_entropy(self):
+        """An agent with perfectly uniform actions should have entropy ~1."""
+        from src.analysis.specialization import extract_behavior_features
+
+        # Create actions that are exactly uniform (6 actions, 600 steps)
+        actions = np.tile(np.arange(6), 100).reshape(-1, 1)  # (600, 1)
+        traj = self._make_trajectory(num_steps=600, num_agents=1, actions=actions)
+        features = extract_behavior_features(traj)
+        # Entropy should be close to 1.0 (normalized)
+        assert features[0, 0] == pytest.approx(1.0, abs=0.01)
+
+    def test_food_collection_rate(self):
+        """Food collection rate should equal total reward / alive steps."""
+        from src.analysis.specialization import extract_behavior_features
+
+        rewards = np.zeros((100, 2))
+        rewards[:, 0] = 1.0  # Agent 0 gets reward every step
+        rewards[:, 1] = 0.0  # Agent 1 gets nothing
+        traj = self._make_trajectory(num_steps=100, num_agents=2, rewards=rewards)
+        features = extract_behavior_features(traj)
+        assert features[0, 1] == pytest.approx(1.0, abs=1e-6)
+        assert features[1, 1] == pytest.approx(0.0, abs=1e-6)
+
+    def test_stationary_agent_zero_distance(self):
+        """Agent staying in one place should have 0 distance per step."""
+        from src.analysis.specialization import extract_behavior_features
+
+        positions = np.zeros((50, 1, 2), dtype=int)
+        positions[:, 0] = [5, 5]  # Always at (5,5)
+        traj = self._make_trajectory(num_steps=50, num_agents=1, positions=positions)
+        features = extract_behavior_features(traj)
+        # Distance per step should be 0
+        assert features[0, 2] == pytest.approx(0.0, abs=1e-6)
+
+    def test_moving_agent_positive_distance(self):
+        """Agent that moves should have positive distance per step."""
+        from src.analysis.specialization import extract_behavior_features
+
+        # Agent alternates between (0,0) and (1,1)
+        positions = np.zeros((100, 1, 2), dtype=int)
+        for t in range(100):
+            positions[t, 0] = [t % 2, t % 2]
+        traj = self._make_trajectory(num_steps=100, num_agents=1, positions=positions)
+        features = extract_behavior_features(traj)
+        assert features[0, 2] > 0.0
+
+    def test_reproduction_rate_from_births(self):
+        """Reproduction rate uses births key when available."""
+        from src.analysis.specialization import extract_behavior_features
+
+        births = np.zeros((100, 2), dtype=bool)
+        births[10, 0] = True
+        births[50, 0] = True  # Agent 0 reproduces twice
+        # Agent 1 never reproduces
+        traj = self._make_trajectory(num_steps=100, num_agents=2, births=births)
+        features = extract_behavior_features(traj)
+        # 2 births / 100 steps * 100 = 2.0
+        assert features[0, 3] == pytest.approx(2.0, abs=1e-6)
+        assert features[1, 3] == pytest.approx(0.0, abs=1e-6)
+
+    def test_reproduction_rate_from_actions(self):
+        """Without births key, reproduction rate inferred from action 5."""
+        from src.analysis.specialization import extract_behavior_features
+
+        actions = np.zeros((100, 1), dtype=int)
+        actions[10, 0] = 5
+        actions[20, 0] = 5
+        actions[30, 0] = 5  # 3 reproduce actions
+        traj = self._make_trajectory(num_steps=100, num_agents=1, actions=actions)
+        features = extract_behavior_features(traj)
+        # 3 reproduce actions / 100 steps * 100 = 3.0
+        assert features[0, 3] == pytest.approx(3.0, abs=1e-6)
+
+    def test_mean_energy(self):
+        """Mean energy should be the average energy while alive."""
+        from src.analysis.specialization import extract_behavior_features
+
+        energy = np.full((100, 1), 5.0)
+        traj = self._make_trajectory(num_steps=100, num_agents=1, energy=energy)
+        features = extract_behavior_features(traj)
+        assert features[0, 4] == pytest.approx(5.0, abs=1e-6)
+
+    def test_exploration_ratio(self):
+        """Exploration ratio = unique cells / total steps."""
+        from src.analysis.specialization import extract_behavior_features
+
+        # Agent visits 10 unique cells over 100 steps
+        positions = np.zeros((100, 1, 2), dtype=int)
+        for t in range(100):
+            positions[t, 0] = [t % 10, 0]  # 10 unique rows
+        traj = self._make_trajectory(num_steps=100, num_agents=1, positions=positions)
+        features = extract_behavior_features(traj)
+        assert features[0, 5] == pytest.approx(10.0 / 100.0, abs=1e-6)
+
+    def test_stay_fraction(self):
+        """Stay fraction should count actions 0 and 5."""
+        from src.analysis.specialization import extract_behavior_features
+
+        actions = np.zeros((100, 1), dtype=int)
+        actions[:50, 0] = 0  # 50 stay actions
+        actions[50:60, 0] = 5  # 10 reproduce (also stays)
+        actions[60:, 0] = 1  # 40 up actions
+        traj = self._make_trajectory(num_steps=100, num_agents=1, actions=actions)
+        features = extract_behavior_features(traj)
+        # 60 stay-type actions / 100 = 0.6
+        assert features[0, 6] == pytest.approx(0.6, abs=1e-6)
+
+    def test_partial_alive_mask(self):
+        """Features should only consider steps where agent is alive."""
+        from src.analysis.specialization import extract_behavior_features
+
+        alive = np.zeros((100, 1), dtype=bool)
+        alive[:50, 0] = True  # Alive only first 50 steps
+        energy = np.full((100, 1), 10.0)
+        energy[50:, 0] = 0.0  # Dead = 0 energy
+        traj = self._make_trajectory(
+            num_steps=100, num_agents=1, alive_mask=alive, energy=energy
+        )
+        features = extract_behavior_features(traj)
+        # Mean energy should be 10.0 (only alive steps counted)
+        assert features[0, 4] == pytest.approx(10.0, abs=1e-6)
+
+    def test_different_agents_different_features(self):
+        """Agents with different behaviors should have different feature vectors."""
+        from src.analysis.specialization import extract_behavior_features
+
+        actions = np.zeros((200, 2), dtype=int)
+        actions[:, 0] = 0  # Agent 0: always stay
+        actions[:, 1] = np.tile([1, 2, 3, 4], 50)  # Agent 1: always moving
+
+        positions = np.zeros((200, 2, 2), dtype=int)
+        positions[:, 0] = [5, 5]  # Agent 0: stationary
+        for t in range(200):
+            positions[t, 1] = [t % 32, (t * 2) % 32]  # Agent 1: moving
+
+        traj = self._make_trajectory(
+            num_steps=200, num_agents=2, actions=actions, positions=positions
+        )
+        features = extract_behavior_features(traj)
+        # Features should differ
+        assert not np.allclose(features[0], features[1])

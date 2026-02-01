@@ -3,8 +3,6 @@
 ## Session Start
 Date: 2026-02-02
 Previous Phases:
-- Phase 1 COMPLETE: Field carries info (Normal 63 >> Zeroed 23)
-- Phase 2 COMPLETE: Evolution works (pop=32, births≈deaths, 174 tests pass)
 
 ## Phase 3 Goal
 Detect when agents evolve into different "species" with distinct strategies.
@@ -29,5 +27,23 @@ Prove that field enables DIVERSITY, not just higher reward.
 - `src/analysis/specialization.py` (new) — `flatten_agent_params`, `compute_weight_divergence`
 - `tests/test_specialization.py` (new) — 10 tests covering identical/different agents, symmetry, alive mask, edge cases, multi-leaf params
 **Validation:** mypy clean, 184/184 tests pass
+
+---
+
+### US-002: Behavioral Feature Extraction ✓
+**What:** Implemented `extract_behavior_features(trajectory)` in `src/analysis/specialization.py` that extracts 7 behavioral features per agent from trajectory data.
+**Decisions:**
+- Trajectory input is a simple dict of numpy arrays (actions, positions, rewards, alive_mask, energy, optional births/field_values) — keeps it generic and decoupled from US-003's TrajectoryRecorder
+- 7 features per agent: movement_entropy, food_collection_rate, distance_per_step, reproduction_rate, mean_energy, exploration_ratio, action_stay_fraction
+- Movement entropy normalized to [0,1] using scipy.stats.entropy / log(num_actions)
+- Reproduction rate: uses explicit 'births' key if available, otherwise infers from action 5 count
+- Dead agents (never alive in trajectory) get all-zero feature vectors
+- Only alive steps are used for all metrics (via alive_mask filtering)
+- Stay fraction counts both action 0 (stay) and action 5 (reproduce) since both keep agent stationary
+- Added helper functions `_movement_entropy()`, `_distance_traveled()`, `_exploration_ratio()` for modularity
+**Files changed:**
+- `src/analysis/specialization.py` — added `extract_behavior_features`, `_movement_entropy`, `_distance_traveled`, `_exploration_ratio`; added `scipy.stats.entropy` import
+- `tests/test_specialization.py` — added `TestBehaviorFeatures` class with 15 tests covering shape, finiteness, dead agents, deterministic/uniform entropy, food rate, distance, reproduction from births/actions, energy, exploration, stay fraction, partial alive, different agents
+**Validation:** mypy clean, 199/199 tests pass
 
 ---
