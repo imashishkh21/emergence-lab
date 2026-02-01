@@ -85,18 +85,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-005: Implement field dynamics (diffusion + decay) [ ]
+### US-005: Implement field dynamics (diffusion + decay) [x]
 
 **Description:** As a developer, I need field physics so the field evolves over time.
 
 **Acceptance Criteria:**
-- [ ] Create `src/field/dynamics.py`
-- [ ] `diffuse(field, rate)` applies 3x3 Gaussian blur
-- [ ] `decay(field, rate)` multiplies values by `(1 - rate)`
-- [ ] `step_field(field, diffusion_rate, decay_rate)` applies both
-- [ ] All functions are JIT-compatible (no Python control flow)
-- [ ] Tests pass: `pytest tests/test_field.py::TestFieldDynamics -v`
-- [ ] Typecheck passes
+- [x] Create `src/field/dynamics.py`
+- [x] `diffuse(field, rate)` applies 3x3 Gaussian blur
+- [x] `decay(field, rate)` multiplies values by `(1 - rate)`
+- [x] `step_field(field, diffusion_rate, decay_rate)` applies both
+- [x] All functions are JIT-compatible (no Python control flow)
+- [x] Tests pass: `pytest tests/test_field.py::TestFieldDynamics -v`
+- [x] Typecheck passes
 
 ---
 

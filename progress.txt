@@ -27,8 +27,18 @@
 - All TestFieldState tests pass (2/2)
 - Typecheck passes
 
+### US-005: Implement field dynamics (diffusion + decay) [x]
+- Created src/field/dynamics.py with three functions: diffuse(), decay(), step_field()
+- diffuse() uses 3x3 Gaussian kernel (1,2,1/2,4,2/1,2,1 normalized to sum=1), edge-padded, blended by rate
+- decay() multiplies field values by (1 - rate)
+- step_field() chains diffuse then decay
+- All functions JIT-compatible (static loop over 3x3 kernel unrolled at trace time)
+- Used FieldState constructor instead of .replace() to satisfy mypy
+- All 5 TestFieldDynamics tests pass
+- Typecheck passes
+
 ## Current Task
-US-005: Implement field dynamics (diffusion + decay)
+US-006: Implement field read/write operations
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -51,6 +61,7 @@ US-005: Implement field dynamics (diffusion + decay)
 - pyproject.toml (added types-PyYAML to dev deps)
 - tests/*.py (test stubs)
 - src/field/field.py (FieldState dataclass and create_field)
+- src/field/dynamics.py (diffuse, decay, step_field)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
