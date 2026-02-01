@@ -127,18 +127,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-008: Implement environment reset [ ]
+### US-008: Implement environment reset [x]
 
 **Description:** As a developer, I need to initialize fresh episodes.
 
 **Acceptance Criteria:**
-- [ ] Create `src/environment/env.py`
-- [ ] `reset(key, config) -> EnvState` returns fresh state
-- [ ] Agent positions are random, non-overlapping
-- [ ] Food positions are random
-- [ ] Field is initialized fresh
-- [ ] Tests pass: `pytest tests/test_env.py::TestEnvReset -v`
-- [ ] Typecheck passes
+- [x] Create `src/environment/env.py`
+- [x] `reset(key, config) -> EnvState` returns fresh state
+- [x] Agent positions are random, non-overlapping
+- [x] Food positions are random
+- [x] Field is initialized fresh
+- [x] Tests pass: `pytest tests/test_env.py::TestEnvReset -v`
+- [x] Typecheck passes
 
 ---
 

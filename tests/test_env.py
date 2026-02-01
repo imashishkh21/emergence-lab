@@ -69,10 +69,10 @@ class TestEnvReset:
         """Test that agents don't spawn on same position."""
         from src.environment.env import reset
         from src.configs import Config
-        
+
         config = Config()
         config.env.num_agents = 4
-        
+
         for seed in range(10):
             state = reset(jax.random.PRNGKey(seed), config)
             # Check all positions are unique
@@ -80,6 +80,36 @@ class TestEnvReset:
             for i in range(config.env.num_agents):
                 for j in range(i + 1, config.env.num_agents):
                     assert not jnp.allclose(positions[i], positions[j])
+
+    def test_reset_field_initialized_fresh(self):
+        """Test that the field is initialized to zeros on reset."""
+        from src.environment.env import reset
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        # Field should be all zeros
+        assert jnp.allclose(state.field_state.values, 0.0)
+        # Field shape should match grid and channel config
+        assert state.field_state.values.shape == (
+            config.env.grid_size, config.env.grid_size, config.field.num_channels
+        )
+
+    def test_reset_food_not_collected(self):
+        """Test that no food is collected on reset."""
+        from src.environment.env import reset
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        # No food should be collected initially
+        assert not jnp.any(state.food_collected)
 
 
 class TestEnvStep:

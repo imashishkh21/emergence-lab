@@ -53,8 +53,17 @@
 - All TestEnvState tests pass (1/1)
 - Typecheck passes
 
+### US-008: Implement environment reset [x]
+- Created src/environment/env.py with `reset(key, config) -> EnvState`
+- Used `jax.random.permutation` over flattened grid indices to guarantee non-overlapping agent positions
+- Food positions are random via `jax.random.randint` (may overlap each other, which is fine)
+- Field initialized to zeros via `create_field()`
+- Added 2 extra tests: `test_reset_field_initialized_fresh` and `test_reset_food_not_collected`
+- All 5 TestEnvReset tests pass, typecheck passes
+- Files changed: src/environment/env.py (new), tests/test_env.py (added tests)
+
 ## Current Task
-US-008: Implement environment reset
+US-009: Implement environment step
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
