@@ -1,0 +1,56 @@
+# Emergence Lab - Default Configuration
+# Phase 1: Digital Petri Dish
+
+# Environment settings
+env:
+  grid_size: 20
+  num_agents: 8
+  num_food: 10
+  max_steps: 500
+  observation_radius: 5
+
+# Field settings (the shared medium)
+field:
+  num_channels: 4
+  diffusion_rate: 0.1
+  decay_rate: 0.05
+  write_strength: 1.0
+
+# Agent network
+agent:
+  hidden_dims: [64, 64]
+  activation: "tanh"
+  layer_norm: true
+
+# Training hyperparameters
+train:
+  seed: 42
+  total_steps: 10_000_000
+  num_envs: 32
+  num_steps: 128  # steps per rollout
+  num_epochs: 4
+  minibatch_size: 256
+  
+  # PPO specific
+  learning_rate: 0.0003
+  lr_schedule: "linear"  # anneal to 0
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+
+# Logging
+log:
+  wandb: true
+  project: "emergence-lab"
+  log_interval: 1000
+  video_interval: 50000
+  save_interval: 100000
+  checkpoint_dir: "checkpoints"
+
+# Analysis
+analysis:
+  ablation_interval: 100000
+  emergence_check_interval: 10000
