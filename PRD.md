@@ -136,7 +136,7 @@
    - Handle per-agent params in forward pass                                                                                          
    **Verification:** `pytest tests/test_training.py -v` passes                                                                        
                                                                                                                                       
-   ### US-012: Implement Food Respawn with Scarcity [ ]                                                                               
+   ### US-012: Implement Food Respawn with Scarcity [x]                                                                               
    **Task:** Food respawns slowly to create competition.                                                                              
    **Files:** `src/environment/env.py`, `src/configs.py`                                                                              
    **Changes:**                                                                                                                       

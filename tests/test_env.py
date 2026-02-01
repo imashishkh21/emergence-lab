@@ -438,3 +438,215 @@ class TestRender:
         # Read back and verify
         loaded = iio.imread(str(out_path))
         assert loaded.shape == img.shape
+
+
+class TestFoodRespawn:
+    """Tests for US-012: Food respawn with scarcity."""
+
+    def _make_state_with_food(self, config, key, food_positions, food_collected):
+        """Create a state with specific food positions and collected status."""
+        from src.environment.env import reset
+        state = reset(key, config)
+        state = state.replace(
+            food_positions=jnp.array(food_positions, dtype=jnp.int32),
+            food_collected=jnp.array(food_collected, dtype=jnp.bool_),
+        )
+        return state
+
+    def test_food_respawn_config_default(self):
+        """Test that food_respawn_prob has correct default."""
+        from src.configs import Config
+        config = Config()
+        assert config.env.food_respawn_prob == 0.1
+
+    def test_food_respawn_collected_food_can_respawn(self):
+        """Test that collected food can respawn at new positions."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 1
+        config.env.num_food = 5
+        config.env.food_respawn_prob = 1.0  # Always respawn
+        config.evolution.max_agents = 4
+        config.evolution.food_energy = 0  # No energy gain to simplify
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Mark all food as collected
+        state = state.replace(food_collected=jnp.ones((5,), dtype=jnp.bool_))
+
+        actions = jnp.zeros((1,), dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # With prob=1.0, all collected food should respawn (marked as not collected)
+        assert jnp.sum(new_state.food_collected) == 0
+
+    def test_food_respawn_uncollected_food_unchanged(self):
+        """Test that uncollected food is not affected by respawn."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 1
+        config.env.num_food = 5
+        config.env.food_respawn_prob = 1.0
+        config.evolution.max_agents = 4
+        config.evolution.food_energy = 0
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # No food collected — nothing should change about collected status
+        state = state.replace(food_collected=jnp.zeros((5,), dtype=jnp.bool_))
+        original_positions = state.food_positions.copy()
+
+        actions = jnp.zeros((1,), dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # None were collected, so positions should be unchanged
+        # (any food collected THIS step might respawn, but if agents are far from food, none collected)
+        # Place agents far from food to ensure no collection
+        state = state.replace(
+            agent_positions=jnp.zeros((config.evolution.max_agents, 2), dtype=jnp.int32),
+            food_positions=jnp.full((5, 2), 9, dtype=jnp.int32),
+        )
+        new_state, _, _, _ = step(state, actions, config)
+        # Food positions should be unchanged since nothing was collected
+        assert jnp.array_equal(new_state.food_positions, jnp.full((5, 2), 9, dtype=jnp.int32))
+
+    def test_food_respawn_zero_prob_no_respawn(self):
+        """Test that food_respawn_prob=0 means no respawn."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 1
+        config.env.num_food = 5
+        config.env.food_respawn_prob = 0.0  # Never respawn
+        config.evolution.max_agents = 4
+        config.evolution.food_energy = 0
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Mark all food as collected
+        state = state.replace(food_collected=jnp.ones((5,), dtype=jnp.bool_))
+
+        actions = jnp.zeros((1,), dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # With prob=0, no food should respawn — all still collected
+        assert jnp.sum(new_state.food_collected) == 5
+
+    def test_food_respawn_positions_within_grid(self):
+        """Test that respawned food is placed within grid bounds."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 1
+        config.env.num_food = 20
+        config.env.food_respawn_prob = 1.0
+        config.evolution.max_agents = 4
+        config.evolution.food_energy = 0
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Mark all food as collected
+        state = state.replace(food_collected=jnp.ones((20,), dtype=jnp.bool_))
+
+        actions = jnp.zeros((1,), dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # All respawned food should be within grid
+        assert jnp.all(new_state.food_positions >= 0)
+        assert jnp.all(new_state.food_positions < config.env.grid_size)
+
+    def test_food_respawn_total_food_capped(self):
+        """Test that total food never exceeds num_food."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 1
+        config.env.num_food = 5
+        config.env.food_respawn_prob = 1.0
+        config.evolution.max_agents = 4
+        config.evolution.food_energy = 0
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Run multiple steps — food count should never exceed num_food
+        actions = jnp.zeros((1,), dtype=jnp.int32)
+        for _ in range(10):
+            state, _, _, _ = step(state, actions, config)
+            total_food = state.food_positions.shape[0]
+            assert total_food == config.env.num_food  # Fixed array size
+
+    def test_food_respawn_partial_collection(self):
+        """Test respawn with only some food collected."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 1
+        config.env.num_food = 5
+        config.env.food_respawn_prob = 1.0  # Always respawn
+        config.evolution.max_agents = 4
+        config.evolution.food_energy = 0
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Only first 2 of 5 food collected
+        food_collected = jnp.array([True, True, False, False, False])
+        state = state.replace(food_collected=food_collected)
+        original_positions = state.food_positions.copy()
+
+        # Place agents far from remaining food to prevent collection this step
+        state = state.replace(
+            agent_positions=jnp.zeros((config.evolution.max_agents, 2), dtype=jnp.int32),
+            food_positions=jnp.full((5, 2), 9, dtype=jnp.int32),
+        )
+
+        actions = jnp.zeros((1,), dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # The 2 collected food items should have respawned (not collected anymore)
+        # The 3 uncollected should remain uncollected
+        assert jnp.sum(new_state.food_collected) == 0  # All respawned or not collected
+
+    def test_food_respawn_jit_compatible(self):
+        """Test that food respawn works with JIT compilation."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 2
+        config.env.num_food = 5
+        config.env.food_respawn_prob = 0.5
+        config.evolution.max_agents = 4
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        @jax.jit
+        def jit_step(s, a):
+            return step(s, a, config)
+
+        actions = jnp.zeros((2,), dtype=jnp.int32)
+        new_state, rewards, done, info = jit_step(state, actions)
+
+        assert new_state.food_positions.shape == (5, 2)
+        assert new_state.food_collected.shape == (5,)

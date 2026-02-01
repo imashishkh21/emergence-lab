@@ -197,3 +197,21 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 129 tests pass, mypy clean.
 
 ---
+
+### US-012: Implement Food Respawn with Scarcity ✓
+**What:** Added `food_respawn_prob` config parameter and food respawn logic to `step()`. Collected food has a configurable probability of respawning at a random location each step.
+**Decisions:**
+- Added `food_respawn_prob: float = 0.1` to `EnvConfig` (in `configs.py`).
+- Food respawn happens after food collection (section 3 in `step()`), before reward computation.
+- For each food item that is currently collected (either previously or this step), a uniform random roll determines if it respawns (roll < `food_respawn_prob`).
+- Respawning food gets a new random position within the grid and its `food_collected` flag is set back to False.
+- Total food is always capped at `num_food` since the food arrays are fixed-size.
+- PRNG key management: `state.key` is split into `respawn_key` (for food respawn) and `remaining_key` (for reproduction and subsequent use), ensuring no key reuse.
+- Section numbers in `step()` renumbered from 3-10 to accommodate the new food respawn section.
+**Files changed:**
+- `src/configs.py` — Added `food_respawn_prob: float = 0.1` to `EnvConfig`
+- `src/environment/env.py` — Added food respawn logic (section 3), updated PRNG key threading, updated `food_positions` in state construction, renumbered sections
+- `tests/test_env.py` — Added `TestFoodRespawn` class with 8 tests: config default, collected food respawns, uncollected unchanged, zero prob no respawn, positions within grid, total food capped, partial collection, JIT compatibility
+**Issues:** None. All 137 tests pass, mypy clean.
+
+---

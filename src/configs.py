@@ -13,6 +13,7 @@ class EnvConfig:
     num_food: int = 10
     max_steps: int = 500
     observation_radius: int = 5
+    food_respawn_prob: float = 0.1
 
 
 @dataclass

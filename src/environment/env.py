@@ -184,12 +184,31 @@ def step(
         state.agent_energy,
     )
 
-    # --- 3. Compute reward ---
+    # --- 3. Food respawn ---
+    # Collected food has food_respawn_prob chance to respawn at a random location
+    respawn_key, remaining_key = jax.random.split(state.key)
+    num_food = config.env.num_food
+    roll_key, pos_key = jax.random.split(respawn_key)
+    respawn_rolls = jax.random.uniform(roll_key, shape=(num_food,))
+    # Food respawns if: it was collected (either previously or this step) AND roll < prob
+    respawns = food_collected & (respawn_rolls < config.env.food_respawn_prob)
+    # Generate new random positions for respawning food
+    new_food_positions = jax.random.randint(
+        pos_key, shape=(num_food, 2), minval=0, maxval=grid_size
+    )
+    # Replace positions of respawning food; keep others unchanged
+    food_positions = jnp.where(
+        respawns[:, None], new_food_positions, state.food_positions
+    )
+    # Mark respawned food as not collected
+    food_collected = food_collected & ~respawns
+
+    # --- 4. Compute reward ---
     # Individual reward: each agent gets reward equal to energy gained
     # Full (max_agents,) shape — dead agents get 0 reward
     rewards = jnp.where(state.agent_alive, energy_gained, 0.0)
 
-    # --- 4. Update field ---
+    # --- 5. Update field ---
     # Step field dynamics (diffuse + decay)
     field_state = step_field(
         state.field_state,
@@ -206,7 +225,7 @@ def step(
     write_values = write_values * state.agent_alive[:, None]
     field_state = write_local(field_state, new_positions, write_values)
 
-    # --- 5. Energy drain ---
+    # --- 6. Energy drain ---
     # Subtract energy_per_step from alive agents (after food energy), clamp to 0
     energy_drain = jnp.where(
         state.agent_alive,
@@ -215,13 +234,13 @@ def step(
     )
     new_energy = energy_drain
 
-    # --- 6. Death from starvation ---
+    # --- 7. Death from starvation ---
     # Agents with energy <= 0 die (only check previously alive agents)
     starved = state.agent_alive & (new_energy <= 0)
     new_alive = state.agent_alive & ~starved
     death_count = jnp.sum(starved.astype(jnp.int32))
 
-    # --- 7. Reproduction ---
+    # --- 8. Reproduction ---
     # Action 5 = attempt reproduction
     # Conditions: agent alive, chose action 5, energy >= threshold, free slot exists
     reproduce_threshold = jnp.float32(config.evolution.reproduce_threshold)
@@ -283,7 +302,7 @@ def step(
 
             return (alive, energy, ids, parent_ids, positions, next_id, key, ag_params), eligible
 
-        repro_key, post_repro_key = jax.random.split(state.key)
+        repro_key, post_repro_key = jax.random.split(remaining_key)
 
         init_carry = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
                       new_positions, state.next_agent_id, repro_key, state.agent_params)
@@ -319,7 +338,7 @@ def step(
 
             return (alive, energy, ids, parent_ids, positions, next_id, key), eligible
 
-        repro_key, post_repro_key = jax.random.split(state.key)
+        repro_key, post_repro_key = jax.random.split(remaining_key)
 
         init_carry_np = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
                          new_positions, state.next_agent_id, repro_key)
@@ -331,16 +350,16 @@ def step(
     birth_count = jnp.sum(births_per_agent.astype(jnp.int32))
     new_key = post_repro_key
 
-    # --- 8. Advance step counter and check done ---
+    # --- 9. Advance step counter and check done ---
     new_step = state.step + 1
     done = new_step >= config.env.max_steps
 
-    # --- 9. Split PRNG key ---
+    # --- 10. Split PRNG key ---
     # (key already split during reproduction above)
 
     new_state = EnvState(
         agent_positions=new_positions,
-        food_positions=state.food_positions,
+        food_positions=food_positions,
         food_collected=food_collected,
         field_state=field_state,
         step=new_step,
