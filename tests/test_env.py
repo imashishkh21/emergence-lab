@@ -1,6 +1,7 @@
 """Tests for the environment module."""
 
 import pytest
+import numpy as np
 import jax
 import jax.numpy as jnp
 
@@ -276,5 +277,87 @@ class TestVecEnv:
         actions = jnp.zeros((4, config.env.num_agents), dtype=jnp.int32)
         
         new_states, rewards, dones, info = jit_step(states, actions)
-        
+
         assert new_states.step[0] == 1
+
+
+class TestRender:
+    """Tests for US-020: Environment rendering."""
+
+    def test_render_frame_shape_and_type(self):
+        """Test that render_frame returns a valid RGB image."""
+        from src.environment.env import reset, step
+        from src.environment.render import render_frame
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        img = render_frame(state, config)
+
+        # Must be uint8 RGB
+        assert img.dtype == np.uint8
+        assert img.ndim == 3
+        assert img.shape[2] == 3
+
+        # Must be at least 400x400
+        assert img.shape[0] >= 400
+        assert img.shape[1] >= 400
+
+        # Must be square (grid_size * pixel_size)
+        assert img.shape[0] == img.shape[1]
+
+    def test_render_frame_with_field(self):
+        """Test rendering after steps so field has values."""
+        from src.environment.env import reset, step
+        from src.environment.render import render_frame
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        # Step a few times to get field activity
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        for _ in range(5):
+            state, _, _, _ = step(state, actions, config)
+
+        img = render_frame(state, config)
+
+        # Should still be valid
+        assert img.dtype == np.uint8
+        assert img.shape[0] >= 400
+        assert img.shape[1] >= 400
+
+    def test_render_frame_save_png(self, tmp_path):
+        """Test that a rendered frame can be saved as PNG."""
+        import imageio.v3 as iio
+        from src.environment.env import reset, step
+        from src.environment.render import render_frame
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        # Take a few steps for visual interest
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        for _ in range(3):
+            state, _, _, _ = step(state, actions, config)
+
+        img = render_frame(state, config)
+
+        # Save as PNG
+        out_path = tmp_path / "test_frame.png"
+        iio.imwrite(str(out_path), img)
+
+        assert out_path.exists()
+        assert out_path.stat().st_size > 0
+
+        # Read back and verify
+        loaded = iio.imread(str(out_path))
+        assert loaded.shape == img.shape

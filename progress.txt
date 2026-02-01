@@ -235,8 +235,24 @@
 - All 18 training+agent tests pass, mypy clean (22 source files)
 - Files changed: src/utils/logging.py (new), src/training/train.py (added W&B integration)
 
+### US-020: Implement environment rendering [x]
+- Created src/environment/render.py with render_frame() function and _draw_circle() helper
+- render_frame(state, config, pixel_size=0) returns uint8 RGB numpy array
+- Visualization layers (drawn in order):
+  1. Field heatmap overlay: sums field across channels, normalizes, maps to blue-to-red colormap with alpha blending
+  2. Grid lines: light gray lines at cell boundaries
+  3. Food: green filled circles at uncollected food positions (collected food skipped)
+  4. Agents: colored filled circles using 16 distinct colors (cycles for >16 agents)
+- Auto-computes pixel_size to ensure >= 400x400 output (default 20x20 grid → 20px/cell → 400x400)
+- Added 3 tests to tests/test_env.py::TestRender:
+  - test_render_frame_shape_and_type: checks dtype, shape, minimum size
+  - test_render_frame_with_field: renders after 5 steps to verify field overlay works
+  - test_render_frame_save_png: saves to PNG via imageio, reads back and verifies
+- All 17 env tests pass, mypy clean (23 source files)
+- Files changed: src/environment/render.py (new), tests/test_env.py (added TestRender class)
+
 ## Current Task
-US-020: Implement environment rendering
+US-021: Implement episode video recording
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)

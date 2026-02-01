@@ -334,18 +334,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-020: Implement environment rendering [ ]
+### US-020: Implement environment rendering [x]
 
 **Description:** As a developer, I need to visualize the simulation.
 
 **Acceptance Criteria:**
-- [ ] Create `src/environment/render.py`
-- [ ] `render_frame(state, config) -> np.ndarray` returns RGB image
-- [ ] Shows: grid lines, agents as colored circles, food as green dots
-- [ ] Field shown as heatmap overlay (sum across channels)
-- [ ] Image is at least 400x400 pixels
-- [ ] Test: render a frame and save as PNG
-- [ ] Typecheck passes
+- [x] Create `src/environment/render.py`
+- [x] `render_frame(state, config) -> np.ndarray` returns RGB image
+- [x] Shows: grid lines, agents as colored circles, food as green dots
+- [x] Field shown as heatmap overlay (sum across channels)
+- [x] Image is at least 400x400 pixels
+- [x] Test: render a frame and save as PNG
+- [x] Typecheck passes
 
 ---
 
