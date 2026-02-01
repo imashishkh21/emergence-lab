@@ -44,7 +44,7 @@
    - Update `agent_positions` to shape `(max_agents, 2)` with padding                                                                 
    **Verification:** `pytest tests/test_env.py -v` passes (update tests as needed)                                                    
                                                                                                                                       
-   ### US-003: Update Environment Reset for Evolution [ ]                                                                             
+   ### US-003: Update Environment Reset for Evolution [x]                                                                             
    **Task:** Initialize evolution state on reset.                                                                                     
    **Files:** `src/environment/env.py`                                                                                                
    **Changes:**                                                                                                                       

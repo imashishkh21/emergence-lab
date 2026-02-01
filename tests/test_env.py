@@ -131,6 +131,64 @@ class TestEnvReset:
         # No food should be collected initially
         assert not jnp.any(state.food_collected)
 
+    def test_reset_evolution_energy_values(self):
+        """Test that agent energy is initialized correctly on reset."""
+        from src.environment.env import reset
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        # Alive agents get starting_energy
+        alive_energy = state.agent_energy[:config.env.num_agents]
+        assert jnp.all(alive_energy == config.evolution.starting_energy)
+
+        # Dead slots have 0 energy
+        dead_energy = state.agent_energy[config.env.num_agents:]
+        assert jnp.all(dead_energy == 0.0)
+
+    def test_reset_evolution_ids(self):
+        """Test that agent IDs and parent IDs are initialized correctly."""
+        from src.environment.env import reset
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+        num_agents = config.env.num_agents
+
+        # Alive agents have sequential IDs [0, 1, ..., num_agents-1]
+        alive_ids = state.agent_ids[:num_agents]
+        expected_ids = jnp.arange(num_agents, dtype=jnp.int32)
+        assert jnp.array_equal(alive_ids, expected_ids)
+
+        # Dead slots have ID -1
+        dead_ids = state.agent_ids[num_agents:]
+        assert jnp.all(dead_ids == -1)
+
+        # All parent IDs are -1 (no parents for original agents)
+        assert jnp.all(state.agent_parent_ids == -1)
+
+        # next_agent_id equals num_agents
+        assert state.next_agent_id == num_agents
+
+    def test_reset_dead_agent_positions(self):
+        """Test that dead agent slots have position (0, 0)."""
+        from src.environment.env import reset
+        from src.configs import Config
+
+        config = Config()
+        key = jax.random.PRNGKey(42)
+
+        state = reset(key, config)
+
+        # Dead slots should be at (0, 0)
+        dead_positions = state.agent_positions[config.env.num_agents:]
+        assert jnp.all(dead_positions == 0)
+
 
 class TestEnvStep:
     """Tests for US-009: Environment step."""

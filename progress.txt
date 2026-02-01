@@ -49,3 +49,14 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 56 tests pass, mypy clean.
 
 ---
+
+### US-003: Update Environment Reset for Evolution ✓
+**What:** Verified that `reset()` already correctly initializes all evolution state fields (done in US-002). Added value-level tests to ensure correctness beyond shape checks.
+**Decisions:**
+- The `reset()` implementation was already complete from US-002 — energy values, alive mask, agent IDs, parent IDs, next_agent_id, and dead slot positions were all initialized correctly.
+- Added 3 new tests to `TestEnvReset` to verify actual values: `test_reset_evolution_energy_values`, `test_reset_evolution_ids`, `test_reset_dead_agent_positions`.
+**Files changed:**
+- `tests/test_env.py` — Added 3 tests verifying evolution field values (energy, IDs, dead positions)
+**Issues:** None. All 59 tests pass, mypy clean.
+
+---
