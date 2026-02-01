@@ -3,10 +3,11 @@
 import pytest
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 
 class TestNetwork:
-    """Tests for ActorCritic network."""
+    """Tests for US-012: ActorCritic network."""
     
     def test_network_forward(self):
         """Test that network produces correct output shapes."""
@@ -54,10 +55,51 @@ class TestNetwork:
         
         assert logits.shape == (32, 5)
         assert values.shape == (32,)
+    
+    def test_network_initialization(self):
+        """Test that initialization follows orthogonal scheme."""
+        from src.agents.network import ActorCritic
+        
+        network = ActorCritic(hidden_dims=(64, 64), num_actions=5)
+        
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        params = network.init(key, jnp.zeros((obs_dim,)))
+        
+        # Params should exist and be properly shaped
+        assert params is not None
+        
+        # Check that params have reasonable magnitudes (orthogonal init)
+        flat_params = jax.tree_util.tree_leaves(params)
+        for p in flat_params:
+            if p.ndim >= 2:  # Weight matrices
+                assert jnp.abs(p).max() < 10.0  # Not exploding
+    
+    def test_network_different_configs(self):
+        """Test network with various configurations."""
+        from src.agents.network import ActorCritic
+        
+        key = jax.random.PRNGKey(42)
+        obs_dim = 48
+        
+        configs = [
+            (32, 32),
+            (64, 64),
+            (128, 128),
+            (64, 64, 64),  # 3 layers
+        ]
+        
+        for hidden_dims in configs:
+            network = ActorCritic(hidden_dims=hidden_dims, num_actions=5)
+            params = network.init(key, jnp.zeros((obs_dim,)))
+            logits, value = network.apply(params, jnp.zeros((obs_dim,)))
+            
+            assert logits.shape == (5,)
+            assert value.shape == ()
 
 
 class TestActionSampling:
-    """Tests for action sampling from policy."""
+    """Tests for US-013: Action sampling from policy."""
     
     def test_action_sampling(self):
         """Test that action sampling works correctly."""
@@ -93,3 +135,69 @@ class TestActionSampling:
         # Actions should be valid (0-4)
         assert jnp.all(actions >= 0)
         assert jnp.all(actions < 5)
+    
+    def test_action_sampling_deterministic_eval(self):
+        """Test deterministic action selection for evaluation."""
+        from src.agents.policy import sample_actions, get_deterministic_actions
+        from src.agents.network import ActorCritic
+        
+        network = ActorCritic(hidden_dims=(64, 64), num_actions=5)
+        
+        key = jax.random.PRNGKey(42)
+        obs_dim = 64
+        
+        params = network.init(key, jnp.zeros((obs_dim,)))
+        obs = jax.random.normal(key, (4, 2, obs_dim))  # 4 envs, 2 agents
+        
+        # Get deterministic actions
+        actions = get_deterministic_actions(network, params, obs)
+        
+        assert actions.shape == (4, 2)
+        assert jnp.all(actions >= 0)
+        assert jnp.all(actions < 5)
+    
+    def test_action_sampling_stochastic(self):
+        """Test that stochastic sampling produces varied actions."""
+        from src.agents.policy import sample_actions
+        from src.agents.network import ActorCritic
+        
+        network = ActorCritic(hidden_dims=(64, 64), num_actions=5)
+        
+        key = jax.random.PRNGKey(42)
+        obs_dim = 64
+        
+        params = network.init(key, jnp.zeros((obs_dim,)))
+        obs = jax.random.normal(key, (100, 1, obs_dim))  # 100 samples
+        
+        # Sample multiple times with different keys
+        all_actions = []
+        for i in range(10):
+            sample_key = jax.random.PRNGKey(i)
+            actions, _, _, _ = sample_actions(network, params, obs, sample_key)
+            all_actions.append(actions)
+        
+        all_actions = jnp.stack(all_actions)
+        
+        # Should have variety in actions (not all same)
+        assert len(jnp.unique(all_actions)) > 1
+    
+    def test_action_sampling_jit_compatible(self):
+        """Test that action sampling works with JIT."""
+        from src.agents.policy import sample_actions
+        from src.agents.network import ActorCritic
+        
+        network = ActorCritic(hidden_dims=(64, 64), num_actions=5)
+        
+        key = jax.random.PRNGKey(42)
+        obs_dim = 64
+        
+        params = network.init(key, jnp.zeros((obs_dim,)))
+        
+        @jax.jit
+        def jit_sample(obs, key):
+            return sample_actions(network, params, obs, key)
+        
+        obs = jax.random.normal(key, (4, 2, obs_dim))
+        actions, log_probs, values, entropy = jit_sample(obs, key)
+        
+        assert actions.shape == (4, 2)

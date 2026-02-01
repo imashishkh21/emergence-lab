@@ -30,304 +30,431 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 - **Weights & Biases** — Logging
 - **Python 3.10+** — Runtime
 
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────┐
-│              ENVIRONMENT                │
-│  ┌─────────────────────────────────┐   │
-│  │         FIELD (NxN)             │   │
-│  │   - Diffuses over time          │   │
-│  │   - Decays over time            │   │
-│  │   - Agents read local values    │   │
-│  │   - Agents write local values   │   │
-│  │   - Dynamics are LEARNED        │   │
-│  └─────────────────────────────────┘   │
-│                                         │
-│  Agent 1    Agent 2    ...    Agent K   │
-│  (pos, vel) (pos, vel)       (pos, vel) │
-│                                         │
-│  Food sources spawn randomly            │
-│  Agents get reward for finding food     │
-└─────────────────────────────────────────┘
-```
+---
 
 ## User Stories
 
-### Epic 1: Project Foundation
+### US-001: Create project structure [x]
 
-#### [ ] 1.1 Create project structure
-Create the folder structure with `__init__.py` files:
-```
-src/
-├── __init__.py
-├── environment/
-│   └── __init__.py
-├── agents/
-│   └── __init__.py
-├── training/
-│   └── __init__.py
-├── field/
-│   └── __init__.py
-└── analysis/
-    └── __init__.py
-configs/
-tests/
-```
-**Acceptance:** `python -c "import src"` works without errors.
+**Description:** As a developer, I need the folder structure set up so I can organize code properly.
 
-#### [ ] 1.2 Set up dependencies and virtual environment
-Create setup script that:
-- Creates venv if not exists
-- Installs dependencies from pyproject.toml
-- Verifies JAX is working
-
-**Acceptance:** `./scripts/setup.sh && python -c "import jax; print(jax.devices())"` runs successfully.
-
-#### [ ] 1.3 Create base config dataclasses
-Create `src/configs.py` with dataclasses for:
-- `EnvConfig` (grid_size, num_agents, num_food, max_steps)
-- `FieldConfig` (diffusion_rate, decay_rate, num_channels)
-- `AgentConfig` (hidden_dims, observation_radius)
-- `TrainConfig` (lr, batch_size, num_envs, total_steps, gamma, gae_lambda)
-- `Config` (combines all above)
-
-**Acceptance:** `python -c "from src.configs import Config; c = Config(); print(c)"` prints valid config.
+**Acceptance Criteria:**
+- [x] Create `src/` with subfolders: `environment/`, `agents/`, `training/`, `field/`, `analysis/`
+- [x] Each folder has `__init__.py`
+- [x] `python -c "import src"` works without errors
+- [x] Typecheck passes: `python -m mypy src/ --ignore-missing-imports`
 
 ---
 
-### Epic 2: The Field
+### US-002: Set up dependencies and virtual environment [ ]
 
-#### [ ] 2.1 Implement Field dataclass
-Create `src/field/field.py` with:
-- `FieldState` as `@flax.struct.dataclass`
-- Contains: `values: jnp.ndarray` shape (H, W, C) where C = num_channels
-- Initialize to zeros or small random values
+**Description:** As a developer, I need dependencies installed so I can run the project.
 
-**Acceptance:** Tests pass: `pytest tests/test_field.py::test_field_state_creation -v`
-
-#### [ ] 2.2 Implement field dynamics (diffusion + decay)
-In `src/field/dynamics.py`:
-- `diffuse(field, rate)` — 3x3 convolution blur
-- `decay(field, rate)` — multiply by (1 - decay_rate)
-- `step_field(field, diffusion_rate, decay_rate)` — applies both
-- All ops must be JIT-compatible
-
-**Acceptance:** Tests pass: `pytest tests/test_field.py::test_diffusion -v`
-
-#### [ ] 2.3 Implement field read/write operations
-In `src/field/ops.py`:
-- `read_local(field, positions, radius)` — returns values around each position
-- `write_local(field, positions, values)` — adds values at positions
-- Use `jax.ops.segment_sum` or scatter for batched writes
-
-**Acceptance:** Tests pass: `pytest tests/test_field.py::test_read_write -v`
+**Acceptance Criteria:**
+- [ ] `scripts/setup.sh` creates venv if not exists
+- [ ] Installs package with `pip install -e .`
+- [ ] `./scripts/setup.sh` completes without error
+- [ ] `python -c "import jax; print(jax.devices())"` works after setup
+- [ ] Typecheck passes
 
 ---
 
-### Epic 3: Environment Core
+### US-003: Create base config dataclasses [x]
 
-#### [ ] 3.1 Implement EnvState dataclass
-Create `src/environment/state.py` with:
-- `EnvState` as `@flax.struct.dataclass`
-- Fields: `agent_positions`, `agent_velocities`, `food_positions`, `food_collected`, `field_state`, `step`, `key`
+**Description:** As a developer, I need configuration objects so training is configurable.
 
-**Acceptance:** Tests pass: `pytest tests/test_env.py::test_env_state -v`
-
-#### [ ] 3.2 Implement environment reset
-Create `src/environment/env.py` with:
-- `reset(key, config) -> EnvState`
-- Random agent positions (no overlap)
-- Random food positions
-- Fresh field state
-
-**Acceptance:** Tests pass: `pytest tests/test_env.py::test_reset -v`
-
-#### [ ] 3.3 Implement environment step
-In `src/environment/env.py`:
-- `step(state, actions, config) -> (EnvState, rewards, dones, info)`
-- Actions: discrete 5 (stay, up, down, left, right)
-- Agents move, collect food if adjacent
-- Field updates (diffuse, decay, agents write presence)
-- Rewards: +1 per food collected by team (shared reward)
-
-**Acceptance:** Tests pass: `pytest tests/test_env.py::test_step -v`
-
-#### [ ] 3.4 Implement observation function
-In `src/environment/obs.py`:
-- `get_observations(state, config) -> dict[str, jnp.ndarray]`
-- Each agent sees: own position, local field values, relative food positions (if in range)
-- Observations normalized to [-1, 1]
-
-**Acceptance:** Tests pass: `pytest tests/test_env.py::test_observations -v`
-
-#### [ ] 3.5 Vectorize environment with vmap
-In `src/environment/vec_env.py`:
-- `VecEnv` class wrapping reset/step with `jax.vmap`
-- Handles `num_envs` parallel environments
-- Batch shape: (num_envs, num_agents, ...)
-
-**Acceptance:** Tests pass: `pytest tests/test_env.py::test_vec_env -v`
+**Acceptance Criteria:**
+- [x] `src/configs.py` has `EnvConfig`, `FieldConfig`, `AgentConfig`, `TrainConfig`, `LogConfig`, `Config`
+- [x] `python -c "from src.configs import Config; c = Config(); print(c)"` prints valid config
+- [x] Config can load from YAML: `Config.from_yaml(path)`
+- [x] Typecheck passes
 
 ---
 
-### Epic 4: Agent Neural Network
+### US-004: Implement FieldState dataclass [ ]
 
-#### [ ] 4.1 Implement actor-critic network
-Create `src/agents/network.py` with:
-- `ActorCritic` Flax module
-- MLP with LayerNorm and Tanh activations
-- Shared backbone → actor head (5 actions) + critic head (1 value)
-- Proper orthogonal initialization (sqrt(2) hidden, 0.01 actor, 1.0 critic)
+**Description:** As a developer, I need a data structure for the shared field so agents can read/write it.
 
-**Acceptance:** Tests pass: `pytest tests/test_agent.py::test_network_forward -v`
-
-#### [ ] 4.2 Implement action sampling
-In `src/agents/policy.py`:
-- `sample_actions(params, obs, key)` — returns actions, log_probs, values, entropy
-- Works with batched observations (num_envs, num_agents, obs_dim)
-- Uses `jax.vmap` over agents (shared params)
-
-**Acceptance:** Tests pass: `pytest tests/test_agent.py::test_action_sampling -v`
+**Acceptance Criteria:**
+- [ ] Create `src/field/field.py`
+- [ ] `FieldState` is a `@flax.struct.dataclass`
+- [ ] Contains `values: jnp.ndarray` with shape `(H, W, C)`
+- [ ] `create_field(height, width, channels)` function returns initialized FieldState
+- [ ] Tests pass: `pytest tests/test_field.py::TestFieldState -v`
+- [ ] Typecheck passes
 
 ---
 
-### Epic 5: PPO Training
+### US-005: Implement field dynamics (diffusion + decay) [ ]
 
-#### [ ] 5.1 Implement GAE calculation
-Create `src/training/gae.py` with:
-- `compute_gae(rewards, values, dones, gamma, gae_lambda)` 
-- Using `jax.lax.scan` with reverse iteration
-- Returns advantages and returns
+**Description:** As a developer, I need field physics so the field evolves over time.
 
-**Acceptance:** Tests pass: `pytest tests/test_training.py::test_gae -v`
-
-#### [ ] 5.2 Implement PPO loss function
-Create `src/training/ppo.py` with:
-- `ppo_loss(params, batch, clip_eps, vf_coef, ent_coef)`
-- Clipped surrogate objective
-- Value loss (MSE)
-- Entropy bonus
-- Returns total loss and metrics dict
-
-**Acceptance:** Tests pass: `pytest tests/test_training.py::test_ppo_loss -v`
-
-#### [ ] 5.3 Implement rollout collection
-Create `src/training/rollout.py` with:
-- `collect_rollout(runner_state, num_steps)` using `jax.lax.scan`
-- Collects: obs, actions, rewards, dones, values, log_probs
-- Returns batch and final runner_state
-
-**Acceptance:** Tests pass: `pytest tests/test_training.py::test_rollout -v`
-
-#### [ ] 5.4 Implement training step
-In `src/training/train.py`:
-- `train_step(runner_state, config)` 
-- Collect rollout → compute GAE → PPO update (multiple epochs)
-- Returns updated runner_state and metrics
-
-**Acceptance:** Tests pass: `pytest tests/test_training.py::test_train_step -v`
-
-#### [ ] 5.5 Implement full training loop
-In `src/training/train.py`:
-- `train(config)` main function
-- Initialize env, network, optimizer
-- JIT-compile training step
-- Loop with logging every N steps
-- Save checkpoints every M steps
-
-**Acceptance:** `python -m src.training.train --total_steps=10000` runs without error and logs to console.
+**Acceptance Criteria:**
+- [ ] Create `src/field/dynamics.py`
+- [ ] `diffuse(field, rate)` applies 3x3 Gaussian blur
+- [ ] `decay(field, rate)` multiplies values by `(1 - rate)`
+- [ ] `step_field(field, diffusion_rate, decay_rate)` applies both
+- [ ] All functions are JIT-compatible (no Python control flow)
+- [ ] Tests pass: `pytest tests/test_field.py::TestFieldDynamics -v`
+- [ ] Typecheck passes
 
 ---
 
-### Epic 6: Logging & Visualization
+### US-006: Implement field read/write operations [ ]
 
-#### [ ] 6.1 Implement W&B logging
-Create `src/utils/logging.py` with:
-- `init_wandb(config)`
-- `log_metrics(metrics, step)`
-- `log_video(frames, name, step)`
+**Description:** As a developer, I need agents to interact with the field locally.
 
-**Acceptance:** Training with `--wandb=true` logs to W&B project.
-
-#### [ ] 6.2 Implement environment rendering
-Create `src/environment/render.py` with:
-- `render_frame(state, config) -> np.ndarray` (RGB image)
-- Show: grid, agents (colored dots), food (green), field (heatmap overlay)
-
-**Acceptance:** `python -c "from src.environment.render import render_frame; ..."` produces valid image.
-
-#### [ ] 6.3 Implement episode video recording
-Create `src/utils/video.py` with:
-- `record_episode(env, policy, config) -> list[np.ndarray]`
-- `save_video(frames, path, fps=30)`
-
-**Acceptance:** Running evaluation produces MP4 video file.
+**Acceptance Criteria:**
+- [ ] Create `src/field/ops.py`
+- [ ] `read_local(field, positions, radius)` returns local field values for each position
+- [ ] `write_local(field, positions, values)` adds values at agent positions
+- [ ] Works with batched positions `(N, 2)` 
+- [ ] Tests pass: `pytest tests/test_field.py::TestFieldOps -v`
+- [ ] Typecheck passes
 
 ---
 
-### Epic 7: Emergence Analysis
+### US-007: Implement EnvState dataclass [ ]
 
-#### [ ] 7.1 Implement field analysis metrics
-Create `src/analysis/field_metrics.py` with:
-- `field_entropy(field)` — spatial entropy of field patterns
-- `field_structure(field)` — measure of non-random structure (autocorrelation)
-- `mutual_information(field, food_positions)` — does field encode food locations?
+**Description:** As a developer, I need environment state to track simulation.
 
-**Acceptance:** Tests pass: `pytest tests/test_analysis.py::test_field_metrics -v`
-
-#### [ ] 7.2 Implement ablation test
-Create `src/analysis/ablation.py` with:
-- `ablation_test(policy, env, config)` 
-- Run episodes with: normal field, zeroed field, random field
-- Compare performance across conditions
-
-**Acceptance:** `python -m src.analysis.ablation --checkpoint=...` produces comparison results.
-
-#### [ ] 7.3 Implement emergence detection
-Create `src/analysis/emergence.py` with:
-- Track field structure over training
-- Detect phase transitions (sudden changes in metrics)
-- Log emergence events to W&B
-
-**Acceptance:** Training logs include emergence metrics.
+**Acceptance Criteria:**
+- [ ] Create `src/environment/state.py`
+- [ ] `EnvState` is a `@flax.struct.dataclass`
+- [ ] Fields: `agent_positions`, `food_positions`, `food_collected`, `field_state`, `step`, `key`
+- [ ] Tests pass: `pytest tests/test_env.py::TestEnvState -v`
+- [ ] Typecheck passes
 
 ---
 
-### Epic 8: Integration & Polish
+### US-008: Implement environment reset [ ]
 
-#### [ ] 8.1 Create default config YAML
-Create `configs/default.yaml` with sensible defaults:
-- 20x20 grid, 8 agents, 10 food sources
-- 4 field channels
-- 32 parallel envs, 128 steps per rollout
-- 10M total steps
+**Description:** As a developer, I need to initialize fresh episodes.
 
-**Acceptance:** `python -m src.training.train --config=configs/default.yaml` works.
+**Acceptance Criteria:**
+- [ ] Create `src/environment/env.py`
+- [ ] `reset(key, config) -> EnvState` returns fresh state
+- [ ] Agent positions are random, non-overlapping
+- [ ] Food positions are random
+- [ ] Field is initialized fresh
+- [ ] Tests pass: `pytest tests/test_env.py::TestEnvReset -v`
+- [ ] Typecheck passes
 
-#### [ ] 8.2 Create training launch script
-Create `scripts/train.sh`:
-- Activates venv
-- Sets env vars (JAX flags, W&B)
-- Runs training with passed args
+---
 
-**Acceptance:** `./scripts/train.sh --total_steps=100000` runs training.
+### US-009: Implement environment step [ ]
 
-#### [ ] 8.3 Add README with quick start
-Update `README.md` with:
-- What this project is testing
-- Quick start commands
-- Expected results
-- How to interpret field visualizations
+**Description:** As a developer, I need the core simulation loop.
 
-**Acceptance:** Following README instructions starts training successfully.
+**Acceptance Criteria:**
+- [ ] `step(state, actions, config) -> (EnvState, rewards, dones, info)`
+- [ ] Actions: 0=stay, 1=up, 2=down, 3=left, 4=right
+- [ ] Agents collect food when adjacent (within 1 cell)
+- [ ] Field updates: diffuse, decay, agents write presence
+- [ ] Reward: +1 per food collected (shared across team)
+- [ ] Done when `step >= max_steps`
+- [ ] Tests pass: `pytest tests/test_env.py::TestEnvStep -v`
+- [ ] Typecheck passes
 
-#### [ ] 8.4 Full integration test
-Create `tests/test_integration.py`:
-- Test full pipeline: init → train 1000 steps → evaluate → analyze
-- Should complete in < 2 minutes
+---
 
-**Acceptance:** `pytest tests/test_integration.py -v` passes.
+### US-010: Implement observation function [ ]
+
+**Description:** As a developer, I need observations for agent policies.
+
+**Acceptance Criteria:**
+- [ ] Create `src/environment/obs.py`
+- [ ] `get_observations(state, config) -> jnp.ndarray` shape `(num_agents, obs_dim)`
+- [ ] Each agent sees: own position (normalized), local field values, relative food positions (if in range)
+- [ ] All values normalized to `[-1, 1]`
+- [ ] Tests pass: `pytest tests/test_env.py::TestObservations -v`
+- [ ] Typecheck passes
+
+---
+
+### US-011: Vectorize environment with vmap [ ]
+
+**Description:** As a developer, I need parallel environments for efficient training.
+
+**Acceptance Criteria:**
+- [ ] Create `src/environment/vec_env.py`
+- [ ] `VecEnv` class with `reset(key)` and `step(states, actions)`
+- [ ] Uses `jax.vmap` to parallelize across `num_envs`
+- [ ] Batch shapes: `(num_envs, num_agents, ...)`
+- [ ] Tests pass: `pytest tests/test_env.py::TestVecEnv -v`
+- [ ] Typecheck passes
+
+---
+
+### US-REVIEW-01: Review Environment Epic [ ]
+
+**Description:** Review US-004 through US-011 as a cohesive system.
+
+**Acceptance Criteria:**
+- [ ] All environment tests pass: `pytest tests/test_env.py tests/test_field.py -v`
+- [ ] Manually verify: create env, reset, step 10 times, print state shapes
+- [ ] Check: field values change after agent writes
+- [ ] Check: food collection works
+- [ ] If issues found: create fix tasks (US-XXXa)
+- [ ] Typecheck passes
+
+---
+
+### US-012: Implement actor-critic network [ ]
+
+**Description:** As a developer, I need neural network for agent policy.
+
+**Acceptance Criteria:**
+- [ ] Create `src/agents/network.py`
+- [ ] `ActorCritic` is a Flax `nn.Module`
+- [ ] MLP backbone with LayerNorm and Tanh activations
+- [ ] Actor head outputs logits for 5 actions
+- [ ] Critic head outputs scalar value
+- [ ] Orthogonal init: `sqrt(2)` for hidden, `0.01` for actor, `1.0` for critic
+- [ ] Tests pass: `pytest tests/test_agent.py::TestNetwork -v`
+- [ ] Typecheck passes
+
+---
+
+### US-013: Implement action sampling [ ]
+
+**Description:** As a developer, I need to sample actions from policy.
+
+**Acceptance Criteria:**
+- [ ] Create `src/agents/policy.py`
+- [ ] `sample_actions(network, params, obs, key)` returns `(actions, log_probs, values, entropy)`
+- [ ] Works with batched obs `(num_envs, num_agents, obs_dim)`
+- [ ] Uses `jax.vmap` over agents with shared params
+- [ ] Tests pass: `pytest tests/test_agent.py::TestActionSampling -v`
+- [ ] Typecheck passes
+
+---
+
+### US-014: Implement GAE calculation [ ]
+
+**Description:** As a developer, I need advantage estimation for PPO.
+
+**Acceptance Criteria:**
+- [ ] Create `src/training/gae.py`
+- [ ] `compute_gae(rewards, values, dones, gamma, gae_lambda)` returns `(advantages, returns)`
+- [ ] Uses `jax.lax.scan` with reverse iteration
+- [ ] Handles episode boundaries correctly
+- [ ] Tests pass: `pytest tests/test_training.py::TestGAE -v`
+- [ ] Typecheck passes
+
+---
+
+### US-015: Implement PPO loss function [ ]
+
+**Description:** As a developer, I need the PPO objective.
+
+**Acceptance Criteria:**
+- [ ] Create `src/training/ppo.py`
+- [ ] `ppo_loss(network, params, batch, clip_eps, vf_coef, ent_coef)` returns `(loss, metrics)`
+- [ ] Implements clipped surrogate objective
+- [ ] Value loss is MSE
+- [ ] Entropy bonus for exploration
+- [ ] Metrics include: `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clip_fraction`
+- [ ] Tests pass: `pytest tests/test_training.py::TestPPOLoss -v`
+- [ ] Typecheck passes
+
+---
+
+### US-016: Implement rollout collection [ ]
+
+**Description:** As a developer, I need to collect trajectories for training.
+
+**Acceptance Criteria:**
+- [ ] Create `src/training/rollout.py`
+- [ ] `RunnerState` dataclass holds: `params`, `opt_state`, `env_state`, `last_obs`, `key`
+- [ ] `collect_rollout(runner_state, network, vec_env, num_steps)` returns `(new_runner_state, batch)`
+- [ ] Uses `jax.lax.scan` for efficiency
+- [ ] Batch contains: `obs`, `actions`, `rewards`, `dones`, `values`, `log_probs`
+- [ ] Tests pass: `pytest tests/test_training.py::TestRollout -v`
+- [ ] Typecheck passes
+
+---
+
+### US-017: Implement training step [ ]
+
+**Description:** As a developer, I need the core training update.
+
+**Acceptance Criteria:**
+- [ ] In `src/training/train.py`
+- [ ] `train_step(runner_state, network, config)` returns `(new_runner_state, metrics)`
+- [ ] Collects rollout → computes GAE → updates policy (multiple epochs)
+- [ ] Normalizes advantages per minibatch
+- [ ] Uses gradient clipping
+- [ ] Tests pass: `pytest tests/test_training.py::TestTrainStep -v`
+- [ ] Typecheck passes
+
+---
+
+### US-018: Implement full training loop [ ]
+
+**Description:** As a developer, I need the complete training pipeline.
+
+**Acceptance Criteria:**
+- [ ] In `src/training/train.py`
+- [ ] `train(config)` function is the main entry point
+- [ ] Initializes: env, network, optimizer, runner_state
+- [ ] JIT-compiles `train_step`
+- [ ] Loops for `total_steps` with progress bar
+- [ ] Logs metrics every `log_interval` steps
+- [ ] `python -m src.training.train --train.total_steps=10000` runs without error
+- [ ] Typecheck passes
+
+---
+
+### US-REVIEW-02: Review Training Epic [ ]
+
+**Description:** Review US-012 through US-018 as a cohesive system.
+
+**Acceptance Criteria:**
+- [ ] All training tests pass: `pytest tests/test_agent.py tests/test_training.py -v`
+- [ ] Training runs for 10k steps without NaN/Inf
+- [ ] Loss decreases over time (or reward increases)
+- [ ] If issues found: create fix tasks
+- [ ] Typecheck passes
+
+---
+
+### US-019: Implement W&B logging [ ]
+
+**Description:** As a developer, I need experiment tracking.
+
+**Acceptance Criteria:**
+- [ ] Create `src/utils/logging.py`
+- [ ] `init_wandb(config)` initializes W&B run with config
+- [ ] `log_metrics(metrics, step)` logs scalars
+- [ ] `log_video(frames, name, step)` logs video
+- [ ] `finish_wandb()` closes run
+- [ ] Training with `--log.wandb=true` logs to W&B
+- [ ] Typecheck passes
+
+---
+
+### US-020: Implement environment rendering [ ]
+
+**Description:** As a developer, I need to visualize the simulation.
+
+**Acceptance Criteria:**
+- [ ] Create `src/environment/render.py`
+- [ ] `render_frame(state, config) -> np.ndarray` returns RGB image
+- [ ] Shows: grid lines, agents as colored circles, food as green dots
+- [ ] Field shown as heatmap overlay (sum across channels)
+- [ ] Image is at least 400x400 pixels
+- [ ] Test: render a frame and save as PNG
+- [ ] Typecheck passes
+
+---
+
+### US-021: Implement episode video recording [ ]
+
+**Description:** As a developer, I need to record agent behavior.
+
+**Acceptance Criteria:**
+- [ ] Create `src/utils/video.py`
+- [ ] `record_episode(network, params, env, config) -> list[np.ndarray]`
+- [ ] `save_video(frames, path, fps=30)` saves MP4
+- [ ] Running evaluation produces valid MP4 file
+- [ ] Typecheck passes
+
+---
+
+### US-022: Implement field analysis metrics [ ]
+
+**Description:** As a developer, I need to measure field properties.
+
+**Acceptance Criteria:**
+- [ ] Create `src/analysis/field_metrics.py`
+- [ ] `field_entropy(field)` computes spatial entropy
+- [ ] `field_structure(field)` measures autocorrelation (structure > random)
+- [ ] `field_food_mi(field, food_positions)` estimates mutual information
+- [ ] Tests pass: `pytest tests/test_analysis.py -v`
+- [ ] Typecheck passes
+
+---
+
+### US-023: Implement ablation test [ ]
+
+**Description:** As a developer, I need to test if the field matters.
+
+**Acceptance Criteria:**
+- [ ] Create `src/analysis/ablation.py`
+- [ ] `ablation_test(network, params, env, config, num_episodes=20)`
+- [ ] Tests 3 conditions: normal field, zeroed field, random field
+- [ ] Returns mean rewards per condition with std
+- [ ] `python -m src.analysis.ablation --checkpoint=path` works
+- [ ] Typecheck passes
+
+---
+
+### US-024: Implement emergence detection [ ]
+
+**Description:** As a developer, I need to detect when emergence happens.
+
+**Acceptance Criteria:**
+- [ ] Create `src/analysis/emergence.py`
+- [ ] `EmergenceTracker` class tracks field metrics over training
+- [ ] Detects phase transitions (sudden metric changes)
+- [ ] Integrates with training loop to log emergence events
+- [ ] Typecheck passes
+
+---
+
+### US-025: Create training launch script [ ]
+
+**Description:** As a developer, I need easy training launch.
+
+**Acceptance Criteria:**
+- [ ] Create `scripts/train.sh`
+- [ ] Activates venv
+- [ ] Sets JAX flags for performance
+- [ ] Runs training with passed arguments
+- [ ] `./scripts/train.sh --train.total_steps=100000` works
+- [ ] Typecheck passes
+
+---
+
+### US-026: Update README with quick start [ ]
+
+**Description:** As a user, I need documentation to get started.
+
+**Acceptance Criteria:**
+- [ ] README explains what this project tests
+- [ ] Quick start: install, train, visualize commands
+- [ ] Expected results section
+- [ ] How to interpret field visualizations
+- [ ] Following README starts training successfully
+
+---
+
+### US-027: Full integration test [ ]
+
+**Description:** As a developer, I need end-to-end validation.
+
+**Acceptance Criteria:**
+- [ ] Create `tests/test_integration.py`
+- [ ] Test: init → train 1000 steps → evaluate → render → analyze
+- [ ] Completes in < 2 minutes
+- [ ] All assertions pass
+- [ ] `pytest tests/test_integration.py -v` passes
+
+---
+
+### US-REVIEW-FINAL: Final Phase 1 Review [ ]
+
+**Description:** Validate Phase 1 is complete and working.
+
+**Acceptance Criteria:**
+- [ ] All tests pass: `pytest tests/ -v`
+- [ ] Typecheck passes: `python -m mypy src/ --ignore-missing-imports`
+- [ ] Training runs for 100k steps without crash
+- [ ] W&B shows learning curves
+- [ ] Video shows agents moving and field changing
+- [ ] Ablation test shows field > zeroed field
+- [ ] Mark COMPLETE in progress.txt
 
 ---
 
@@ -351,5 +478,6 @@ Phase 1 is complete when:
 
 ---
 
-*This PRD is designed for autonomous execution via Ralph loop.*
-*Each story should complete in one Claude Code context window.*
+*PRD designed for Ralph Loop autonomous execution.*
+*Each story completes in one context window.*
+*Total: 27 stories + 3 reviews = ~30 iterations expected.*

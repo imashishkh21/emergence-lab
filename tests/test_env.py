@@ -6,27 +6,30 @@ import jax.numpy as jnp
 
 
 class TestEnvState:
-    """Tests for EnvState dataclass."""
+    """Tests for US-007: EnvState dataclass."""
     
     def test_env_state(self):
         """Test that EnvState has required fields."""
         from src.environment.state import EnvState
         from src.configs import Config
         
+        # Create a mock state to test structure
         config = Config()
         key = jax.random.PRNGKey(42)
         
-        # This should work after state.py is implemented
-        state = EnvState.create(key, config)
+        # Import after module exists
+        from src.environment.state import create_env_state
+        state = create_env_state(key, config)
         
         assert hasattr(state, 'agent_positions')
         assert hasattr(state, 'food_positions')
         assert hasattr(state, 'field_state')
         assert hasattr(state, 'step')
+        assert hasattr(state, 'key')
 
 
 class TestEnvReset:
-    """Tests for environment reset."""
+    """Tests for US-008: Environment reset."""
     
     def test_reset(self):
         """Test that reset creates valid initial state."""
@@ -46,10 +49,41 @@ class TestEnvReset:
         # Check positions are within bounds
         assert jnp.all(state.agent_positions >= 0)
         assert jnp.all(state.agent_positions < config.env.grid_size)
+        assert jnp.all(state.food_positions >= 0)
+        assert jnp.all(state.food_positions < config.env.grid_size)
+    
+    def test_reset_different_seeds(self):
+        """Test that different seeds produce different states."""
+        from src.environment.env import reset
+        from src.configs import Config
+        
+        config = Config()
+        
+        state1 = reset(jax.random.PRNGKey(1), config)
+        state2 = reset(jax.random.PRNGKey(2), config)
+        
+        # Positions should differ
+        assert not jnp.allclose(state1.agent_positions, state2.agent_positions)
+    
+    def test_reset_no_agent_overlap(self):
+        """Test that agents don't spawn on same position."""
+        from src.environment.env import reset
+        from src.configs import Config
+        
+        config = Config()
+        config.env.num_agents = 4
+        
+        for seed in range(10):
+            state = reset(jax.random.PRNGKey(seed), config)
+            # Check all positions are unique
+            positions = state.agent_positions
+            for i in range(config.env.num_agents):
+                for j in range(i + 1, config.env.num_agents):
+                    assert not jnp.allclose(positions[i], positions[j])
 
 
 class TestEnvStep:
-    """Tests for environment step."""
+    """Tests for US-009: Environment step."""
     
     def test_step(self):
         """Test that step updates state correctly."""
@@ -61,8 +95,8 @@ class TestEnvStep:
         
         state = reset(key, config)
         
-        # All agents move right (action=4)
-        actions = jnp.full((config.env.num_agents,), 4, dtype=jnp.int32)
+        # All agents stay still (action=0)
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
         
         new_state, rewards, dones, info = step(state, actions, config)
         
@@ -74,10 +108,50 @@ class TestEnvStep:
         
         # Dones should be boolean
         assert dones.dtype == jnp.bool_
+    
+    def test_step_movement(self):
+        """Test that movement actions work."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+        
+        config = Config()
+        config.env.grid_size = 10
+        key = jax.random.PRNGKey(42)
+        
+        state = reset(key, config)
+        initial_pos = state.agent_positions.copy()
+        
+        # All agents move right (action=4: right)
+        actions = jnp.full((config.env.num_agents,), 4, dtype=jnp.int32)
+        
+        new_state, _, _, _ = step(state, actions, config)
+        
+        # Positions should change (unless at boundary)
+        # At least some agents should have moved
+        moved = jnp.any(new_state.agent_positions != initial_pos)
+        assert moved
+    
+    def test_step_done_at_max_steps(self):
+        """Test that episode ends at max_steps."""
+        from src.environment.env import reset, step
+        from src.configs import Config
+        
+        config = Config()
+        config.env.max_steps = 10
+        key = jax.random.PRNGKey(42)
+        
+        state = reset(key, config)
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        
+        # Step until max
+        for i in range(10):
+            state, _, done, _ = step(state, actions, config)
+        
+        assert done == True
 
 
 class TestObservations:
-    """Tests for observation function."""
+    """Tests for US-010: Observation function."""
     
     def test_observations(self):
         """Test that observations have correct shape."""
@@ -93,6 +167,18 @@ class TestObservations:
         
         # Should have one observation per agent
         assert obs.shape[0] == config.env.num_agents
+    
+    def test_observations_normalized(self):
+        """Test that observations are normalized."""
+        from src.environment.env import reset
+        from src.environment.obs import get_observations
+        from src.configs import Config
+        
+        config = Config()
+        key = jax.random.PRNGKey(42)
+        
+        state = reset(key, config)
+        obs = get_observations(state, config)
         
         # Observations should be normalized
         assert jnp.all(obs >= -1.0)
@@ -100,10 +186,10 @@ class TestObservations:
 
 
 class TestVecEnv:
-    """Tests for vectorized environment."""
+    """Tests for US-011: Vectorized environment."""
     
-    def test_vec_env(self):
-        """Test that vectorized env runs multiple envs in parallel."""
+    def test_vec_env_reset(self):
+        """Test that vectorized reset works."""
         from src.environment.vec_env import VecEnv
         from src.configs import Config
         
@@ -117,6 +203,19 @@ class TestVecEnv:
         
         # Should have batch dimension
         assert states.agent_positions.shape == (8, config.env.num_agents, 2)
+    
+    def test_vec_env_step(self):
+        """Test that vectorized step works."""
+        from src.environment.vec_env import VecEnv
+        from src.configs import Config
+        
+        config = Config()
+        config.train.num_envs = 8
+        
+        vec_env = VecEnv(config)
+        key = jax.random.PRNGKey(42)
+        
+        states = vec_env.reset(key)
         
         # Step with random actions
         actions = jax.random.randint(
@@ -125,3 +224,27 @@ class TestVecEnv:
         new_states, rewards, dones, info = vec_env.step(states, actions)
         
         assert rewards.shape == (8, config.env.num_agents)
+        assert new_states.agent_positions.shape == (8, config.env.num_agents, 2)
+    
+    def test_vec_env_jit_compatible(self):
+        """Test that VecEnv works with JIT."""
+        from src.environment.vec_env import VecEnv
+        from src.configs import Config
+        
+        config = Config()
+        config.train.num_envs = 4
+        
+        vec_env = VecEnv(config)
+        key = jax.random.PRNGKey(42)
+        
+        # JIT the step function
+        @jax.jit
+        def jit_step(states, actions):
+            return vec_env.step(states, actions)
+        
+        states = vec_env.reset(key)
+        actions = jnp.zeros((4, config.env.num_agents), dtype=jnp.int32)
+        
+        new_states, rewards, dones, info = jit_step(states, actions)
+        
+        assert new_states.step[0] == 1

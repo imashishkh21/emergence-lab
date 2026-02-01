@@ -1,6 +1,9 @@
 #!/bin/bash
 # Ralph Loop - Autonomous coding with Claude Code
 # Usage: ./scripts/ralph.sh [iterations]
+#
+# Based on Geoffrey Huntley's Ralph methodology
+# https://www.yourfuturebrain.blog/p/sitting-in-a-loop
 
 set -e
 
@@ -17,6 +20,8 @@ fi
 echo "🤖 Starting Ralph Loop"
 echo "   Project: $PROJECT_DIR"
 echo "   Iterations: $ITERATIONS"
+echo "   PRD: PRD.md"
+echo "   Prompt: PROMPT.md"
 echo ""
 
 # Check if Claude Code is installed
@@ -26,17 +31,23 @@ if ! command -v claude &> /dev/null; then
     exit 1
 fi
 
+# Ensure PROMPT.md exists
+if [ ! -f "PROMPT.md" ]; then
+    echo "❌ PROMPT.md not found. Create it first."
+    exit 1
+fi
+
 # Run Ralph loop
 for i in $(seq 1 $ITERATIONS); do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🔄 Iteration $i/$ITERATIONS"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    # Run Claude Code with the PRD prompt
-    claude --print "Read PRD.md and progress.txt. Find the next unchecked [ ] task and complete it. After completing, update progress.txt and mark the task done in PRD.md. If all tasks are done, say COMPLETE."
+    # Run Claude Code with the prompt file
+    cat PROMPT.md | claude --print
     
-    # Check for completion
-    if grep -q "COMPLETE" progress.txt 2>/dev/null; then
+    # Check for completion signal
+    if grep -q "COMPLETE:" progress.txt 2>/dev/null; then
         echo ""
         echo "✅ All tasks completed!"
         break
@@ -49,3 +60,4 @@ done
 echo ""
 echo "🏁 Ralph Loop finished after $i iterations"
 echo "   Check progress.txt for final status"
+echo "   Check PRD.md for task completion"
