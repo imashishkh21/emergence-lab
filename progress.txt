@@ -148,8 +148,22 @@
 - All 4 TestGAE tests pass, mypy clean (18 source files, no issues)
 - Files changed: src/training/gae.py (new)
 
+### US-015: Implement PPO loss function [x]
+- Created src/training/ppo.py with ppo_loss() function
+- Implements standard PPO clipped surrogate objective:
+  - Forward pass through ActorCritic network to get logits and values
+  - Computes new log probabilities from categorical distribution over logits
+  - Policy loss: clipped surrogate objective using min(ratio * adv, clip(ratio) * adv)
+  - Value loss: MSE between predicted values and target returns
+  - Entropy bonus: -sum(p * log(p)) averaged over batch for exploration
+  - Total loss: policy_loss + vf_coef * value_loss - ent_coef * entropy
+- Metrics returned: policy_loss, value_loss, entropy, approx_kl, clip_fraction
+- Used jnp.asarray() on network.apply output to satisfy mypy (Flax union return type)
+- All 3 TestPPOLoss tests pass, mypy clean (19 source files, no issues)
+- Files changed: src/training/ppo.py (new)
+
 ## Current Task
-US-015: Implement PPO loss function
+US-016: Implement rollout collection
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)

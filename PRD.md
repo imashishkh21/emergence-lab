@@ -244,19 +244,19 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-015: Implement PPO loss function [ ]
+### US-015: Implement PPO loss function [x]
 
 **Description:** As a developer, I need the PPO objective.
 
 **Acceptance Criteria:**
-- [ ] Create `src/training/ppo.py`
-- [ ] `ppo_loss(network, params, batch, clip_eps, vf_coef, ent_coef)` returns `(loss, metrics)`
-- [ ] Implements clipped surrogate objective
-- [ ] Value loss is MSE
-- [ ] Entropy bonus for exploration
-- [ ] Metrics include: `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clip_fraction`
-- [ ] Tests pass: `pytest tests/test_training.py::TestPPOLoss -v`
-- [ ] Typecheck passes
+- [x] Create `src/training/ppo.py`
+- [x] `ppo_loss(network, params, batch, clip_eps, vf_coef, ent_coef)` returns `(loss, metrics)`
+- [x] Implements clipped surrogate objective
+- [x] Value loss is MSE
+- [x] Entropy bonus for exploration
+- [x] Metrics include: `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clip_fraction`
+- [x] Tests pass: `pytest tests/test_training.py::TestPPOLoss -v`
+- [x] Typecheck passes
 
 ---
 
