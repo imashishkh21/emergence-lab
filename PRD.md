@@ -216,17 +216,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-013: Implement action sampling [ ]
+### US-013: Implement action sampling [x]
 
 **Description:** As a developer, I need to sample actions from policy.
 
 **Acceptance Criteria:**
-- [ ] Create `src/agents/policy.py`
-- [ ] `sample_actions(network, params, obs, key)` returns `(actions, log_probs, values, entropy)`
-- [ ] Works with batched obs `(num_envs, num_agents, obs_dim)`
-- [ ] Uses `jax.vmap` over agents with shared params
-- [ ] Tests pass: `pytest tests/test_agent.py::TestActionSampling -v`
-- [ ] Typecheck passes
+- [x] Create `src/agents/policy.py`
+- [x] `sample_actions(network, params, obs, key)` returns `(actions, log_probs, values, entropy)`
+- [x] Works with batched obs `(num_envs, num_agents, obs_dim)`
+- [x] Uses `jax.vmap` over agents with shared params
+- [x] Tests pass: `pytest tests/test_agent.py::TestActionSampling -v`
+- [x] Typecheck passes
 
 ---
 

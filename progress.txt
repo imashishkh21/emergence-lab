@@ -128,8 +128,17 @@
 - All 4 TestNetwork tests pass, mypy clean (16 source files, no issues)
 - Files changed: src/agents/network.py (new)
 
+### US-013: Implement action sampling [x]
+- Created src/agents/policy.py with two functions: sample_actions() and get_deterministic_actions()
+- sample_actions(network, params, obs, key): flattens (num_envs, num_agents, obs_dim) into batch, vmaps forward pass with shared params, samples from categorical distribution, returns (actions, log_probs, values, entropy) all reshaped to (num_envs, num_agents)
+- get_deterministic_actions(network, params, obs): same forward pass but uses argmax instead of sampling
+- Used jnp.asarray() on values output to satisfy mypy (flax apply return type is a union)
+- All 4 TestActionSampling tests pass, all 8 agent tests pass
+- Mypy clean (17 source files, no issues)
+- Files changed: src/agents/policy.py (new)
+
 ## Current Task
-US-013: Implement action sampling
+US-014: Implement GAE calculation
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -157,6 +166,8 @@ US-013: Implement action sampling
 - src/environment/state.py (EnvState dataclass and create_env_state)
 - src/environment/env.py (added step function)
 - src/environment/obs.py (get_observations, obs_dim)
+- src/agents/network.py (ActorCritic module)
+- src/agents/policy.py (sample_actions, get_deterministic_actions)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
