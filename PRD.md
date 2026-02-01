@@ -230,17 +230,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-014: Implement GAE calculation [ ]
+### US-014: Implement GAE calculation [x]
 
 **Description:** As a developer, I need advantage estimation for PPO.
 
 **Acceptance Criteria:**
-- [ ] Create `src/training/gae.py`
-- [ ] `compute_gae(rewards, values, dones, gamma, gae_lambda)` returns `(advantages, returns)`
-- [ ] Uses `jax.lax.scan` with reverse iteration
-- [ ] Handles episode boundaries correctly
-- [ ] Tests pass: `pytest tests/test_training.py::TestGAE -v`
-- [ ] Typecheck passes
+- [x] Create `src/training/gae.py`
+- [x] `compute_gae(rewards, values, dones, gamma, gae_lambda)` returns `(advantages, returns)`
+- [x] Uses `jax.lax.scan` with reverse iteration
+- [x] Handles episode boundaries correctly
+- [x] Tests pass: `pytest tests/test_training.py::TestGAE -v`
+- [x] Typecheck passes
 
 ---
 

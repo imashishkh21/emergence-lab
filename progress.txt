@@ -137,8 +137,19 @@
 - Mypy clean (17 source files, no issues)
 - Files changed: src/agents/policy.py (new)
 
+### US-014: Implement GAE calculation [x]
+- Created src/training/gae.py with compute_gae() function
+- Implements Generalized Advantage Estimation using jax.lax.scan with reverse=True
+- TD residuals: delta_t = r_t + gamma * V(s_{t+1}) * (1 - done_t) - V(s_t)
+- Reverse scan accumulates: gae_t = delta_t + gamma * lambda * (1 - done_t) * gae_{t+1}
+- Returns (advantages, returns) where returns = advantages + values[:T]
+- Handles episode boundaries by zeroing out future contributions on done flags
+- JIT-compatible (uses jax.lax.scan, no Python control flow)
+- All 4 TestGAE tests pass, mypy clean (18 source files, no issues)
+- Files changed: src/training/gae.py (new)
+
 ## Current Task
-US-014: Implement GAE calculation
+US-015: Implement PPO loss function
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
