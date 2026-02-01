@@ -1,10 +1,13 @@
 """Training step and loop for PPO with shared field dynamics."""
 
+import sys
+import time
 from typing import Any
 
 import jax
 import jax.numpy as jnp
 import optax
+from tqdm import tqdm
 
 from src.agents.network import ActorCritic
 from src.agents.policy import sample_actions
@@ -253,3 +256,125 @@ def train_step(
     )
 
     return new_runner_state, metrics
+
+
+def train(config: Config) -> RunnerState:
+    """Main training entry point.
+
+    Initializes environment, network, optimizer, and runner state,
+    then runs the PPO training loop with progress bar and metric logging.
+
+    Args:
+        config: Master configuration.
+
+    Returns:
+        Final RunnerState after training.
+    """
+    key = jax.random.PRNGKey(config.train.seed)
+
+    print("=" * 60)
+    print("Emergence Lab — Phase 1: Digital Petri Dish")
+    print("=" * 60)
+    print(f"Grid: {config.env.grid_size}x{config.env.grid_size}")
+    print(f"Agents: {config.env.num_agents}, Food: {config.env.num_food}")
+    print(f"Field channels: {config.field.num_channels}")
+    print(f"Num envs: {config.train.num_envs}")
+    print(f"Total steps: {config.train.total_steps}")
+    print(f"Steps per rollout: {config.train.num_steps}")
+    print(f"Seed: {config.train.seed}")
+    print("=" * 60)
+
+    # Steps per training iteration = num_envs * num_steps * num_agents
+    steps_per_iter = (
+        config.train.num_envs * config.train.num_steps * config.env.num_agents
+    )
+    num_iterations = config.train.total_steps // steps_per_iter
+    if num_iterations < 1:
+        num_iterations = 1
+
+    print(f"Steps per iteration: {steps_per_iter}")
+    print(f"Number of iterations: {num_iterations}")
+    print(f"Log interval: {config.log.log_interval} steps")
+    print()
+
+    # Initialize training state
+    print("Initializing training state...")
+    runner_state = create_train_state(config, key)
+    print("Training state initialized.")
+
+    # JIT-compile train_step with config captured in closure
+    print("JIT compiling train_step...")
+
+    @jax.jit
+    def jit_train_step(rs: RunnerState) -> tuple[RunnerState, dict[str, Any]]:
+        return train_step(rs, config)
+
+    # Warm up JIT with first iteration
+    t0 = time.time()
+    runner_state, metrics = jit_train_step(runner_state)
+    # Block until computation completes
+    jax.block_until_ready(metrics)
+    jit_time = time.time() - t0
+    print(f"JIT compilation done ({jit_time:.1f}s)")
+    print()
+
+    total_env_steps = steps_per_iter  # Already did one iteration
+
+    # Training loop
+    pbar = tqdm(
+        range(1, num_iterations),
+        desc="Training",
+        unit="iter",
+        file=sys.stderr,
+    )
+
+    for iteration in pbar:
+        runner_state, metrics = jit_train_step(runner_state)
+        total_env_steps += steps_per_iter
+
+        # Log metrics at intervals
+        if total_env_steps % config.log.log_interval < steps_per_iter:
+            # Extract scalar values from JAX arrays for display
+            reward = float(metrics["mean_reward"])
+            loss = float(metrics["total_loss"])
+            entropy = float(metrics["entropy"])
+            value = float(metrics["mean_value"])
+
+            pbar.set_postfix(
+                reward=f"{reward:.4f}",
+                loss=f"{loss:.4f}",
+                entropy=f"{entropy:.4f}",
+                value=f"{value:.4f}",
+                steps=total_env_steps,
+            )
+
+            # Check for NaN/Inf
+            if jnp.isnan(loss) or jnp.isinf(loss):
+                print(f"\nWARNING: NaN/Inf detected at step {total_env_steps}!")
+                break
+
+    pbar.close()
+
+    print()
+    print("=" * 60)
+    print("Training complete!")
+    print(f"Total env steps: {total_env_steps}")
+    print(f"Final metrics:")
+    for k, v in sorted(metrics.items()):
+        print(f"  {k}: {float(v):.6f}")
+    print("=" * 60)
+
+    final_state: RunnerState = runner_state
+    return final_state
+
+
+def main() -> None:
+    """CLI entry point using tyro for argument parsing."""
+    import tyro
+
+    config = tyro.cli(Config)
+    train(config)
+
+
+if __name__ == "__main__":
+    main()

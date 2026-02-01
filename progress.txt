@@ -191,8 +191,22 @@
 - Mypy clean (21 source files, no issues)
 - Files changed: src/training/train.py (new)
 
+### US-018: Implement full training loop [x]
+- Added `train(config)` function to src/training/train.py as the main training entry point
+- Initializes: env, network, optimizer, runner_state via `create_train_state()`
+- JIT-compiles `train_step` by wrapping in a closure that captures `config` (avoids hashability issues with static args)
+- Loops for `total_steps` with tqdm progress bar (stderr)
+- Logs metrics (reward, loss, entropy, value) at `log_interval` step intervals
+- Prints training summary with final metrics at completion
+- NaN/Inf detection halts training early with warning
+- Added `main()` CLI entry point using `tyro.cli(Config)` for argument parsing
+- `python -m src.training.train --train.total-steps 10000` runs successfully
+- Warm-up JIT compilation with first iteration, then efficient loop
+- All 10 training tests pass, mypy clean (21 source files, no issues)
+- Files changed: src/training/train.py (added train(), main(), if __name__ block)
+
 ## Current Task
-US-018: Implement full training loop
+US-REVIEW-02: Review Training Epic
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)

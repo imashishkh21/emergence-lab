@@ -290,19 +290,19 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-018: Implement full training loop [ ]
+### US-018: Implement full training loop [x]
 
 **Description:** As a developer, I need the complete training pipeline.
 
 **Acceptance Criteria:**
-- [ ] In `src/training/train.py`
-- [ ] `train(config)` function is the main entry point
-- [ ] Initializes: env, network, optimizer, runner_state
-- [ ] JIT-compiles `train_step`
-- [ ] Loops for `total_steps` with progress bar
-- [ ] Logs metrics every `log_interval` steps
-- [ ] `python -m src.training.train --train.total_steps=10000` runs without error
-- [ ] Typecheck passes
+- [x] In `src/training/train.py`
+- [x] `train(config)` function is the main entry point
+- [x] Initializes: env, network, optimizer, runner_state
+- [x] JIT-compiles `train_step`
+- [x] Loops for `total_steps` with progress bar
+- [x] Logs metrics every `log_interval` steps
+- [x] `python -m src.training.train --train.total_steps=10000` runs without error
+- [x] Typecheck passes
 
 ---
 
