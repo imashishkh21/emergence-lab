@@ -186,11 +186,17 @@ def step(
     )
     new_energy = energy_drain
 
-    # --- 6. Advance step counter and check done ---
+    # --- 6. Death from starvation ---
+    # Agents with energy <= 0 die (only check previously alive agents)
+    starved = state.agent_alive & (new_energy <= 0)
+    new_alive = state.agent_alive & ~starved
+    death_count = jnp.sum(starved.astype(jnp.int32))
+
+    # --- 7. Advance step counter and check done ---
     new_step = state.step + 1
     done = new_step >= config.env.max_steps
 
-    # --- 7. Split PRNG key ---
+    # --- 8. Split PRNG key ---
     new_key, _ = jax.random.split(state.key)
 
     new_state = EnvState(
@@ -201,7 +207,7 @@ def step(
         step=new_step,
         key=new_key,
         agent_energy=new_energy,
-        agent_alive=state.agent_alive,
+        agent_alive=new_alive,
         agent_ids=state.agent_ids,
         agent_parent_ids=state.agent_parent_ids,
         next_agent_id=state.next_agent_id,
@@ -210,6 +216,7 @@ def step(
     info: dict[str, Any] = {
         "food_collected_this_step": num_collected,
         "total_food_collected": jnp.sum(food_collected.astype(jnp.float32)),
+        "deaths_this_step": death_count,
     }
 
     return new_state, rewards, done, info

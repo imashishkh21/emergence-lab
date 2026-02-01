@@ -73,3 +73,19 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 64 tests pass, mypy clean.
 
 ---
+
+### US-005: Implement Death from Starvation ✓
+**What:** Added death-from-starvation logic to `step()` — agents with energy <= 0 after energy drain have `agent_alive` set to False. Death count is logged in the info dict.
+**Decisions:**
+- Death check happens immediately after energy drain (section 6 in step()), before step counter advance.
+- Used `starved = state.agent_alive & (new_energy <= 0)` pattern — only previously alive agents can die.
+- `new_alive = state.agent_alive & ~starved` — clean boolean masking, no mutation.
+- Dead agents remain in arrays (positions, IDs preserved) but are masked out of movement and actions on subsequent steps.
+- Added `deaths_this_step` to info dict as `jnp.int32` count.
+- Added 7 tests: death on zero energy, death count in info, no deaths with enough energy, dead agents stay in arrays, dead agents don't move, partial death (mixed energy levels), JIT compatibility.
+**Files changed:**
+- `src/environment/env.py` — Added death-from-starvation logic (section 6), updated `new_state` to use `new_alive`, added `deaths_this_step` to info dict, renumbered subsequent sections
+- `tests/test_energy.py` — Added `TestDeath` class with 7 tests
+**Issues:** None. All 71 tests pass, mypy clean.
+
+---

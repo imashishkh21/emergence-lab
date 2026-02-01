@@ -65,7 +65,7 @@
    - Energy cannot go below 0                                                                                                         
    **Verification:** `pytest tests/test_energy.py -v` passes. Create this test file.                                                  
                                                                                                                                       
-   ### US-005: Implement Death from Starvation [ ]                                                                                    
+   ### US-005: Implement Death from Starvation [x]                                                                                    
    **Task:** Kill agents when energy reaches 0.                                                                                       
    **Files:** `src/environment/env.py`                                                                                                
    **Changes:**                                                                                                                       
