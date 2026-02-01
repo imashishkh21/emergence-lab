@@ -260,18 +260,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-016: Implement rollout collection [ ]
+### US-016: Implement rollout collection [x]
 
 **Description:** As a developer, I need to collect trajectories for training.
 
 **Acceptance Criteria:**
-- [ ] Create `src/training/rollout.py`
-- [ ] `RunnerState` dataclass holds: `params`, `opt_state`, `env_state`, `last_obs`, `key`
-- [ ] `collect_rollout(runner_state, network, vec_env, num_steps)` returns `(new_runner_state, batch)`
-- [ ] Uses `jax.lax.scan` for efficiency
-- [ ] Batch contains: `obs`, `actions`, `rewards`, `dones`, `values`, `log_probs`
-- [ ] Tests pass: `pytest tests/test_training.py::TestRollout -v`
-- [ ] Typecheck passes
+- [x] Create `src/training/rollout.py`
+- [x] `RunnerState` dataclass holds: `params`, `opt_state`, `env_state`, `last_obs`, `key`
+- [x] `collect_rollout(runner_state, network, vec_env, num_steps)` returns `(new_runner_state, batch)`
+- [x] Uses `jax.lax.scan` for efficiency
+- [x] Batch contains: `obs`, `actions`, `rewards`, `dones`, `values`, `log_probs`
+- [x] Tests pass: `pytest tests/test_training.py::TestRollout -v`
+- [x] Typecheck passes
 
 ---
 

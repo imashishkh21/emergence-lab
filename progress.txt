@@ -162,8 +162,20 @@
 - All 3 TestPPOLoss tests pass, mypy clean (19 source files, no issues)
 - Files changed: src/training/ppo.py (new)
 
+### US-016: Implement rollout collection [x]
+- Created src/training/rollout.py with RunnerState and collect_rollout
+- RunnerState is a flax.struct.dataclass holding: params, opt_state, env_state, last_obs, key
+- collect_rollout uses jax.lax.scan over num_steps for efficient trajectory collection
+- Each step: sample_actions → vec_env.step → get_observations → store transition
+- Batch output contains: obs, actions, rewards, dones, values, log_probs
+- Shapes: (num_steps, num_envs, num_agents, ...) for all batch entries
+- collect_rollout takes (runner_state, network, vec_env, config) — config provides num_steps
+- Fixed mypy error: scan carry type annotation was tuple[RunnerState] instead of RunnerState
+- All 2 TestRollout tests pass, mypy clean (20 source files, no issues)
+- Files changed: src/training/rollout.py (new)
+
 ## Current Task
-US-016: Implement rollout collection
+US-017: Implement training step
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -193,6 +205,7 @@ US-016: Implement rollout collection
 - src/environment/obs.py (get_observations, obs_dim)
 - src/agents/network.py (ActorCritic module)
 - src/agents/policy.py (sample_actions, get_deterministic_actions)
+- src/training/rollout.py (RunnerState, collect_rollout)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
