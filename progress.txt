@@ -47,3 +47,22 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean, 199/199 tests pass
 
 ---
+
+### US-003: Trajectory Recording ✓
+**What:** Implemented `TrajectoryRecorder` class and `record_episode()` function in `src/analysis/trajectory.py` for recording per-agent, per-step data during evaluation episodes.
+**Decisions:**
+- `TrajectoryRecorder` is a simple append-based collector that stores per-step numpy arrays, then stacks them into a trajectory dict via `get_trajectory()`
+- Accepts both JAX arrays and numpy arrays (converts to numpy on record)
+- Optional fields: `births` (bool) and `field_values` (float) — only included in output if provided
+- `record_episode()` runs a single episode using the same pattern as `video.py`'s `record_episode` (single env, Python loop)
+- Supports both stochastic (default) and deterministic action modes via `deterministic` kwarg
+- Births detected by comparing `agent_alive` before and after step (new alive = birth)
+- Field values recorded as mean across channels at agent positions (using `read_local` with radius=0)
+- `alive_mask` captures pre-step alive state (consistent with `extract_behavior_features` expectations)
+- Output format directly compatible with `extract_behavior_features()` from US-002
+**Files changed:**
+- `src/analysis/trajectory.py` (new) — `TrajectoryRecorder` class, `record_episode()` function
+- `tests/test_specialization.py` — added `TestTrajectoryRecording` class with 13 tests covering: basic shapes, num_steps property, empty raises, optional births/field_values, data preservation, JAX array acceptance, compatibility with behavior features, record_episode runs/shapes/births+field/deterministic/features pipeline/alive mask
+**Validation:** mypy clean (31 files), 212/212 tests pass
+
+---

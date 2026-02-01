@@ -405,3 +405,338 @@ class TestBehaviorFeatures:
         features = extract_behavior_features(traj)
         # Features should differ
         assert not np.allclose(features[0], features[1])
+
+
+class TestTrajectoryRecording:
+    """US-003: Trajectory recording tests."""
+
+    def test_recorder_basic_shape(self):
+        """TrajectoryRecorder produces correct shapes."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        max_agents = 4
+        recorder = TrajectoryRecorder(max_agents)
+
+        num_steps = 10
+        for _ in range(num_steps):
+            recorder.record_step(
+                positions=np.zeros((max_agents, 2), dtype=int),
+                actions=np.zeros(max_agents, dtype=int),
+                rewards=np.zeros(max_agents),
+                alive_mask=np.ones(max_agents, dtype=bool),
+                energy=np.ones(max_agents) * 50.0,
+            )
+
+        traj = recorder.get_trajectory()
+        assert traj["actions"].shape == (num_steps, max_agents)
+        assert traj["positions"].shape == (num_steps, max_agents, 2)
+        assert traj["rewards"].shape == (num_steps, max_agents)
+        assert traj["alive_mask"].shape == (num_steps, max_agents)
+        assert traj["energy"].shape == (num_steps, max_agents)
+
+    def test_recorder_num_steps(self):
+        """num_steps property tracks recorded steps."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        recorder = TrajectoryRecorder(max_agents=2)
+        assert recorder.num_steps == 0
+
+        for i in range(5):
+            recorder.record_step(
+                positions=np.zeros((2, 2)),
+                actions=np.zeros(2, dtype=int),
+                rewards=np.zeros(2),
+                alive_mask=np.ones(2, dtype=bool),
+                energy=np.ones(2),
+            )
+            assert recorder.num_steps == i + 1
+
+    def test_recorder_empty_raises(self):
+        """get_trajectory() raises ValueError when no steps recorded."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        recorder = TrajectoryRecorder(max_agents=4)
+        with pytest.raises(ValueError, match="No steps recorded"):
+            recorder.get_trajectory()
+
+    def test_recorder_optional_births(self):
+        """Births key present only when births data provided."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        max_agents = 3
+        recorder = TrajectoryRecorder(max_agents)
+
+        # Record without births
+        recorder_no_births = TrajectoryRecorder(max_agents)
+        recorder_no_births.record_step(
+            positions=np.zeros((max_agents, 2)),
+            actions=np.zeros(max_agents, dtype=int),
+            rewards=np.zeros(max_agents),
+            alive_mask=np.ones(max_agents, dtype=bool),
+            energy=np.ones(max_agents),
+        )
+        traj_no = recorder_no_births.get_trajectory()
+        assert "births" not in traj_no
+
+        # Record with births
+        recorder_with_births = TrajectoryRecorder(max_agents)
+        recorder_with_births.record_step(
+            positions=np.zeros((max_agents, 2)),
+            actions=np.zeros(max_agents, dtype=int),
+            rewards=np.zeros(max_agents),
+            alive_mask=np.ones(max_agents, dtype=bool),
+            energy=np.ones(max_agents),
+            births=np.zeros(max_agents, dtype=bool),
+        )
+        traj_yes = recorder_with_births.get_trajectory()
+        assert "births" in traj_yes
+        assert traj_yes["births"].shape == (1, max_agents)
+
+    def test_recorder_optional_field_values(self):
+        """field_values key present only when field data provided."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        max_agents = 2
+        recorder = TrajectoryRecorder(max_agents)
+        recorder.record_step(
+            positions=np.zeros((max_agents, 2)),
+            actions=np.zeros(max_agents, dtype=int),
+            rewards=np.zeros(max_agents),
+            alive_mask=np.ones(max_agents, dtype=bool),
+            energy=np.ones(max_agents),
+            field_values=np.ones(max_agents) * 0.5,
+        )
+        traj = recorder.get_trajectory()
+        assert "field_values" in traj
+        assert traj["field_values"].shape == (1, max_agents)
+        np.testing.assert_allclose(traj["field_values"][0], 0.5)
+
+    def test_recorder_data_values_preserved(self):
+        """Recorded data values are accurately preserved."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        max_agents = 2
+        recorder = TrajectoryRecorder(max_agents)
+
+        positions = np.array([[3, 7], [10, 15]])
+        actions = np.array([1, 4])
+        rewards = np.array([0.5, 1.0])
+        alive = np.array([True, False])
+        energy = np.array([80.0, 0.0])
+
+        recorder.record_step(
+            positions=positions,
+            actions=actions,
+            rewards=rewards,
+            alive_mask=alive,
+            energy=energy,
+        )
+        traj = recorder.get_trajectory()
+
+        np.testing.assert_array_equal(traj["positions"][0], positions)
+        np.testing.assert_array_equal(traj["actions"][0], actions)
+        np.testing.assert_allclose(traj["rewards"][0], rewards)
+        np.testing.assert_array_equal(traj["alive_mask"][0], alive)
+        np.testing.assert_allclose(traj["energy"][0], energy)
+
+    def test_recorder_accepts_jax_arrays(self):
+        """TrajectoryRecorder accepts JAX arrays and converts to numpy."""
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        max_agents = 3
+        recorder = TrajectoryRecorder(max_agents)
+        recorder.record_step(
+            positions=jnp.zeros((max_agents, 2), dtype=jnp.int32),
+            actions=jnp.zeros(max_agents, dtype=jnp.int32),
+            rewards=jnp.zeros(max_agents),
+            alive_mask=jnp.ones(max_agents, dtype=jnp.bool_),
+            energy=jnp.ones(max_agents),
+        )
+        traj = recorder.get_trajectory()
+        # All values should be numpy arrays
+        for key in ("actions", "positions", "rewards", "alive_mask", "energy"):
+            assert isinstance(traj[key], np.ndarray), f"{key} should be numpy"
+
+    def test_recorder_compatible_with_behavior_features(self):
+        """Trajectory from recorder works with extract_behavior_features."""
+        from src.analysis.specialization import extract_behavior_features
+        from src.analysis.trajectory import TrajectoryRecorder
+
+        max_agents = 4
+        rng = np.random.RandomState(42)
+        recorder = TrajectoryRecorder(max_agents)
+
+        for _ in range(50):
+            recorder.record_step(
+                positions=rng.randint(0, 20, size=(max_agents, 2)),
+                actions=rng.randint(0, 6, size=max_agents),
+                rewards=rng.uniform(0, 1, size=max_agents),
+                alive_mask=np.ones(max_agents, dtype=bool),
+                energy=rng.uniform(10, 100, size=max_agents),
+            )
+
+        traj = recorder.get_trajectory()
+        features = extract_behavior_features(traj)
+        assert features.shape == (max_agents, 7)
+        assert np.all(np.isfinite(features))
+
+    def test_record_episode_runs(self):
+        """record_episode runs without error and returns valid trajectory."""
+        from src.analysis.trajectory import record_episode
+        from src.agents.network import ActorCritic
+        from src.configs import Config
+
+        config = Config()
+        config.env.max_steps = 10
+        config.env.grid_size = 10
+        config.env.num_agents = 4
+        config.env.num_food = 5
+        config.evolution.max_agents = 8
+
+        network = ActorCritic(
+            hidden_dims=config.agent.hidden_dims,
+            num_actions=6,
+        )
+
+        # Initialize params
+        from src.environment.obs import obs_dim
+
+        key = jax.random.PRNGKey(42)
+        key, init_key = jax.random.split(key)
+        dummy_obs = jnp.zeros(obs_dim(config))
+        params = network.init(init_key, dummy_obs)
+
+        traj = record_episode(network, params, config, key)
+
+        # Check required keys
+        for k in ("actions", "positions", "rewards", "alive_mask", "energy"):
+            assert k in traj, f"Missing key: {k}"
+
+        # Check shapes: T <= max_steps, A = max_agents
+        max_agents = config.evolution.max_agents
+        t = traj["actions"].shape[0]
+        assert 1 <= t <= config.env.max_steps
+        assert traj["actions"].shape == (t, max_agents)
+        assert traj["positions"].shape == (t, max_agents, 2)
+        assert traj["rewards"].shape == (t, max_agents)
+        assert traj["alive_mask"].shape == (t, max_agents)
+        assert traj["energy"].shape == (t, max_agents)
+
+    def test_record_episode_has_births_and_field(self):
+        """record_episode includes births and field_values."""
+        from src.analysis.trajectory import record_episode
+        from src.agents.network import ActorCritic
+        from src.configs import Config
+        from src.environment.obs import obs_dim
+
+        config = Config()
+        config.env.max_steps = 10
+        config.env.grid_size = 10
+        config.env.num_agents = 4
+        config.env.num_food = 5
+        config.evolution.max_agents = 8
+
+        network = ActorCritic(
+            hidden_dims=config.agent.hidden_dims,
+            num_actions=6,
+        )
+        key = jax.random.PRNGKey(99)
+        key, init_key = jax.random.split(key)
+        params = network.init(init_key, jnp.zeros(obs_dim(config)))
+
+        traj = record_episode(network, params, config, key)
+
+        assert "births" in traj
+        assert "field_values" in traj
+        t = traj["actions"].shape[0]
+        max_agents = config.evolution.max_agents
+        assert traj["births"].shape == (t, max_agents)
+        assert traj["field_values"].shape == (t, max_agents)
+
+    def test_record_episode_deterministic_flag(self):
+        """Deterministic mode produces consistent trajectories."""
+        from src.analysis.trajectory import record_episode
+        from src.agents.network import ActorCritic
+        from src.configs import Config
+        from src.environment.obs import obs_dim
+
+        config = Config()
+        config.env.max_steps = 5
+        config.env.grid_size = 10
+        config.env.num_agents = 3
+        config.env.num_food = 5
+        config.evolution.max_agents = 8
+
+        network = ActorCritic(
+            hidden_dims=config.agent.hidden_dims,
+            num_actions=6,
+        )
+        key = jax.random.PRNGKey(7)
+        key, init_key = jax.random.split(key)
+        params = network.init(init_key, jnp.zeros(obs_dim(config)))
+
+        traj1 = record_episode(network, params, config, key, deterministic=True)
+        traj2 = record_episode(network, params, config, key, deterministic=True)
+
+        # Same seed + deterministic => identical trajectories
+        np.testing.assert_array_equal(traj1["actions"], traj2["actions"])
+        np.testing.assert_array_equal(traj1["positions"], traj2["positions"])
+
+    def test_record_episode_compatible_with_features(self):
+        """Full pipeline: record_episode -> extract_behavior_features."""
+        from src.analysis.specialization import extract_behavior_features
+        from src.analysis.trajectory import record_episode
+        from src.agents.network import ActorCritic
+        from src.configs import Config
+        from src.environment.obs import obs_dim
+
+        config = Config()
+        config.env.max_steps = 20
+        config.env.grid_size = 10
+        config.env.num_agents = 4
+        config.env.num_food = 5
+        config.evolution.max_agents = 8
+
+        network = ActorCritic(
+            hidden_dims=config.agent.hidden_dims,
+            num_actions=6,
+        )
+        key = jax.random.PRNGKey(123)
+        key, init_key = jax.random.split(key)
+        params = network.init(init_key, jnp.zeros(obs_dim(config)))
+
+        traj = record_episode(network, params, config, key)
+        features = extract_behavior_features(traj)
+
+        assert features.shape == (config.evolution.max_agents, 7)
+        assert np.all(np.isfinite(features))
+
+    def test_record_episode_alive_mask_reflects_state(self):
+        """alive_mask in trajectory should reflect actual agent alive status."""
+        from src.analysis.trajectory import record_episode
+        from src.agents.network import ActorCritic
+        from src.configs import Config
+        from src.environment.obs import obs_dim
+
+        config = Config()
+        config.env.max_steps = 10
+        config.env.grid_size = 10
+        config.env.num_agents = 4
+        config.env.num_food = 5
+        config.evolution.max_agents = 8
+
+        network = ActorCritic(
+            hidden_dims=config.agent.hidden_dims,
+            num_actions=6,
+        )
+        key = jax.random.PRNGKey(55)
+        key, init_key = jax.random.split(key)
+        params = network.init(init_key, jnp.zeros(obs_dim(config)))
+
+        traj = record_episode(network, params, config, key)
+
+        # First step: first num_agents should be alive, rest dead
+        num_agents = config.env.num_agents
+        max_agents = config.evolution.max_agents
+        assert np.all(traj["alive_mask"][0, :num_agents])  # first agents alive
+        assert not np.any(traj["alive_mask"][0, num_agents:])  # rest dead

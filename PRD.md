@@ -61,7 +61,7 @@ With shared field + evolution, agents should differentiate into roles:
   - Average energy level
 **Verification:** `pytest tests/test_specialization.py::test_behavior_features -v` passes
 
-### US-003: Trajectory Recording [ ]
+### US-003: Trajectory Recording [x]
 **Task:** Record agent trajectories during evaluation for analysis.
 **Files:** `src/analysis/trajectory.py` (new)
 **Changes:**
