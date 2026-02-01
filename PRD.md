@@ -100,17 +100,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-006: Implement field read/write operations [ ]
+### US-006: Implement field read/write operations [x]
 
 **Description:** As a developer, I need agents to interact with the field locally.
 
 **Acceptance Criteria:**
-- [ ] Create `src/field/ops.py`
-- [ ] `read_local(field, positions, radius)` returns local field values for each position
-- [ ] `write_local(field, positions, values)` adds values at agent positions
-- [ ] Works with batched positions `(N, 2)` 
-- [ ] Tests pass: `pytest tests/test_field.py::TestFieldOps -v`
-- [ ] Typecheck passes
+- [x] Create `src/field/ops.py`
+- [x] `read_local(field, positions, radius)` returns local field values for each position
+- [x] `write_local(field, positions, values)` adds values at agent positions
+- [x] Works with batched positions `(N, 2)`
+- [x] Tests pass: `pytest tests/test_field.py::TestFieldOps -v`
+- [x] Typecheck passes
 
 ---
 

@@ -37,8 +37,17 @@
 - All 5 TestFieldDynamics tests pass
 - Typecheck passes
 
+### US-006: Implement field read/write operations [x]
+- Created src/field/ops.py with two functions: write_local() and read_local()
+- write_local(field, positions, values): uses jnp.ndarray.at[].add() to write values at agent (row, col) positions; shape (N, 2) positions, (N, C) values
+- read_local(field, positions, radius): reads local field values; radius=0 returns (N, C) at exact positions, radius>0 returns flattened (2r+1)x(2r+1) neighborhood as (N, (2r+1)^2 * C)
+- Out-of-bounds reads are clamped to field edges via jnp.clip
+- Both functions are JIT-compatible (no Python control flow for radius>0 case; radius is a static int)
+- All 4 TestFieldOps tests pass, all 11 field tests pass
+- Typecheck passes
+
 ## Current Task
-US-006: Implement field read/write operations
+US-007: Implement EnvState dataclass
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -62,6 +71,7 @@ US-006: Implement field read/write operations
 - tests/*.py (test stubs)
 - src/field/field.py (FieldState dataclass and create_field)
 - src/field/dynamics.py (diffuse, decay, step_field)
+- src/field/ops.py (read_local, write_local)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
