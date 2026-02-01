@@ -275,18 +275,18 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-017: Implement training step [ ]
+### US-017: Implement training step [x]
 
 **Description:** As a developer, I need the core training update.
 
 **Acceptance Criteria:**
-- [ ] In `src/training/train.py`
-- [ ] `train_step(runner_state, network, config)` returns `(new_runner_state, metrics)`
-- [ ] Collects rollout → computes GAE → updates policy (multiple epochs)
-- [ ] Normalizes advantages per minibatch
-- [ ] Uses gradient clipping
-- [ ] Tests pass: `pytest tests/test_training.py::TestTrainStep -v`
-- [ ] Typecheck passes
+- [x] In `src/training/train.py`
+- [x] `train_step(runner_state, network, config)` returns `(new_runner_state, metrics)`
+- [x] Collects rollout → computes GAE → updates policy (multiple epochs)
+- [x] Normalizes advantages per minibatch
+- [x] Uses gradient clipping
+- [x] Tests pass: `pytest tests/test_training.py::TestTrainStep -v`
+- [x] Typecheck passes
 
 ---
 

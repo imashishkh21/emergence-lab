@@ -174,8 +174,25 @@
 - All 2 TestRollout tests pass, mypy clean (20 source files, no issues)
 - Files changed: src/training/rollout.py (new)
 
+### US-017: Implement training step [x]
+- Created src/training/train.py with create_train_state() and train_step() functions
+- create_train_state(config, key): initializes network, optimizer (adam + grad clipping), vectorized env, and returns RunnerState
+- train_step(runner_state, config): full PPO iteration:
+  1. Collects rollout via collect_rollout (num_steps transitions)
+  2. Computes bootstrap value from last observation
+  3. Computes GAE advantages/returns via vmap over env*agent pairs
+  4. Flattens rollout into training batch (num_steps * num_envs * num_agents samples)
+  5. Runs num_epochs of minibatch PPO updates using jax.lax.scan
+  6. Each minibatch: shuffles, normalizes advantages, computes PPO loss + gradients, applies optimizer update
+- Gradient clipping via optax.clip_by_global_norm(max_grad_norm)
+- Advantage normalization per minibatch: (adv - mean) / (std + 1e-8)
+- Metrics returned: total_loss, policy_loss, value_loss, entropy, approx_kl, clip_fraction, mean_reward, mean_value, mean_advantage, mean_return
+- All 1 TestTrainStep test passes, all 10 training tests pass
+- Mypy clean (21 source files, no issues)
+- Files changed: src/training/train.py (new)
+
 ## Current Task
-US-017: Implement training step
+US-018: Implement full training loop
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -206,6 +223,7 @@ US-017: Implement training step
 - src/agents/network.py (ActorCritic module)
 - src/agents/policy.py (sample_actions, get_deterministic_actions)
 - src/training/rollout.py (RunnerState, collect_rollout)
+- src/training/train.py (create_train_state, train_step)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)
