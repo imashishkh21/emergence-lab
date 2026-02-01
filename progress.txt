@@ -159,3 +159,23 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 291/291 tests pass
 
 ---
+
+### US-009: Diversity vs Performance Ablation ✓
+**What:** Implemented specialization ablation comparing populations with divergent (specialized) weights vs uniform (cloned) weights vs random weights, plus a script to train and run the comparison.
+**Decisions:**
+- Added 3 weight conditions to compare: `divergent` (trained per-agent weights), `uniform` (all agents cloned to mean of alive agents' weights), `random_weights` (mean weights + Gaussian noise)
+- `_make_uniform_params()` averages alive agents' weights and broadcasts to all slots — tests whether weight diversity matters
+- `_make_random_params()` adds i.i.d. Gaussian noise (std=0.1) to mean weights — tests whether learned divergence is better than random noise
+- `SpecializationAblationResult` extends the existing ablation pattern with food_collected and population_stability metrics
+- `population_stability` measured as std of alive population count over time per episode (lower = more stable)
+- `_run_specialization_episode()` tracks food collected via before/after food_collected diff at each step
+- `print_specialization_ablation_results()` prints a formatted table and computes divergent-vs-uniform and divergent-vs-random comparisons with interpretive text
+- `scripts/run_specialization_ablation.py` follows the pattern of `scripts/run_ablation.py`: trains briefly, computes pre-ablation specialization score, runs 3-condition ablation, prints results
+- Script supports `--skip-training` + `--checkpoint` for loading pre-trained models, and saves checkpoint with both shared params and per-agent params
+- Pre-ablation analysis reports weight divergence, specialization score breakdown, and optimal cluster count
+**Files changed:**
+- `src/analysis/ablation.py` — added `SpecializationAblationResult`, `_SpecEpisodeStats`, `_make_uniform_params`, `_make_random_params`, `_replace_agent_params`, `_run_specialization_episode`, `specialization_ablation_test`, `print_specialization_ablation_results`, `WeightCondition` type alias; added `Any` to typing imports; updated module docstring
+- `scripts/run_specialization_ablation.py` (new) — full training + specialization analysis + ablation comparison script
+**Validation:** mypy clean (31 files), 291/291 tests pass, script produces comparison output
+
+---

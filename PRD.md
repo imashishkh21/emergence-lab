@@ -124,7 +124,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Identify "specialist lineages"
 **Verification:** `pytest tests/test_specialization.py::test_lineage_correlation -v` passes
 
-### US-009: Diversity vs Performance Ablation [ ]
+### US-009: Diversity vs Performance Ablation [x]
 **Task:** Test if specialization helps collective performance.
 **Files:** `src/analysis/ablation.py`, `scripts/run_specialization_ablation.py`
 **Changes:**
