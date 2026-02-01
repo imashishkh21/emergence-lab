@@ -251,8 +251,19 @@
 - All 17 env tests pass, mypy clean (23 source files)
 - Files changed: src/environment/render.py (new), tests/test_env.py (added TestRender class)
 
+### US-021: Implement episode video recording [x]
+- Created src/utils/video.py with two public functions: record_episode and save_video
+- record_episode(network, params, config, key): runs one full episode using deterministic (greedy) actions,
+  renders each timestep via render_frame(), returns list of uint8 RGB numpy arrays
+- save_video(frames, path, fps=30): saves frames as MP4 using imageio + ffmpeg (libx264 codec)
+- Uses get_deterministic_actions for evaluation (argmax policy, no sampling)
+- Adds batch dim (1, num_agents, obs_dim) for policy compatibility, removes it for env step
+- Tested end-to-end: 21 frames (400x400 RGB) recorded for 20-step episode, saved as 63KB MP4
+- Mypy clean (24 source files, no issues)
+- Files changed: src/utils/video.py (new)
+
 ## Current Task
-US-021: Implement episode video recording
+US-022: Implement field analysis metrics
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -285,6 +296,7 @@ US-021: Implement episode video recording
 - src/training/rollout.py (RunnerState, collect_rollout)
 - src/training/train.py (create_train_state, train_step, W&B integration)
 - src/utils/logging.py (init_wandb, log_metrics, log_video, finish_wandb)
+- src/utils/video.py (record_episode, save_video)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)

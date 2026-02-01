@@ -349,16 +349,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-021: Implement episode video recording [ ]
+### US-021: Implement episode video recording [x]
 
 **Description:** As a developer, I need to record agent behavior.
 
 **Acceptance Criteria:**
-- [ ] Create `src/utils/video.py`
-- [ ] `record_episode(network, params, env, config) -> list[np.ndarray]`
-- [ ] `save_video(frames, path, fps=30)` saves MP4
-- [ ] Running evaluation produces valid MP4 file
-- [ ] Typecheck passes
+- [x] Create `src/utils/video.py`
+- [x] `record_episode(network, params, env, config) -> list[np.ndarray]`
+- [x] `save_video(frames, path, fps=30)` saves MP4
+- [x] Running evaluation produces valid MP4 file
+- [x] Typecheck passes
 
 ---
 
