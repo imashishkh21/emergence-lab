@@ -60,3 +60,16 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 59 tests pass, mypy clean.
 
 ---
+
+### US-004: Implement Energy Drain Per Step ✓
+**What:** Added energy drain logic to `step()` — alive agents lose `energy_per_step` each step, clamped to 0. Created `tests/test_energy.py` with 5 tests covering drain, alive-only masking, floor clamping, multi-step accumulation, and JIT compatibility.
+**Decisions:**
+- Used `jnp.where(agent_alive, max(energy - cost, 0), energy)` pattern — clean, JIT-friendly, no mutation.
+- Energy drain happens after movement and food collection but before step counter advance (section 5 in step()).
+- Dead agent slots (energy=0, alive=False) are untouched by drain.
+**Files changed:**
+- `src/environment/env.py` — Added energy drain logic in `step()`, renumbered subsequent sections
+- `tests/test_energy.py` — Created with 5 tests in `TestEnergyDrain` class
+**Issues:** None. All 64 tests pass, mypy clean.
+
+---

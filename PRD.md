@@ -56,7 +56,7 @@
    - Pad `agent_positions` to `(max_agents, 2)` — use (0,0) for dead agents                                                           
    **Verification:** `pytest tests/test_env.py::TestEnvReset -v` passes                                                               
                                                                                                                                       
-   ### US-004: Implement Energy Drain Per Step [ ]                                                                                    
+   ### US-004: Implement Energy Drain Per Step [x]                                                                                    
    **Task:** Decrease agent energy each step.                                                                                         
    **Files:** `src/environment/env.py`                                                                                                
    **Changes:**                                                                                                                       

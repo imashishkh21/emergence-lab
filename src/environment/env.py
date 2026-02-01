@@ -177,11 +177,20 @@ def step(
     write_values = write_values * state.agent_alive[:, None]
     field_state = write_local(field_state, new_positions, write_values)
 
-    # --- 5. Advance step counter and check done ---
+    # --- 5. Energy drain ---
+    # Subtract energy_per_step from alive agents, clamp to 0
+    energy_drain = jnp.where(
+        state.agent_alive,
+        jnp.maximum(state.agent_energy - config.evolution.energy_per_step, 0.0),
+        state.agent_energy,
+    )
+    new_energy = energy_drain
+
+    # --- 6. Advance step counter and check done ---
     new_step = state.step + 1
     done = new_step >= config.env.max_steps
 
-    # --- 6. Split PRNG key ---
+    # --- 7. Split PRNG key ---
     new_key, _ = jax.random.split(state.key)
 
     new_state = EnvState(
@@ -191,7 +200,7 @@ def step(
         field_state=field_state,
         step=new_step,
         key=new_key,
-        agent_energy=state.agent_energy,
+        agent_energy=new_energy,
         agent_alive=state.agent_alive,
         agent_ids=state.agent_ids,
         agent_parent_ids=state.agent_parent_ids,
