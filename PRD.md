@@ -277,11 +277,44 @@ local_fitness(x) = count(y for y in neighbors(x) if fitness(x) > fitness(y))
 - **NSLC**: Lehman & Stanley (2011) — local competition within behavioral neighborhoods
 - **DIAYN**: Eysenbach et al. (2018) — mutual information diversity
 - **OpenAI Hide-and-Seek**: Baker et al. (2019) — emergent phase detection
+- **Response Threshold Model**: Ant colony division of labor mechanism
+- **MADDPG**: Lowe et al. (2017) — multi-agent actor-critic coordination
+- **QMIX**: Rashid et al. (2018) — value decomposition for cooperation
 
 ### Expected Species Types
 - **Explorers**: High movement entropy, high field writes, low food rate
 - **Exploiters**: Low entropy, high field reads, high food rate
 - **Balanced**: Medium everything, generalist strategy
+
+### Response Threshold Model (from ant colony research)
+Key biological insight: Individual insects have **variable thresholds** for responding to stimuli.
+- When task stimulus exceeds threshold → perform task
+- Lower threshold = specialist in that task
+- Thresholds can be innate (from mutation) or plastic (learned)
+
+**For our system:**
+- Agents may evolve different "sensitivities" to field signals
+- Some become field-readers (low threshold), others field-writers (high threshold)
+- Mutation creates the variation, selection reinforces specialization
+
+### Symmetry Breaking Requirements
+Specialization requires breaking symmetry between identical agents:
+- ✅ We have: Mutation (weight noise), evolution (selection pressure)
+- ✅ We have: Partial observability (local field reads)
+- ✅ We have: Spatial separation (agents at different positions)
+- Consider adding: Heterogeneous initialization or learning rates
+
+### Specialization Metrics (from multi-agent RL literature)
+```python
+# Action entropy - low = specialist, high = generalist
+action_entropy = entropy(action_distribution_per_agent)
+
+# State coverage overlap - low = distinct roles
+coverage_overlap = jaccard_similarity(visited_states_per_agent)
+
+# Mutual information I(Agent, Task) - high = strong specialization
+mi_agent_task = mutual_information(agent_id, primary_task)
+```
 
 ## Out of Scope (Phase 4+)
 
