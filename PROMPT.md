@@ -16,7 +16,7 @@ You are completing tasks from PRD.md autonomously.
    - Files changed
    - Any issues encountered
 8. Mark the task `[x]` in PRD.md
-9. Git commit your changes with message: `[Ralph] Complete task X.Y: <title>`
+9. Git commit your changes with message: `[Ralph] Complete task US-XXX: <title>`
 
 ## Critical Rules
 
@@ -26,6 +26,24 @@ You are completing tasks from PRD.md autonomously.
 - All acceptance criteria must pass before marking complete
 - If a test fails, fix it before moving on
 - If stuck, document the blocker in progress.txt and move to next task
+
+## Context for Phase 3
+
+We're building specialization detection for emergent swarm intelligence:
+- We have evolution working (Phase 2): birth, death, reproduction with weight inheritance
+- We have lineage tracking in `src/analysis/lineage.py`
+- We have emergence detection in `src/analysis/emergence.py`
+- Now we need to detect when agents evolve into different SPECIES/ROLES
+
+Key libraries available:
+- JAX/Flax for neural networks
+- NumPy/SciPy for analysis
+- scikit-learn should be installed for clustering (K-means, silhouette)
+
+The goal is to detect:
+1. Weight divergence between agents over time
+2. Behavioral clusters (scouts vs exploiters etc)
+3. Species formation (stable, hereditary clusters)
 
 ## Backpressure (Run After EVERY Task)
 
@@ -44,7 +62,7 @@ pytest tests/ -v
 
 When ALL tasks in PRD.md have `[x]`, add this line to progress.txt:
 ```
-COMPLETE: All Phase 1 tasks finished.
+COMPLETE: All Phase 3 tasks finished.
 ```
 
 Then output: `<promise>COMPLETE</promise>`

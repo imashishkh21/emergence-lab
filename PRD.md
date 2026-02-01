@@ -196,12 +196,22 @@ features = [
 ]
 ```
 
-### Species Detection Criteria
+### Species Detection Criteria (inspired by NEAT)
 A "species" requires:
 1. Distinct behavioral cluster (silhouette > 0.5)
-2. Weight divergence from other clusters
-3. Hereditary: children cluster with parents
+2. Genomic distance from other clusters (weight L2 norm or cosine > threshold)
+3. Hereditary: children cluster with parents (>70% inheritance)
 4. Stable: cluster persists for 100+ steps
+5. Fitness sharing: species compete primarily within, not between
+
+### Genomic Distance Formula (from NEAT)
+```python
+def genomic_distance(params_a, params_b, c1=1.0, c2=1.0):
+    """Measure how different two agents' genomes are."""
+    flat_a = flatten_params(params_a)
+    flat_b = flatten_params(params_b)
+    return c1 * np.mean(np.abs(flat_a - flat_b)) + c2 * (1 - cosine_similarity(flat_a, flat_b))
+```
 
 ### Expected Species Types
 - **Explorers**: High movement entropy, high field writes, low food rate
