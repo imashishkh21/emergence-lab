@@ -74,8 +74,21 @@
 - All 3 TestEnvStep tests pass, mypy clean
 - Files changed: src/environment/env.py (added step function + imports for step_field, write_local)
 
+### US-010: Implement observation function [x]
+- Created src/environment/obs.py with get_observations() and obs_dim() functions
+- Observation components per agent:
+  1. Own position (2 values): normalized to [-1, 1] via (pos / (grid_size-1)) * 2 - 1
+  2. Local field values ((2*radius+1)^2 * channels values): read via read_local(), clipped to [-1, 1]
+  3. K nearest uncollected food (K*3 = 15 values): relative (dx, dy) normalized by grid_size + availability flag
+- K_NEAREST_FOOD = 5 (hardcoded constant)
+- Food outside observation_radius or already collected is masked out
+- Uses Chebyshev distance to determine food visibility range
+- Total obs_dim with defaults: 2 + 484 + 15 = 501
+- All TestObservations tests pass (2/2), mypy clean
+- Files changed: src/environment/obs.py (new)
+
 ## Current Task
-US-010: Implement observation function
+US-011: Vectorize environment with vmap
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -102,6 +115,7 @@ US-010: Implement observation function
 - src/field/ops.py (read_local, write_local)
 - src/environment/state.py (EnvState dataclass and create_env_state)
 - src/environment/env.py (added step function)
+- src/environment/obs.py (get_observations, obs_dim)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)

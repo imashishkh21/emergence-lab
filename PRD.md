@@ -158,17 +158,17 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-010: Implement observation function [ ]
+### US-010: Implement observation function [x]
 
 **Description:** As a developer, I need observations for agent policies.
 
 **Acceptance Criteria:**
-- [ ] Create `src/environment/obs.py`
-- [ ] `get_observations(state, config) -> jnp.ndarray` shape `(num_agents, obs_dim)`
-- [ ] Each agent sees: own position (normalized), local field values, relative food positions (if in range)
-- [ ] All values normalized to `[-1, 1]`
-- [ ] Tests pass: `pytest tests/test_env.py::TestObservations -v`
-- [ ] Typecheck passes
+- [x] Create `src/environment/obs.py`
+- [x] `get_observations(state, config) -> jnp.ndarray` shape `(num_agents, obs_dim)`
+- [x] Each agent sees: own position (normalized), local field values, relative food positions (if in range)
+- [x] All values normalized to `[-1, 1]`
+- [x] Tests pass: `pytest tests/test_env.py::TestObservations -v`
+- [x] Typecheck passes
 
 ---
 
