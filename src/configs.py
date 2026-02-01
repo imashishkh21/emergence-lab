@@ -72,6 +72,7 @@ class AnalysisConfig:
     """Analysis configuration."""
     ablation_interval: int = 100000
     emergence_check_interval: int = 10000
+    specialization_check_interval: int = 20000
 
 
 @dataclass

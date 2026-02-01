@@ -120,3 +120,24 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 262/262 tests pass
 
 ---
+
+### US-007: Specialization Tracker ✓
+**What:** Implemented `SpecializationTracker` class and `SpecializationEvent` dataclass in `src/analysis/specialization.py`, integrated into `src/training/train.py`.
+**Decisions:**
+- Follows the `EmergenceTracker` pattern: rolling window z-score detection for phase transitions
+- Tracks three metrics per update: `weight_divergence` (mean cosine distance), `max_divergence`, and `num_alive`
+- Detects "specialization events" when any metric deviates beyond `z_threshold` (default 3.0) standard deviations from the rolling window mean (default window_size=20)
+- Added `specialization_check_interval: int = 20000` to `AnalysisConfig` — set to 2x emergence_check_interval since weight divergence computation requires flattening all agent params
+- `get_metrics()` returns dict with `specialization/` prefix for W&B logging
+- `get_summary()` returns final/mean/std for each metric plus all detected events
+- Integration in train.py: only runs when `evolution.enabled`, uses first env's per-agent params and alive mask, logs to tqdm and W&B
+- Prints specialization summary after training (final divergence, mean divergence, events)
+- Added `import numpy as np` to train.py (was missing, needed for `np.asarray` of alive mask)
+**Files changed:**
+- `src/configs.py` — added `specialization_check_interval: int = 20000` to `AnalysisConfig`
+- `src/analysis/specialization.py` — added `SpecializationEvent` dataclass, `SpecializationTracker` class with `update()`, `get_metrics()`, `get_summary()`; added `from src.configs import Config` import
+- `src/training/train.py` — imported `SpecializationTracker` and `numpy`, instantiated tracker, added specialization check block in training loop, added specialization summary printing
+- `tests/test_specialization.py` — added `TestSpecializationTracker` class with 15 tests covering: init, update returns, step count increment, history recording, identical/different agent divergence, alive count tracking, get_metrics keys and finiteness, get_summary keys, sudden divergence event detection, steady divergence no events, JAX alive mask acceptance, event str output, history growth
+**Validation:** mypy clean (31 files), 277/277 tests pass
+
+---

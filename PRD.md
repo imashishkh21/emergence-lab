@@ -105,7 +105,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Identify "writers" vs "readers"
 **Verification:** `pytest tests/test_specialization.py::test_field_usage -v` passes
 
-### US-007: Specialization Tracker [ ]
+### US-007: Specialization Tracker [x]
 **Task:** Track specialization metrics during training.
 **Files:** `src/analysis/specialization.py`, `src/training/train.py`
 **Changes:**

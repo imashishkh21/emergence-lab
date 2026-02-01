@@ -13,6 +13,8 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+from src.configs import Config
+
 
 def flatten_agent_params(agent_params: Any, agent_idx: int) -> np.ndarray:
     """Extract and flatten one agent's parameters into a 1D vector.
@@ -693,3 +695,153 @@ def _classify_cluster_role(stats: dict[str, float]) -> str:
         return "reader"
     else:
         return "balanced"
+
+
+@dataclass
+class SpecializationEvent:
+    """A detected specialization event (sudden divergence increase)."""
+
+    step: int
+    metric_name: str
+    old_value: float
+    new_value: float
+    z_score: float
+
+    def __str__(self) -> str:
+        direction = "increase" if self.new_value > self.old_value else "decrease"
+        return (
+            f"[step {self.step}] Specialization event in {self.metric_name}: "
+            f"{self.old_value:.4f} -> {self.new_value:.4f} "
+            f"({direction}, z={self.z_score:.2f})"
+        )
+
+
+class SpecializationTracker:
+    """Tracks specialization metrics during training and detects specialization events.
+
+    Monitors weight divergence between agents over training iterations.
+    Detects "specialization events" when divergence increases suddenly
+    (beyond ``z_threshold`` standard deviations from the rolling mean).
+
+    Attributes:
+        config: Master configuration.
+        history: Dict mapping metric name to lists of (step, value) pairs.
+        events: List of detected SpecializationEvent instances.
+        step_count: Number of update calls made.
+    """
+
+    def __init__(
+        self,
+        config: Config,
+        window_size: int = 20,
+        z_threshold: float = 3.0,
+    ) -> None:
+        self.config = config
+        self.window_size = window_size
+        self.z_threshold = z_threshold
+
+        self.history: dict[str, list[float]] = {
+            "weight_divergence": [],
+            "max_divergence": [],
+            "num_alive": [],
+        }
+        self.steps: list[int] = []
+        self.events: list[SpecializationEvent] = []
+        self.step_count: int = 0
+
+    def update(
+        self,
+        agent_params: Any,
+        alive_mask: np.ndarray | jnp.ndarray,
+        step: int,
+    ) -> list[SpecializationEvent]:
+        """Compute specialization metrics and check for events.
+
+        Args:
+            agent_params: Per-agent parameters pytree where each leaf has
+                leading dimension ``(max_agents, ...)``. Should be params
+                for a single environment (not batched over envs).
+            alive_mask: Boolean array of shape ``(max_agents,)`` indicating
+                which agents are alive.
+            step: Current training step.
+
+        Returns:
+            List of SpecializationEvent instances detected at this step
+            (empty if no events detected).
+        """
+        alive_mask = np.asarray(alive_mask, dtype=bool)
+        num_alive = int(np.sum(alive_mask))
+
+        # Compute weight divergence
+        div_result = compute_weight_divergence(agent_params, alive_mask)
+        mean_div = div_result["mean_divergence"]
+        max_div = div_result["max_divergence"]
+
+        new_values = {
+            "weight_divergence": mean_div,
+            "max_divergence": max_div,
+            "num_alive": float(num_alive),
+        }
+
+        new_events: list[SpecializationEvent] = []
+
+        for name, value in new_values.items():
+            hist = self.history[name]
+
+            # Check for specialization event (need enough history)
+            if len(hist) >= self.window_size:
+                recent = hist[-self.window_size:]
+                mean = float(np.mean(recent))
+                std = float(np.std(recent))
+                if std < 1e-8:
+                    std = 1e-8
+                z_score = abs(value - mean) / std
+
+                if z_score > self.z_threshold:
+                    event = SpecializationEvent(
+                        step=step,
+                        metric_name=name,
+                        old_value=mean,
+                        new_value=value,
+                        z_score=z_score,
+                    )
+                    self.events.append(event)
+                    new_events.append(event)
+
+            hist.append(value)
+
+        self.steps.append(step)
+        self.step_count += 1
+        return new_events
+
+    def get_metrics(self) -> dict[str, float]:
+        """Return current metric values for logging.
+
+        Returns:
+            Dict with keys like ``'specialization/weight_divergence'``,
+            ``'specialization/max_divergence'``, etc.
+        """
+        metrics: dict[str, float] = {}
+        for name, hist in self.history.items():
+            if len(hist) > 0:
+                metrics[f"specialization/{name}"] = hist[-1]
+        metrics["specialization/num_events"] = float(len(self.events))
+        return metrics
+
+    def get_summary(self) -> dict[str, Any]:
+        """Return a summary of specialization tracking.
+
+        Returns:
+            Dict with overall statistics and event list.
+        """
+        summary: dict[str, Any] = {
+            "total_updates": self.step_count,
+            "total_events": len(self.events),
+            "events": [str(e) for e in self.events],
+        }
+        for name, hist in self.history.items():
+            if len(hist) > 0:
+                summary[f"{name}_final"] = hist[-1]
+                summary[f"{name}_mean"] = float(np.mean(hist))
+                summary[f"{name}_std"] = float(np.std(hist))
+        return summary

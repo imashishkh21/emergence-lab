@@ -5,6 +5,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from src.configs import Config
+
 
 class TestWeightDivergence:
     """US-001: Weight divergence metric tests."""
@@ -1480,3 +1482,253 @@ class TestFieldUsage:
         assert result["num_clusters"] >= 1
         for stats in result["per_cluster"].values():
             assert all(np.isfinite(v) for v in stats.values())
+
+
+class TestSpecializationTracker:
+    """US-007: Specialization tracker tests."""
+
+    def _make_agent_params(
+        self, num_agents: int = 8, seed: int = 42, identical: bool = False
+    ) -> dict[str, jnp.ndarray]:
+        """Helper to create per-agent params."""
+        key = jax.random.PRNGKey(seed)
+        if identical:
+            single = jax.random.normal(key, (32, 16))
+            kernels = jnp.tile(single[None], (num_agents, 1, 1))
+        else:
+            keys = jax.random.split(key, num_agents)
+            kernels = jnp.stack([jax.random.normal(k, (32, 16)) for k in keys])
+        return {"layer": {"kernel": kernels}}
+
+    def test_tracker_init(self):
+        """SpecializationTracker initializes correctly."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+
+        assert tracker.step_count == 0
+        assert len(tracker.events) == 0
+        assert "weight_divergence" in tracker.history
+        assert "max_divergence" in tracker.history
+        assert "num_alive" in tracker.history
+
+    def test_tracker_update_returns_events_list(self):
+        """update() returns a list (possibly empty) of SpecializationEvent."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+
+        params = self._make_agent_params(num_agents=8)
+        alive = np.ones(8, dtype=bool)
+        events = tracker.update(params, alive, step=0)
+
+        assert isinstance(events, list)
+
+    def test_tracker_update_increments_step_count(self):
+        """Each update() increments step_count."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params()
+        alive = np.ones(8, dtype=bool)
+
+        for i in range(5):
+            tracker.update(params, alive, step=i * 1000)
+
+        assert tracker.step_count == 5
+
+    def test_tracker_records_history(self):
+        """update() appends to history."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params(num_agents=8)
+        alive = np.ones(8, dtype=bool)
+
+        tracker.update(params, alive, step=0)
+
+        assert len(tracker.history["weight_divergence"]) == 1
+        assert len(tracker.history["max_divergence"]) == 1
+        assert len(tracker.history["num_alive"]) == 1
+        assert len(tracker.steps) == 1
+
+    def test_tracker_identical_agents_zero_divergence(self):
+        """Identical agents should produce zero divergence in history."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params(num_agents=4, identical=True)
+        alive = np.ones(4, dtype=bool)
+
+        tracker.update(params, alive, step=0)
+
+        assert tracker.history["weight_divergence"][-1] == pytest.approx(0.0, abs=1e-6)
+        assert tracker.history["max_divergence"][-1] == pytest.approx(0.0, abs=1e-6)
+
+    def test_tracker_different_agents_positive_divergence(self):
+        """Different agents should produce positive divergence."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params(num_agents=4, identical=False)
+        alive = np.ones(4, dtype=bool)
+
+        tracker.update(params, alive, step=0)
+
+        assert tracker.history["weight_divergence"][-1] > 0.0
+
+    def test_tracker_alive_count_tracked(self):
+        """num_alive should reflect the alive_mask."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params(num_agents=8)
+        alive = np.array([True, True, True, False, False, False, False, False])
+
+        tracker.update(params, alive, step=0)
+
+        assert tracker.history["num_alive"][-1] == pytest.approx(3.0)
+
+    def test_tracker_get_metrics_keys(self):
+        """get_metrics() returns expected keys."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params()
+        alive = np.ones(8, dtype=bool)
+
+        tracker.update(params, alive, step=0)
+        metrics = tracker.get_metrics()
+
+        assert "specialization/weight_divergence" in metrics
+        assert "specialization/max_divergence" in metrics
+        assert "specialization/num_alive" in metrics
+        assert "specialization/num_events" in metrics
+
+    def test_tracker_get_metrics_values_finite(self):
+        """All metric values should be finite."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params()
+        alive = np.ones(8, dtype=bool)
+
+        tracker.update(params, alive, step=0)
+        metrics = tracker.get_metrics()
+
+        for v in metrics.values():
+            assert np.isfinite(v), f"Non-finite metric value: {v}"
+
+    def test_tracker_get_summary_keys(self):
+        """get_summary() returns expected keys."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params()
+        alive = np.ones(8, dtype=bool)
+
+        tracker.update(params, alive, step=0)
+        summary = tracker.get_summary()
+
+        assert "total_updates" in summary
+        assert "total_events" in summary
+        assert "events" in summary
+        assert "weight_divergence_final" in summary
+        assert "weight_divergence_mean" in summary
+        assert "weight_divergence_std" in summary
+
+    def test_tracker_detects_sudden_divergence_increase(self):
+        """Sudden increase in divergence should be detected as an event."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config, window_size=10, z_threshold=2.0)
+
+        # Feed steady low-divergence history
+        params_identical = self._make_agent_params(num_agents=4, identical=True)
+        alive = np.ones(4, dtype=bool)
+
+        for i in range(15):
+            tracker.update(params_identical, alive, step=i * 1000)
+
+        assert len(tracker.events) == 0
+
+        # Now feed high-divergence params — should trigger event
+        params_different = self._make_agent_params(num_agents=4, identical=False)
+        events = tracker.update(params_different, alive, step=15000)
+
+        # At least weight_divergence should trigger
+        assert len(events) > 0
+        assert any(e.metric_name == "weight_divergence" for e in events)
+
+    def test_tracker_no_events_with_steady_divergence(self):
+        """Steady divergence values should not trigger events."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config, window_size=10, z_threshold=3.0)
+
+        # Always use the same params — divergence is constant
+        params = self._make_agent_params(num_agents=4, identical=False, seed=99)
+        alive = np.ones(4, dtype=bool)
+
+        for i in range(30):
+            tracker.update(params, alive, step=i * 1000)
+
+        assert len(tracker.events) == 0
+
+    def test_tracker_accepts_jax_alive_mask(self):
+        """Tracker should accept JAX arrays for alive_mask."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params(num_agents=4)
+        alive = jnp.array([True, True, False, False])
+
+        events = tracker.update(params, alive, step=0)
+        assert isinstance(events, list)
+        assert tracker.history["num_alive"][-1] == pytest.approx(2.0)
+
+    def test_specialization_event_str(self):
+        """SpecializationEvent __str__ produces readable output."""
+        from src.analysis.specialization import SpecializationEvent
+
+        event = SpecializationEvent(
+            step=5000,
+            metric_name="weight_divergence",
+            old_value=0.01,
+            new_value=0.15,
+            z_score=4.5,
+        )
+        s = str(event)
+        assert "5000" in s
+        assert "weight_divergence" in s
+        assert "increase" in s
+        assert "4.5" in s
+
+    def test_tracker_multiple_updates_history_grows(self):
+        """History grows with each update."""
+        from src.analysis.specialization import SpecializationTracker
+
+        config = Config()
+        tracker = SpecializationTracker(config)
+        params = self._make_agent_params()
+        alive = np.ones(8, dtype=bool)
+
+        for i in range(20):
+            tracker.update(params, alive, step=i * 1000)
+
+        assert len(tracker.history["weight_divergence"]) == 20
+        assert len(tracker.steps) == 20
+        assert tracker.steps == list(range(0, 20000, 1000))

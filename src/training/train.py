@@ -8,12 +8,14 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from tqdm import tqdm
 
 from src.agents.network import ActorCritic
 from src.agents.policy import sample_actions
 from src.analysis.emergence import EmergenceTracker
+from src.analysis.specialization import SpecializationTracker
 from src.configs import Config
 from src.environment.obs import get_observations, obs_dim
 from src.environment.vec_env import VecEnv
@@ -418,6 +420,9 @@ def train(config: Config) -> RunnerState:
     # Initialize emergence tracker
     emergence_tracker = EmergenceTracker(config)
 
+    # Initialize specialization tracker
+    specialization_tracker = SpecializationTracker(config)
+
     # JIT-compile train_step with config captured in closure
     print("JIT compiling train_step...")
 
@@ -486,6 +491,30 @@ def train(config: Config) -> RunnerState:
                 emergence_metrics = emergence_tracker.get_metrics()
                 log_metrics(emergence_metrics, step=total_env_steps)
 
+        # Specialization tracking at configured interval
+        if (
+            config.evolution.enabled
+            and total_env_steps % config.analysis.specialization_check_interval
+            < steps_per_iter
+        ):
+            # Use per-agent params from the first environment
+            first_env_agent_params = jax.tree.map(
+                lambda x: x[0], runner_state.env_state.agent_params
+            )
+            first_env_alive = np.asarray(
+                runner_state.env_state.agent_alive[0]
+            )
+            spec_events = specialization_tracker.update(
+                first_env_agent_params, first_env_alive, step=total_env_steps
+            )
+            for spec_event in spec_events:
+                tqdm.write(f"SPECIALIZATION: {spec_event}")
+
+            # Log specialization metrics to W&B
+            if config.log.wandb:
+                spec_metrics = specialization_tracker.get_metrics()
+                log_metrics(spec_metrics, step=total_env_steps)
+
     pbar.close()
 
     # Print emergence summary
@@ -495,6 +524,27 @@ def train(config: Config) -> RunnerState:
         print("Emergence Events Detected:")
         for event_str in emergence_summary["events"]:
             print(f"  {event_str}")
+
+    # Print specialization summary
+    if config.evolution.enabled:
+        spec_summary = specialization_tracker.get_summary()
+        if spec_summary["total_updates"] > 0:
+            print()
+            print("Specialization Tracking Summary:")
+            print(f"  Updates: {spec_summary['total_updates']}")
+            if "weight_divergence_final" in spec_summary:
+                print(
+                    f"  Final weight divergence: "
+                    f"{spec_summary['weight_divergence_final']:.6f}"
+                )
+                print(
+                    f"  Mean weight divergence: "
+                    f"{spec_summary['weight_divergence_mean']:.6f}"
+                )
+            if spec_summary["total_events"] > 0:
+                print(f"  Specialization events: {spec_summary['total_events']}")
+                for event_str in spec_summary["events"]:
+                    print(f"    {event_str}")
 
     print()
     print("=" * 60)
