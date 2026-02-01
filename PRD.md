@@ -74,7 +74,7 @@
    - Log death count in info dict                                                                                                     
    **Verification:** `pytest tests/test_energy.py::test_death -v` passes                                                              
                                                                                                                                       
-   ### US-006: Implement Food Restores Energy [ ]                                                                                     
+   ### US-006: Implement Food Restores Energy [x]                                                                                     
    **Task:** Collecting food adds energy.                                                                                             
    **Files:** `src/environment/env.py`                                                                                                
    **Changes:**                                                                                                                       

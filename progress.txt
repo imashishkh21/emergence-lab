@@ -89,3 +89,19 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 71 tests pass, mypy clean.
 
 ---
+
+### US-006: Implement Food Restores Energy ✓
+**What:** Food collection now adds `food_energy` to the closest alive agent's energy, capped at `max_energy`. Rewards changed from shared team reward to individual energy-gained per agent.
+**Decisions:**
+- Used Chebyshev distance to determine closest alive agent per food item. Ties broken by lowest agent index (via `jnp.argmin`).
+- One-hot encoding + sum pattern to compute per-agent energy gain from potentially multiple food items — clean, JIT-friendly, no loops.
+- Food energy is applied before energy drain: agent gains food energy, then loses `energy_per_step`.
+- Energy capped at `max_energy` before drain.
+- Rewards changed from shared (`num_collected` broadcast) to individual (`energy_gained` per agent, sliced to `num_agents`).
+- Updated existing energy drain and death tests to set `food_energy=0` so random food proximity doesn't interfere with their assertions.
+**Files changed:**
+- `src/environment/env.py` — Rewrote food collection section (section 2) to track closest agent per food, compute per-agent energy gain, cap at max_energy. Updated energy drain (section 5) to use `energy_after_food`. Changed reward computation (section 3) to individual energy-gained.
+- `tests/test_energy.py` — Added `_make_state_with_positions` helper and `TestFoodEnergy` class with 8 tests: basic energy gain, max energy cap, closest-agent selection, dead agents can't collect, multiple food items, individual rewards, no food nearby, JIT compatibility. Fixed existing drain/death tests to disable food energy.
+**Issues:** None. All 79 tests pass, mypy clean.
+
+---

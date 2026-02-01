@@ -5,6 +5,8 @@ import jax.numpy as jnp
 
 from src.configs import Config
 from src.environment.env import reset, step
+from src.field.field import create_field
+from src.environment.state import EnvState
 
 
 class TestEnergyDrain:
@@ -13,6 +15,7 @@ class TestEnergyDrain:
     def test_energy_decreases_each_step(self):
         """Test that alive agents lose energy_per_step each step."""
         config = Config()
+        config.evolution.food_energy = 0  # Disable food energy for drain test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -69,6 +72,7 @@ class TestEnergyDrain:
         config = Config()
         config.evolution.starting_energy = 10
         config.evolution.energy_per_step = 3
+        config.evolution.food_energy = 0  # Disable food energy for drain test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -97,6 +101,7 @@ class TestEnergyDrain:
     def test_energy_drain_jit_compatible(self):
         """Test that energy drain works under JIT."""
         config = Config()
+        config.evolution.food_energy = 0  # Disable food energy for drain test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -122,6 +127,7 @@ class TestDeath:
         # Set energy so agents die after one step
         config.evolution.starting_energy = 1
         config.evolution.energy_per_step = 1
+        config.evolution.food_energy = 0  # Disable food energy for death test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -141,6 +147,7 @@ class TestDeath:
         config = Config()
         config.evolution.starting_energy = 1
         config.evolution.energy_per_step = 1
+        config.evolution.food_energy = 0  # Disable food energy for death test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -171,6 +178,7 @@ class TestDeath:
         config = Config()
         config.evolution.starting_energy = 1
         config.evolution.energy_per_step = 1
+        config.evolution.food_energy = 0  # Disable food energy for death test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -190,6 +198,7 @@ class TestDeath:
         config = Config()
         config.evolution.starting_energy = 1
         config.evolution.energy_per_step = 1
+        config.evolution.food_energy = 0  # Disable food energy for death test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -237,6 +246,7 @@ class TestDeath:
         config = Config()
         config.evolution.starting_energy = 1
         config.evolution.energy_per_step = 1
+        config.evolution.food_energy = 0  # Disable food energy for death test
         key = jax.random.PRNGKey(42)
 
         state = reset(key, config)
@@ -251,3 +261,265 @@ class TestDeath:
         # All agents should be dead
         assert not jnp.any(new_state.agent_alive[:config.env.num_agents])
         assert info["deaths_this_step"] == config.env.num_agents
+
+
+def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
+    """Helper to create a controlled EnvState with specific positions."""
+    max_agents = config.evolution.max_agents
+    num_food = len(food_pos)
+
+    # Override num_food in config for this state
+    config.env.num_food = num_food
+    num_agents = len(agent_pos)
+    config.env.num_agents = num_agents
+
+    grid_size = config.env.grid_size
+    key = jax.random.PRNGKey(0)
+
+    agent_positions = jnp.zeros((max_agents, 2), dtype=jnp.int32)
+    agent_positions = agent_positions.at[:num_agents].set(jnp.array(agent_pos, dtype=jnp.int32))
+
+    food_positions = jnp.array(food_pos, dtype=jnp.int32)
+    food_collected = jnp.zeros((num_food,), dtype=jnp.bool_)
+
+    field_state = create_field(
+        height=grid_size, width=grid_size, channels=config.field.num_channels
+    )
+
+    if energy is None:
+        energy_vals = jnp.float32(config.evolution.starting_energy)
+    else:
+        energy_vals = jnp.array(energy, dtype=jnp.float32)
+
+    agent_energy = jnp.zeros((max_agents,), dtype=jnp.float32)
+    if isinstance(energy_vals, jnp.ndarray) and energy_vals.ndim > 0:
+        agent_energy = agent_energy.at[:num_agents].set(energy_vals[:num_agents])
+    else:
+        agent_energy = agent_energy.at[:num_agents].set(energy_vals)
+
+    agent_alive = jnp.zeros((max_agents,), dtype=jnp.bool_)
+    agent_alive = agent_alive.at[:num_agents].set(True)
+
+    agent_ids = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    agent_ids = agent_ids.at[:num_agents].set(jnp.arange(num_agents, dtype=jnp.int32))
+
+    agent_parent_ids = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    next_agent_id = jnp.int32(num_agents)
+
+    return EnvState(
+        agent_positions=agent_positions,
+        food_positions=food_positions,
+        food_collected=food_collected,
+        field_state=field_state,
+        step=jnp.int32(0),
+        key=key,
+        agent_energy=agent_energy,
+        agent_alive=agent_alive,
+        agent_ids=agent_ids,
+        agent_parent_ids=agent_parent_ids,
+        next_agent_id=next_agent_id,
+    )
+
+
+class TestFoodEnergy:
+    """Tests for US-006: Food restores energy."""
+
+    def test_food_energy_basic(self):
+        """Test that collecting food adds food_energy to the agent."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Place agent at (5, 5), food at (5, 5) — same cell, distance 0
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[5, 5]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)  # stay
+        new_state, rewards, _, _ = step(state, actions, config)
+
+        # Agent should have gained food_energy minus energy_per_step drain
+        # 100 + 50 - 1 = 149
+        assert jnp.isclose(new_state.agent_energy[0], 149.0)
+        # Reward should be the energy gained (50)
+        assert jnp.isclose(rewards[0], 50.0)
+
+    def test_food_energy_cap_at_max(self):
+        """Test that energy is capped at max_energy."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 180
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Agent near max energy collects food
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[5, 5]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        new_state, rewards, _, _ = step(state, actions, config)
+
+        # Energy capped at 200, then drain: 200 - 1 = 199
+        assert jnp.isclose(new_state.agent_energy[0], 199.0)
+        # Reward is full food_energy (50), not capped amount
+        assert jnp.isclose(rewards[0], 50.0)
+
+    def test_food_energy_closest_agent_gets_energy(self):
+        """Test that only the closest alive agent to food gets the energy."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Agent 0 at (5, 5), Agent 1 at (5, 6) — food at (5, 5)
+        # Agent 0 is closer (distance 0 vs distance 1)
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5], [5, 6]],
+            food_pos=[[5, 5]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        new_state, rewards, _, _ = step(state, actions, config)
+
+        # Agent 0 gets food energy: 100 + 50 - 1 = 149
+        assert jnp.isclose(new_state.agent_energy[0], 149.0)
+        # Agent 1 does NOT get food energy: 100 - 1 = 99
+        assert jnp.isclose(new_state.agent_energy[1], 99.0)
+        # Rewards are individual
+        assert jnp.isclose(rewards[0], 50.0)
+        assert jnp.isclose(rewards[1], 0.0)
+
+    def test_food_energy_dead_agents_cant_collect(self):
+        """Test that dead agents cannot collect food."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Place agent at food position
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[5, 5]],
+        )
+
+        # Kill the agent
+        new_alive = state.agent_alive.at[0].set(False)
+        state = state.replace(agent_alive=new_alive)
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        new_state, rewards, _, info = step(state, actions, config)
+
+        # Food should NOT be collected (agent is dead)
+        assert not jnp.any(new_state.food_collected)
+        assert info["food_collected_this_step"] == 0
+
+    def test_food_energy_multiple_food_items(self):
+        """Test collecting multiple food items in one step."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 30
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Agent at (5, 5), two food items within range
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[5, 5], [5, 6]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        new_state, rewards, _, info = step(state, actions, config)
+
+        # Agent should gain 30 * 2 = 60 energy, minus 1 drain = 159
+        assert jnp.isclose(new_state.agent_energy[0], 159.0)
+        assert jnp.isclose(rewards[0], 60.0)
+        assert info["food_collected_this_step"] == 2
+
+    def test_food_energy_individual_rewards(self):
+        """Test that rewards are individual per agent, not shared."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Agent 0 at (5, 5) near food, Agent 1 at (15, 15) far from food
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5], [15, 15]],
+            food_pos=[[5, 5]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        _, rewards, _, _ = step(state, actions, config)
+
+        # Only agent 0 gets reward
+        assert jnp.isclose(rewards[0], 50.0)
+        assert jnp.isclose(rewards[1], 0.0)
+
+    def test_food_energy_no_food_nearby(self):
+        """Test no energy gained when no food is within range."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        # Agent at (5, 5), food at (15, 15) — far away
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[15, 15]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+        new_state, rewards, _, _ = step(state, actions, config)
+
+        # No food energy: 100 - 1 = 99
+        assert jnp.isclose(new_state.agent_energy[0], 99.0)
+        assert jnp.isclose(rewards[0], 0.0)
+
+    def test_food_energy_jit_compatible(self):
+        """Test that food energy logic works under JIT."""
+        config = Config()
+        config.env.grid_size = 20
+        config.evolution.starting_energy = 100
+        config.evolution.food_energy = 50
+        config.evolution.max_energy = 200
+        config.evolution.energy_per_step = 1
+
+        state = _make_state_with_positions(
+            config,
+            agent_pos=[[5, 5]],
+            food_pos=[[5, 5]],
+        )
+
+        actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
+
+        @jax.jit
+        def jit_step(s, a):
+            return step(s, a, config)
+
+        new_state, rewards, _, _ = jit_step(state, actions)
+
+        assert jnp.isclose(new_state.agent_energy[0], 149.0)
+        assert jnp.isclose(rewards[0], 50.0)

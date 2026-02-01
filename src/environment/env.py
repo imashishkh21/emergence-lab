@@ -135,7 +135,7 @@ def step(
     )
 
     # --- 2. Food collection ---
-    # Only alive agents can collect food
+    # Only alive agents can collect food; closest alive agent gets energy
     agent_rows = new_positions[:, 0:1]  # (max_agents, 1)
     agent_cols = new_positions[:, 1:2]  # (max_agents, 1)
     food_rows = state.food_positions[:, 0]  # (F,)
@@ -155,10 +155,37 @@ def step(
     newly_collected = jnp.any(collectible, axis=0)  # (F,)
     food_collected = state.food_collected | newly_collected
 
+    # Determine closest alive agent per food item for energy assignment
+    # Use large distance for non-collectible pairs so they lose argmin
+    masked_dist = jnp.where(collectible, chebyshev_dist, jnp.float32(1e6))
+    # For each food, find the closest agent (argmin over agents axis)
+    closest_agent = jnp.argmin(masked_dist, axis=0)  # (F,)
+
+    # Count food collected per agent: for each newly collected food,
+    # the closest agent gets food_energy
+    food_energy_val = jnp.float32(config.evolution.food_energy)
+    max_energy_val = jnp.float32(config.evolution.max_energy)
+
+    # Build per-agent energy gain: sum food_energy for each food assigned to agent
+    # Use one-hot encoding: (F, max_agents) where each row has a 1 at closest_agent
+    agent_food_mask = (
+        jax.nn.one_hot(closest_agent, max_agents)  # (F, max_agents)
+        * newly_collected[:, None]  # only count newly collected food
+    )
+    food_per_agent = jnp.sum(agent_food_mask, axis=0)  # (max_agents,)
+    energy_gained = food_per_agent * food_energy_val  # (max_agents,)
+
+    # Add energy to agents, cap at max_energy (only for alive agents)
+    energy_after_food = jnp.where(
+        state.agent_alive,
+        jnp.minimum(state.agent_energy + energy_gained, max_energy_val),
+        state.agent_energy,
+    )
+
     # --- 3. Compute reward ---
-    # +1 per food collected this step, shared across team
-    num_collected = jnp.sum(newly_collected.astype(jnp.float32))
-    rewards = jnp.full((config.env.num_agents,), num_collected)
+    # Individual reward: each agent gets reward equal to energy gained
+    # Slice to (num_agents,) for compatibility with training
+    rewards = energy_gained[:config.env.num_agents]
 
     # --- 4. Update field ---
     # Step field dynamics (diffuse + decay)
@@ -178,11 +205,11 @@ def step(
     field_state = write_local(field_state, new_positions, write_values)
 
     # --- 5. Energy drain ---
-    # Subtract energy_per_step from alive agents, clamp to 0
+    # Subtract energy_per_step from alive agents (after food energy), clamp to 0
     energy_drain = jnp.where(
         state.agent_alive,
-        jnp.maximum(state.agent_energy - config.evolution.energy_per_step, 0.0),
-        state.agent_energy,
+        jnp.maximum(energy_after_food - config.evolution.energy_per_step, 0.0),
+        energy_after_food,
     )
     new_energy = energy_drain
 
@@ -213,6 +240,7 @@ def step(
         next_agent_id=state.next_agent_id,
     )
 
+    num_collected = jnp.sum(newly_collected.astype(jnp.float32))
     info: dict[str, Any] = {
         "food_collected_this_step": num_collected,
         "total_food_collected": jnp.sum(food_collected.astype(jnp.float32)),
