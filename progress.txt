@@ -46,8 +46,15 @@
 - All 4 TestFieldOps tests pass, all 11 field tests pass
 - Typecheck passes
 
+### US-007: Implement EnvState dataclass [x]
+- Created src/environment/state.py with EnvState as @flax.struct.dataclass
+- EnvState fields: agent_positions (num_agents, 2), food_positions (num_food, 2), food_collected (num_food,) bool, field_state (FieldState), step (scalar int), key (PRNG key)
+- Implemented create_env_state(key, config) factory function that randomly places agents and food on the grid, initializes field to zeros
+- All TestEnvState tests pass (1/1)
+- Typecheck passes
+
 ## Current Task
-US-007: Implement EnvState dataclass
+US-008: Implement environment reset
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -72,6 +79,7 @@ US-007: Implement EnvState dataclass
 - src/field/field.py (FieldState dataclass and create_field)
 - src/field/dynamics.py (diffuse, decay, step_field)
 - src/field/ops.py (read_local, write_local)
+- src/environment/state.py (EnvState dataclass and create_env_state)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)

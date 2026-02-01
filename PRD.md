@@ -114,16 +114,16 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-007: Implement EnvState dataclass [ ]
+### US-007: Implement EnvState dataclass [x]
 
 **Description:** As a developer, I need environment state to track simulation.
 
 **Acceptance Criteria:**
-- [ ] Create `src/environment/state.py`
-- [ ] `EnvState` is a `@flax.struct.dataclass`
-- [ ] Fields: `agent_positions`, `food_positions`, `food_collected`, `field_state`, `step`, `key`
-- [ ] Tests pass: `pytest tests/test_env.py::TestEnvState -v`
-- [ ] Typecheck passes
+- [x] Create `src/environment/state.py`
+- [x] `EnvState` is a `@flax.struct.dataclass`
+- [x] Fields: `agent_positions`, `food_positions`, `food_collected`, `field_state`, `step`, `key`
+- [x] Tests pass: `pytest tests/test_env.py::TestEnvState -v`
+- [x] Typecheck passes
 
 ---
 
