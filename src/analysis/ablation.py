@@ -120,6 +120,7 @@ def _replace_field(state: EnvState, field_state: FieldState) -> EnvState:
         agent_ids=state.agent_ids,
         agent_parent_ids=state.agent_parent_ids,
         next_agent_id=state.next_agent_id,
+        agent_params=state.agent_params,
     )
 
 

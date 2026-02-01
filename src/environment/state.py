@@ -1,5 +1,7 @@
 """EnvState dataclass for tracking simulation state."""
 
+from typing import Any
+
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -24,6 +26,8 @@ class EnvState:
         agent_ids: Unique ID per agent, shape (max_agents,). -1 for empty slots.
         agent_parent_ids: Parent agent ID, shape (max_agents,). -1 if original or empty.
         next_agent_id: Scalar counter for assigning unique IDs to new agents.
+        agent_params: Per-agent network parameters. Pytree where each leaf has
+            shape (max_agents, ...). None when evolution is disabled.
     """
     agent_positions: jnp.ndarray   # (max_agents, 2)
     food_positions: jnp.ndarray    # (num_food, 2)
@@ -36,6 +40,7 @@ class EnvState:
     agent_ids: jnp.ndarray         # (max_agents,)
     agent_parent_ids: jnp.ndarray  # (max_agents,)
     next_agent_id: jnp.ndarray     # scalar int
+    agent_params: Any = None       # per-agent params pytree, (max_agents, ...)
 
 
 def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState:  # type: ignore[name-defined]

@@ -135,3 +135,22 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 100 tests pass, mypy clean.
 
 ---
+
+### US-009: Implement Weight Inheritance ✓
+**What:** Created `src/agents/reproduction.py` with weight mutation utilities. Added `agent_params` field to `EnvState` for per-agent network parameters. Integrated weight inheritance into the reproduction scan in `step()` — when `agent_params` is present, child params are copied from parent with Gaussian mutation.
+**Decisions:**
+- Created three functions in `reproduction.py`: `mutate_params` (adds Gaussian noise to all leaves of a param pytree), `copy_agent_params` (copies one agent slot to another in per-agent params), and `mutate_agent_params` (combined copy+mutate in one operation).
+- Per-agent params are stored as a pytree where each leaf has shape `(max_agents, ...)`. This is stored in `EnvState.agent_params` (defaults to `None` when not using per-agent params).
+- The reproduction scan in `env.py` has two branches: one with params mutation (when `agent_params is not None`) and one without (backwards-compatible with existing tests). This is a Python-level `if`, not a JAX conditional, so the branch is resolved at trace time.
+- Mutation uses `jax.random.normal` scaled by `config.evolution.mutation_std` (default 0.01), applied independently to each leaf of the param pytree.
+- `reset()` returns `agent_params=None`; the training code (US-011) will be responsible for initializing per-agent params by replicating single-agent params to `(max_agents, ...)`.
+- Updated `_replace_field` in `ablation.py` to pass through `agent_params`.
+**Files changed:**
+- `src/agents/reproduction.py` — Created with `mutate_params`, `copy_agent_params`, `mutate_agent_params`
+- `src/environment/state.py` — Added `agent_params: Any = None` field to `EnvState`
+- `src/environment/env.py` — Imported `mutate_agent_params`, split reproduction scan into two branches (with/without params), integrated weight mutation on reproduction
+- `src/analysis/ablation.py` — Updated `_replace_field` to include `agent_params`
+- `tests/test_reproduction.py` — Added `TestInheritance` class with 9 tests: mutate_params noise, zero-std no change, copy_agent_params, mutate_agent_params, reproduction inherits params via step(), backward compat without params, JIT compatibility, multi-generation inheritance, mutate_params JIT
+**Issues:** None. All 109 tests pass, mypy clean.
+
+---

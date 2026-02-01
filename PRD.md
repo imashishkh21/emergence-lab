@@ -106,7 +106,7 @@
    - Set `agent_parent_ids[slot] = parent_id`                                                                                         
    **Verification:** `pytest tests/test_reproduction.py::test_spawn -v` passes                                                        
                                                                                                                                       
-   ### US-009: Implement Weight Inheritance [ ]                                                                                       
+   ### US-009: Implement Weight Inheritance [x]                                                                                       
    **Task:** Offspring inherits parent's neural network weights with mutation.                                                        
    **Files:** `src/agents/reproduction.py` (new), `src/environment/env.py`                                                            
    **Changes:**                                                                                                                       

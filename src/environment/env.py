@@ -10,6 +10,7 @@ from src.environment.state import EnvState
 from src.field.field import create_field
 from src.field.dynamics import step_field
 from src.field.ops import write_local
+from src.agents.reproduction import mutate_agent_params
 
 
 def reset(key: jax.Array, config: Config) -> EnvState:
@@ -242,50 +243,91 @@ def step(
     # For simplicity, process agents in order; each successful reproduction
     # fills one slot and reduces available slots.
 
-    def _process_reproductions(carry, agent_idx):
-        """Process one agent's reproduction attempt sequentially."""
-        alive, energy, ids, parent_ids, positions, next_id, key = carry
+    has_agent_params = state.agent_params is not None
+    mutation_std = config.evolution.mutation_std
 
-        # Check if this agent wants and can reproduce
-        eligible = (
-            can_reproduce[agent_idx]
-            & (jnp.sum((~alive).astype(jnp.int32)) > 0)  # free slot exists
+    if has_agent_params:
+        def _process_reproductions(carry, agent_idx):
+            """Process one agent's reproduction attempt sequentially (with params)."""
+            alive, energy, ids, parent_ids, positions, next_id, key, ag_params = carry
+
+            eligible = (
+                can_reproduce[agent_idx]
+                & (jnp.sum((~alive).astype(jnp.int32)) > 0)
+            )
+
+            free_mask = ~alive
+            free_slot = jnp.argmax(free_mask.astype(jnp.int32))
+
+            new_energy_val = jnp.where(eligible, energy[agent_idx] - reproduce_cost, energy[agent_idx])
+            energy = energy.at[agent_idx].set(new_energy_val)
+
+            key, spawn_key, mutate_key = jax.random.split(key, 3)
+            offset = jax.random.randint(spawn_key, (2,), -1, 2)
+            child_pos = jnp.clip(positions[agent_idx] + offset, 0, grid_size - 1)
+
+            alive = jnp.where(eligible, alive.at[free_slot].set(True), alive)
+            energy = jnp.where(eligible, energy.at[free_slot].set(reproduce_cost), energy)
+            positions = jnp.where(eligible, positions.at[free_slot].set(child_pos), positions)
+            ids = jnp.where(eligible, ids.at[free_slot].set(next_id), ids)
+            parent_ids = jnp.where(eligible, parent_ids.at[free_slot].set(ids[agent_idx]), parent_ids)
+            next_id = jnp.where(eligible, next_id + 1, next_id)
+
+            # Mutate parent params -> child params
+            mutated = mutate_agent_params(ag_params, agent_idx, free_slot, mutate_key, mutation_std)
+            ag_params = jax.tree.map(
+                lambda orig, mut: jnp.where(eligible, mut, orig),
+                ag_params,
+                mutated,
+            )
+
+            return (alive, energy, ids, parent_ids, positions, next_id, key, ag_params), eligible
+
+        repro_key, post_repro_key = jax.random.split(state.key)
+
+        init_carry = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
+                      new_positions, state.next_agent_id, repro_key, state.agent_params)
+        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_agent_params), births_per_agent = (
+            jax.lax.scan(_process_reproductions, init_carry, jnp.arange(max_agents))
         )
+    else:
+        def _process_reproductions_no_params(carry, agent_idx):
+            """Process one agent's reproduction attempt sequentially (no params)."""
+            alive, energy, ids, parent_ids, positions, next_id, key = carry
 
-        # Find first free slot
-        free_mask = ~alive  # (max_agents,)
-        # Use argmax on free_mask to get first True index; if none free, returns 0
-        # but eligible check ensures at least one free slot
-        free_slot = jnp.argmax(free_mask.astype(jnp.int32))
+            eligible = (
+                can_reproduce[agent_idx]
+                & (jnp.sum((~alive).astype(jnp.int32)) > 0)
+            )
 
-        # Deduct reproduce_cost from parent
-        new_energy_val = jnp.where(eligible, energy[agent_idx] - reproduce_cost, energy[agent_idx])
-        energy = energy.at[agent_idx].set(new_energy_val)
+            free_mask = ~alive
+            free_slot = jnp.argmax(free_mask.astype(jnp.int32))
 
-        # Spawn offspring in free slot
-        key, spawn_key = jax.random.split(key)
-        # Offspring position: random adjacent cell of parent (clipped to grid)
-        offset = jax.random.randint(spawn_key, (2,), -1, 2)
-        child_pos = jnp.clip(positions[agent_idx] + offset, 0, grid_size - 1)
+            new_energy_val = jnp.where(eligible, energy[agent_idx] - reproduce_cost, energy[agent_idx])
+            energy = energy.at[agent_idx].set(new_energy_val)
 
-        # Update offspring slot (only if eligible)
-        alive = jnp.where(eligible, alive.at[free_slot].set(True), alive)
-        energy = jnp.where(eligible, energy.at[free_slot].set(reproduce_cost), energy)
-        positions = jnp.where(eligible, positions.at[free_slot].set(child_pos), positions)
-        ids = jnp.where(eligible, ids.at[free_slot].set(next_id), ids)
-        parent_ids = jnp.where(eligible, parent_ids.at[free_slot].set(ids[agent_idx]), parent_ids)
-        next_id = jnp.where(eligible, next_id + 1, next_id)
+            key, spawn_key = jax.random.split(key)
+            offset = jax.random.randint(spawn_key, (2,), -1, 2)
+            child_pos = jnp.clip(positions[agent_idx] + offset, 0, grid_size - 1)
 
-        return (alive, energy, ids, parent_ids, positions, next_id, key), eligible
+            alive = jnp.where(eligible, alive.at[free_slot].set(True), alive)
+            energy = jnp.where(eligible, energy.at[free_slot].set(reproduce_cost), energy)
+            positions = jnp.where(eligible, positions.at[free_slot].set(child_pos), positions)
+            ids = jnp.where(eligible, ids.at[free_slot].set(next_id), ids)
+            parent_ids = jnp.where(eligible, parent_ids.at[free_slot].set(ids[agent_idx]), parent_ids)
+            next_id = jnp.where(eligible, next_id + 1, next_id)
 
-    # Split key for reproduction
-    repro_key, post_repro_key = jax.random.split(state.key)
+            return (alive, energy, ids, parent_ids, positions, next_id, key), eligible
 
-    init_carry = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
-                  new_positions, state.next_agent_id, repro_key)
-    (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _), births_per_agent = (
-        jax.lax.scan(_process_reproductions, init_carry, jnp.arange(max_agents))
-    )
+        repro_key, post_repro_key = jax.random.split(state.key)
+
+        init_carry_np = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
+                         new_positions, state.next_agent_id, repro_key)
+        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _), births_per_agent = (
+            jax.lax.scan(_process_reproductions_no_params, init_carry_np, jnp.arange(max_agents))
+        )
+        new_agent_params = None
+
     birth_count = jnp.sum(births_per_agent.astype(jnp.int32))
     new_key = post_repro_key
 
@@ -308,6 +350,7 @@ def step(
         agent_ids=new_ids,
         agent_parent_ids=new_parent_ids,
         next_agent_id=new_next_id,
+        agent_params=new_agent_params,
     )
 
     num_collected = jnp.sum(newly_collected.astype(jnp.float32))
