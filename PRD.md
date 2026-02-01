@@ -245,10 +245,36 @@ def genomic_distance(params_a, params_b, c1=1.0, c2=1.0):
     return c1 * np.mean(np.abs(flat_a - flat_b)) + c2 * (1 - cosine_similarity(flat_a, flat_b))
 ```
 
+### Key Formulas (from literature)
+
+**NEAT Compatibility Distance:**
+```
+δ = (c₁·E + c₂·D)/N + c₃·W̄
+```
+Where E=excess genes, D=disjoint genes, N=larger genome size, W̄=avg weight diff
+
+**Fitness Sharing (Goldberg & Richardson 1987):**
+```python
+adjusted_fitness(i) = fitness(i) / sum(sharing(d(i,j)) for j in population)
+# sharing(d) = 1 - (d/σ)^α if d < σ, else 0
+```
+This encourages diversity by penalizing crowded niches.
+
+**Novelty Score (Lehman & Stanley 2011):**
+```python
+novelty(x) = (1/k) * sum(dist(x, neighbor_i) for i in range(k))
+```
+
+**Local Competition (NSLC):**
+```python
+local_fitness(x) = count(y for y in neighbors(x) if fitness(x) > fitness(y))
+```
+
 ### Key References
 - **MAP-Elites**: Mouret & Clune (2015) — behavior archiving
-- **NEAT Speciation**: Stanley & Miikkulainen — genomic distance `δ = c₁·E/N + c₂·D/N + c₃·W̄`
+- **NEAT Speciation**: Stanley & Miikkulainen (2002) — genomic distance, fitness sharing
 - **Novelty Search**: Lehman & Stanley (2011) — k-NN behavioral novelty
+- **NSLC**: Lehman & Stanley (2011) — local competition within behavioral neighborhoods
 - **DIAYN**: Eysenbach et al. (2018) — mutual information diversity
 - **OpenAI Hide-and-Seek**: Baker et al. (2019) — emergent phase detection
 
