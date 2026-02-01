@@ -38,7 +38,7 @@ With shared field + evolution, agents should differentiate into roles:
 
 ## User Stories
 
-### US-001: Weight Divergence Metric [ ]
+### US-001: Weight Divergence Metric [x]
 **Task:** Measure how different agents' neural network weights become over time.
 **Files:** `src/analysis/specialization.py` (new)
 **Changes:**

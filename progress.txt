@@ -18,6 +18,16 @@ Prove that field enables DIVERSITY, not just higher reward.
 
 ## Task Log
 
-(Tasks will be logged here as Ralph completes them)
+### US-001: Weight Divergence Metric ✓
+**What:** Implemented `compute_weight_divergence()` and `flatten_agent_params()` in `src/analysis/specialization.py`.
+**Decisions:**
+- Used cosine distance (1 - cosine_similarity) as the divergence metric — standard for comparing high-dimensional weight vectors
+- Supports alive_mask to only compare living agents
+- Returns dict with mean_divergence, max_divergence, full divergence_matrix, and agent_indices
+- Flattens all pytree leaves per-agent into a single 1D vector for comparison
+**Files changed:**
+- `src/analysis/specialization.py` (new) — `flatten_agent_params`, `compute_weight_divergence`
+- `tests/test_specialization.py` (new) — 10 tests covering identical/different agents, symmetry, alive mask, edge cases, multi-leaf params
+**Validation:** mypy clean, 184/184 tests pass
 
 ---
