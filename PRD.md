@@ -165,7 +165,7 @@
    - Log to metrics dict and W&B                                                                                                      
    **Verification:** Training output shows population stats                                                                           
                                                                                                                                       
-   ### US-015: Update Ablation for Evolution [ ]                                                                                      
+   ### US-015: Update Ablation for Evolution [x]                                                                                      
    **Task:** Compare evolution vs no-evolution conditions.                                                                            
    **Files:** `src/analysis/ablation.py`, `scripts/run_ablation.py`                                                                   
    **Changes:**                                                                                                                       

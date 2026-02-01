@@ -1,11 +1,17 @@
-"""Ablation test to evaluate whether the shared field matters.
+"""Ablation test to evaluate whether the shared field and evolution matter.
 
-Tests three conditions:
+Tests field conditions:
     1. Normal: field operates normally (diffusion + decay + agent writes)
     2. Zeroed: field values are zeroed every step (agents see no field info)
     3. Random: field values are randomized every step (agents see noise)
 
-Compares mean rewards across conditions to determine if field contributes.
+Evolution ablation compares 4 conditions (2x2 field x evolution):
+    1. field + evolution: both active
+    2. field only: field active, evolution disabled (fixed population)
+    3. evolution only: field zeroed, evolution active
+    4. neither: field zeroed, evolution disabled
+
+Compares mean rewards and population dynamics across conditions.
 """
 
 from dataclasses import dataclass
@@ -36,11 +42,29 @@ class AblationResult:
         mean_reward: Mean total episode reward across episodes.
         std_reward: Standard deviation of total episode rewards.
         episode_rewards: Per-episode total rewards.
+        final_population: Mean final alive population across episodes.
+        total_births: Mean total births across episodes.
+        total_deaths: Mean total deaths across episodes.
+        survival_rate: Mean fraction of original agents still alive at end.
     """
     condition: str
     mean_reward: float
     std_reward: float
     episode_rewards: list[float]
+    final_population: float = 0.0
+    total_births: float = 0.0
+    total_deaths: float = 0.0
+    survival_rate: float = 0.0
+
+
+@dataclass
+class _EpisodeStats:
+    """Internal episode statistics."""
+    total_reward: float
+    final_population: int
+    total_births: int
+    total_deaths: int
+    survival_rate: float
 
 
 def _run_episode(
@@ -62,9 +86,37 @@ def _run_episode(
     Returns:
         Total episode reward (summed across all agents and steps).
     """
+    stats = _run_episode_full(network, params, config, key, condition, evolution=True)
+    return stats.total_reward
+
+
+def _run_episode_full(
+    network: ActorCritic,
+    params: dict,
+    config: Config,
+    key: jax.Array,
+    condition: FieldCondition,
+    evolution: bool = True,
+) -> _EpisodeStats:
+    """Run a single episode under the given field and evolution conditions.
+
+    Args:
+        network: ActorCritic network module.
+        params: Network parameters.
+        config: Master configuration.
+        key: PRNG key for environment reset.
+        condition: One of "normal", "zeroed", "random".
+        evolution: If False, disable evolution (keep energy high, no death/reproduction).
+
+    Returns:
+        Episode statistics including reward and population dynamics.
+    """
     key, reset_key = jax.random.split(key)
     state = reset(reset_key, config)
     total_reward = 0.0
+    total_births = 0
+    total_deaths = 0
+    num_agents = config.env.num_agents
 
     for t in range(config.env.max_steps):
         # Apply field ablation before observation
@@ -84,26 +136,75 @@ def _run_episode(
             random_field = FieldState(values=noise_values)
             state = _replace_field(state, random_field)
 
+        # When evolution is disabled, keep all agents at high energy
+        # so they never die and never reproduce (energy < threshold after reset)
+        if not evolution:
+            state = _reset_energy(state, config)
+
         # Get observations
         obs = get_observations(state, config)
 
-        # Add batch dim: (1, num_agents, obs_dim)
+        # Add batch dim: (1, max_agents, obs_dim)
         obs_batched = obs[None, :, :]
 
-        # Get deterministic actions: (1, num_agents) -> (num_agents,)
+        # Get deterministic actions: (1, max_agents) -> (max_agents,)
         actions = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]
 
+        # When evolution is disabled, mask out reproduce actions
+        if not evolution:
+            actions = jnp.where(actions == 5, 0, actions)
+
         # Step environment
-        state, rewards, done, _info = step(state, actions, config)
+        state, rewards, done, info = step(state, actions, config)
 
         # Sum rewards across agents for this step
         total_reward += float(jnp.sum(rewards))
+        total_births += int(info["births_this_step"])
+        total_deaths += int(info["deaths_this_step"])
 
         if bool(done):
             break
 
-    return total_reward
+    final_population = int(jnp.sum(state.agent_alive.astype(jnp.int32)))
+    survival_rate = final_population / max(num_agents, 1)
+
+    return _EpisodeStats(
+        total_reward=total_reward,
+        final_population=final_population,
+        total_births=total_births,
+        total_deaths=total_deaths,
+        survival_rate=survival_rate,
+    )
+
+
+def _reset_energy(state: EnvState, config: Config) -> EnvState:
+    """Reset alive agents' energy to starting_energy to prevent death/reproduction.
+
+    This effectively disables evolution by keeping energy at a fixed level
+    that is above 0 (no death) but below reproduce_threshold (no reproduction).
+    """
+    # Set energy to starting_energy for alive agents (below reproduce_threshold)
+    fixed_energy = jnp.where(
+        state.agent_alive,
+        jnp.float32(config.evolution.starting_energy),
+        state.agent_energy,
+    )
+    return EnvState(
+        agent_positions=state.agent_positions,
+        food_positions=state.food_positions,
+        food_collected=state.food_collected,
+        field_state=state.field_state,
+        step=state.step,
+        key=state.key,
+        agent_energy=fixed_energy,
+        agent_alive=state.agent_alive,
+        agent_ids=state.agent_ids,
+        agent_parent_ids=state.agent_parent_ids,
+        next_agent_id=state.next_agent_id,
+        agent_birth_step=state.agent_birth_step,
+        agent_params=state.agent_params,
+    )
 
 
 def _replace_field(state: EnvState, field_state: FieldState) -> EnvState:
@@ -167,6 +268,72 @@ def ablation_test(
     return results
 
 
+def evolution_ablation_test(
+    network: ActorCritic,
+    params: dict,
+    config: Config,
+    num_episodes: int = 20,
+    seed: int = 0,
+) -> dict[str, AblationResult]:
+    """Run 2x2 ablation comparing field and evolution conditions.
+
+    Tests 4 conditions:
+        1. field + evolution: both active (normal operation)
+        2. field only: field active, evolution disabled (fixed population)
+        3. evolution only: field zeroed, evolution active
+        4. neither: field zeroed, evolution disabled
+
+    Args:
+        network: ActorCritic network module.
+        params: Network parameters.
+        config: Master configuration.
+        num_episodes: Number of episodes per condition.
+        seed: Base random seed.
+
+    Returns:
+        Dictionary mapping condition name to AblationResult with population stats.
+    """
+    # 2x2 grid: (field_condition, evolution_enabled)
+    conditions: list[tuple[str, FieldCondition, bool]] = [
+        ("field+evolution", "normal", True),
+        ("field_only", "normal", False),
+        ("evolution_only", "zeroed", True),
+        ("neither", "zeroed", False),
+    ]
+    results: dict[str, AblationResult] = {}
+
+    for name, field_cond, evo_enabled in conditions:
+        stats_list: list[_EpisodeStats] = []
+        base_key = jax.random.PRNGKey(seed)
+
+        for ep in range(num_episodes):
+            ep_key = jax.random.fold_in(base_key, ep)
+            stats = _run_episode_full(
+                network, params, config, ep_key, field_cond, evolution=evo_enabled
+            )
+            stats_list.append(stats)
+
+        rewards = [s.total_reward for s in stats_list]
+        rewards_arr = np.array(rewards)
+        populations = np.array([s.final_population for s in stats_list])
+        births = np.array([s.total_births for s in stats_list])
+        deaths = np.array([s.total_deaths for s in stats_list])
+        survivals = np.array([s.survival_rate for s in stats_list])
+
+        results[name] = AblationResult(
+            condition=name,
+            mean_reward=float(np.mean(rewards_arr)),
+            std_reward=float(np.std(rewards_arr)),
+            episode_rewards=list(rewards),
+            final_population=float(np.mean(populations)),
+            total_births=float(np.mean(births)),
+            total_deaths=float(np.mean(deaths)),
+            survival_rate=float(np.mean(survivals)),
+        )
+
+    return results
+
+
 def print_ablation_results(results: dict[str, AblationResult]) -> None:
     """Pretty-print ablation test results."""
     print("=" * 60)
@@ -187,6 +354,45 @@ def print_ablation_results(results: dict[str, AblationResult]) -> None:
     if "normal" in results and "random" in results:
         diff = results["normal"].mean_reward - results["random"].mean_reward
         print(f"Normal - Random field gap: {diff:+.2f}")
+
+
+def print_evolution_ablation_results(results: dict[str, AblationResult]) -> None:
+    """Pretty-print evolution ablation test results with population dynamics."""
+    print("=" * 80)
+    print("Evolution Ablation Test Results")
+    print("=" * 80)
+    header = (
+        f"{'Condition':<18} {'Reward':>10} {'Std':>8} "
+        f"{'Pop':>6} {'Births':>8} {'Deaths':>8} {'Survival':>10}"
+    )
+    print(header)
+    print("-" * 80)
+    for name in ["field+evolution", "field_only", "evolution_only", "neither"]:
+        if name in results:
+            r = results[name]
+            print(
+                f"{r.condition:<18} {r.mean_reward:>10.2f} {r.std_reward:>8.2f} "
+                f"{r.final_population:>6.1f} {r.total_births:>8.1f} "
+                f"{r.total_deaths:>8.1f} {r.survival_rate:>9.1%}"
+            )
+    print("=" * 80)
+
+    # Field effect (with evolution)
+    if "field+evolution" in results and "evolution_only" in results:
+        diff = results["field+evolution"].mean_reward - results["evolution_only"].mean_reward
+        print(f"\nField effect (with evolution): {diff:+.2f}")
+    # Field effect (without evolution)
+    if "field_only" in results and "neither" in results:
+        diff = results["field_only"].mean_reward - results["neither"].mean_reward
+        print(f"Field effect (no evolution):   {diff:+.2f}")
+    # Evolution effect (with field)
+    if "field+evolution" in results and "field_only" in results:
+        diff = results["field+evolution"].mean_reward - results["field_only"].mean_reward
+        print(f"Evolution effect (with field):  {diff:+.2f}")
+    # Evolution effect (without field)
+    if "evolution_only" in results and "neither" in results:
+        diff = results["evolution_only"].mean_reward - results["neither"].mean_reward
+        print(f"Evolution effect (no field):    {diff:+.2f}")
 
 
 def main() -> None:

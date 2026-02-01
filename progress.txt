@@ -255,3 +255,20 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 170 tests pass, mypy clean.
 
 ---
+
+### US-015: Update Ablation for Evolution ✓
+**What:** Extended ablation system to support evolution ablation testing. Added 2x2 comparison (field x evolution) with 4 conditions: field+evolution, field_only, evolution_only, neither. Extended `AblationResult` with population metrics. Updated `scripts/run_ablation.py` with `--evolution` flag.
+**Decisions:**
+- Evolution is disabled by resetting alive agents' energy to `starting_energy` each step (above 0 so no death, below `reproduce_threshold` so no reproduction) and masking out reproduce actions (action 5 → 0).
+- `_run_episode_full` is the new core function that tracks episode stats (reward, final population, total births, total deaths, survival rate). The original `_run_episode` delegates to it for backward compatibility.
+- `_EpisodeStats` internal dataclass collects per-episode population dynamics.
+- `AblationResult` extended with optional fields: `final_population`, `total_births`, `total_deaths`, `survival_rate` (default 0.0 for backward compat with field-only ablation).
+- `evolution_ablation_test` runs all 4 conditions and computes mean stats across episodes.
+- `print_evolution_ablation_results` shows full table with Pop/Births/Deaths/Survival columns plus field effect and evolution effect analysis.
+- `run_ablation.py --evolution` branches to evolution ablation in Phase 3, with interpretation of field/evolution main effects and synergy detection.
+**Files changed:**
+- `src/analysis/ablation.py` — Added `_EpisodeStats`, `_run_episode_full`, `_reset_energy`, `evolution_ablation_test`, `print_evolution_ablation_results`. Extended `AblationResult` with population metrics.
+- `scripts/run_ablation.py` — Added `--evolution` flag, conditional branching to evolution ablation, interpretation logic for 2x2 comparison.
+**Issues:** None. All 170 tests pass, mypy clean. `python scripts/run_ablation.py --evolution` runs successfully.
+
+---

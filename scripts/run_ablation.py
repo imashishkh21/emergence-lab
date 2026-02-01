@@ -19,7 +19,12 @@ from src.configs import Config
 from src.training.train import create_train_state, train_step
 from src.agents.network import ActorCritic
 from src.environment.obs import obs_dim
-from src.analysis.ablation import ablation_test, print_ablation_results
+from src.analysis.ablation import (
+    ablation_test,
+    evolution_ablation_test,
+    print_ablation_results,
+    print_evolution_ablation_results,
+)
 
 
 def main() -> None:
@@ -39,6 +44,10 @@ def main() -> None:
     parser.add_argument(
         "--checkpoint", type=str, default="checkpoints/params.pkl",
         help="Path to save/load checkpoint (default: checkpoints/params.pkl)",
+    )
+    parser.add_argument(
+        "--evolution", action="store_true",
+        help="Run evolution ablation (2x2: field x evolution) instead of field-only ablation",
     )
     args = parser.parse_args()
 
@@ -138,36 +147,73 @@ def main() -> None:
     dummy_obs = jnp.zeros((observation_dim,))
     network.apply(params, dummy_obs)
 
-    print(f"Running ablation with {args.num_episodes} episodes per condition...")
-    print("Conditions: normal, zeroed, random")
-    print()
+    if args.evolution:
+        print(f"Running EVOLUTION ablation with {args.num_episodes} episodes per condition...")
+        print("Conditions: field+evolution, field_only, evolution_only, neither")
+        print()
 
-    results = ablation_test(
-        network=network,
-        params=params,
-        config=config,
-        num_episodes=args.num_episodes,
-        seed=args.seed,
-    )
+        results = evolution_ablation_test(
+            network=network,
+            params=params,
+            config=config,
+            num_episodes=args.num_episodes,
+            seed=args.seed,
+        )
 
-    print_ablation_results(results)
+        print_evolution_ablation_results(results)
 
-    # Interpretation
-    print()
-    normal = results["normal"].mean_reward
-    zeroed = results["zeroed"].mean_reward
-    random = results["random"].mean_reward
+        # Interpretation
+        print()
+        fe = results["field+evolution"].mean_reward
+        fo = results["field_only"].mean_reward
+        eo = results["evolution_only"].mean_reward
+        ne = results["neither"].mean_reward
 
-    print("Interpretation:")
-    if normal > zeroed and normal > random:
-        print("  The field carries useful information — agents perform BETTER with it.")
-    elif normal < zeroed:
-        print("  The field may be HURTING agents — they do better without it.")
-    elif abs(normal - zeroed) < results["normal"].std_reward:
-        print("  No significant difference — the field may not yet carry useful info.")
-        print("  (Try training for more iterations.)")
+        print("Interpretation:")
+        field_effect = (fe - eo + fo - ne) / 2
+        evo_effect = (fe - fo + eo - ne) / 2
+        if field_effect > 0 and evo_effect > 0:
+            print("  Both field and evolution contribute positively.")
+        elif field_effect > 0:
+            print("  Field helps, but evolution may not (yet).")
+        elif evo_effect > 0:
+            print("  Evolution helps, but field may not (yet).")
+        else:
+            print("  Neither clearly helps — more training may be needed.")
+
+        if fe > max(fo, eo, ne):
+            print("  Field + Evolution together is the BEST condition (synergy).")
     else:
-        print("  Mixed results — more training or episodes may clarify.")
+        print(f"Running ablation with {args.num_episodes} episodes per condition...")
+        print("Conditions: normal, zeroed, random")
+        print()
+
+        results = ablation_test(
+            network=network,
+            params=params,
+            config=config,
+            num_episodes=args.num_episodes,
+            seed=args.seed,
+        )
+
+        print_ablation_results(results)
+
+        # Interpretation
+        print()
+        normal = results["normal"].mean_reward
+        zeroed = results["zeroed"].mean_reward
+        random = results["random"].mean_reward
+
+        print("Interpretation:")
+        if normal > zeroed and normal > random:
+            print("  The field carries useful information — agents perform BETTER with it.")
+        elif normal < zeroed:
+            print("  The field may be HURTING agents — they do better without it.")
+        elif abs(normal - zeroed) < results["normal"].std_reward:
+            print("  No significant difference — the field may not yet carry useful info.")
+            print("  (Try training for more iterations.)")
+        else:
+            print("  Mixed results — more training or episodes may clarify.")
 
 
 if __name__ == "__main__":
