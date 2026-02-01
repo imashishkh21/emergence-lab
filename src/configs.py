@@ -72,6 +72,21 @@ class AnalysisConfig:
 
 
 @dataclass
+class EvolutionConfig:
+    """Evolution and reproduction configuration."""
+    enabled: bool = True
+    starting_energy: int = 100
+    energy_per_step: int = 1
+    food_energy: int = 50
+    max_energy: int = 200
+    reproduce_threshold: int = 150
+    reproduce_cost: int = 80
+    mutation_std: float = 0.01
+    max_agents: int = 32
+    min_agents: int = 2
+
+
+@dataclass
 class Config:
     """Master configuration combining all sub-configs."""
     env: EnvConfig = dataclass_field(default_factory=EnvConfig)
@@ -80,6 +95,7 @@ class Config:
     train: TrainConfig = dataclass_field(default_factory=TrainConfig)
     log: LogConfig = dataclass_field(default_factory=LogConfig)
     analysis: AnalysisConfig = dataclass_field(default_factory=AnalysisConfig)
+    evolution: EvolutionConfig = dataclass_field(default_factory=EvolutionConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -98,6 +114,7 @@ class Config:
             train=TrainConfig(**data.get("train", {})),
             log=LogConfig(**data.get("log", {})),
             analysis=AnalysisConfig(**data.get("analysis", {})),
+            evolution=EvolutionConfig(**data.get("evolution", {})),
         )
 
     def to_yaml(self, path: str) -> None:

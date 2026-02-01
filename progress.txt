@@ -1,20 +1,26 @@
-# Phase 2 Progress: Evolutionary Pressure                                                                                    
-                                                                                                                                      
-   ## Session Start                                                                                                                   
-   Date: 2026-02-01                                                                                                                   
-   Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zeroed (22.88)                                          
-                                                                                                                                      
-   ## Key Technical Decisions                                                                                                         
-                                                                                                                                      
-   1. **JAX Static Shapes**: Use fixed max_agents array with alive mask instead of dynamic population                                 
-   2. **Weight Inheritance**: Per-agent params with vmapped forward pass                                                              
-   3. **Reproduction**: Action 5 triggers reproduction if energy >= threshold                                                         
-   4. **Death**: Energy <= 0 sets alive = False, slot reusable                                                                        
-                                                                                                                                      
-   ---                                                                                                                                
-                                                                                                                                      
-   ## Task Log                                                                                                                        
-                                                                                                                                      
-   (Tasks will be logged here as Ralph completes them)                                                                                
-                                                                                                                                      
-   ---
+# Phase 2 Progress: Evolutionary Pressure
+
+## Session Start
+Date: 2026-02-01
+Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zeroed (22.88)
+
+## Key Technical Decisions
+
+1. **JAX Static Shapes**: Use fixed max_agents array with alive mask instead of dynamic population
+2. **Weight Inheritance**: Per-agent params with vmapped forward pass
+3. **Reproduction**: Action 5 triggers reproduction if energy >= threshold
+4. **Death**: Energy <= 0 sets alive = False, slot reusable
+
+---
+
+## Task Log
+
+### US-001: Add Evolution Config ✓
+**What:** Added `EvolutionConfig` dataclass and `evolution` field to main `Config`.
+**Decisions:** Used same dataclass pattern as existing configs. All defaults match PRD spec.
+**Files changed:**
+- `src/configs.py` — Added `EvolutionConfig` dataclass, added `evolution` field to `Config`, updated `from_yaml` to parse evolution section
+- `configs/phase2.yaml` — Created with all Phase 2 settings including evolution config
+**Issues:** None. All 56 tests pass, mypy clean.
+
+---

@@ -21,7 +21,7 @@
                                                                                                                                       
    ## User Stories                                                                                                                    
                                                                                                                                       
-   ### US-001: Add Evolution Config [ ]                                                                                               
+   ### US-001: Add Evolution Config [x]                                                                                               
    **Task:** Add evolution-related configuration parameters to the Config system.                                                     
    **Files:** `src/configs.py`, `configs/phase2.yaml`                                                                                 
    **Changes:**                                                                                                                       
