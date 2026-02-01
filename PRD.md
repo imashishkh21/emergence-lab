@@ -91,6 +91,7 @@ With shared field + evolution, agents should differentiate into roles:
   - 0 = all agents identical
   - 1 = completely distinct clusters
 - Based on: silhouette score + weight divergence + behavioral variance
+- Also include `novelty_score(agent_features, archive)` — k-NN distance (Lehman & Stanley)
 **Verification:** `pytest tests/test_specialization.py::test_specialization_score -v` passes
 
 ### US-006: Field Usage Analysis [ ]
@@ -208,9 +209,24 @@ features = [
     distance_per_episode,  # total movement
     reproduction_rate,     # babies per 100 steps
     mean_energy,           # average energy level
-    exploration_vs_exploit # ratio of new vs revisited cells
+    exploration_vs_exploit,# ratio of new vs revisited cells
+    action_distribution,   # histogram of actions taken (from research)
+    final_position,        # endpoint-based BC (standard in novelty search)
 ]
 ```
+
+### Diversity Metrics (from research literature)
+
+**QD-Score (Quality-Diversity)** — Sum of fitness across behavior archive cells
+- Citation: Mouret & Clune (2015), MAP-Elites
+
+**Novelty Score** — k-nearest neighbor distance in behavior space
+- `novelty(x) = (1/k) Σ dist(x, μᵢ)`
+- Citation: Lehman & Stanley (2011)
+
+**Action Distribution Clustering** — Cluster agents by π(a|s) vectors
+- Use KL-divergence or Jensen-Shannon divergence between policies
+- Citation: OpenAI Hide-and-Seek [arXiv:1909.07528]
 
 ### Species Detection Criteria (inspired by NEAT)
 A "species" requires:
@@ -228,6 +244,13 @@ def genomic_distance(params_a, params_b, c1=1.0, c2=1.0):
     flat_b = flatten_params(params_b)
     return c1 * np.mean(np.abs(flat_a - flat_b)) + c2 * (1 - cosine_similarity(flat_a, flat_b))
 ```
+
+### Key References
+- **MAP-Elites**: Mouret & Clune (2015) — behavior archiving
+- **NEAT Speciation**: Stanley & Miikkulainen — genomic distance `δ = c₁·E/N + c₂·D/N + c₃·W̄`
+- **Novelty Search**: Lehman & Stanley (2011) — k-NN behavioral novelty
+- **DIAYN**: Eysenbach et al. (2018) — mutual information diversity
+- **OpenAI Hide-and-Seek**: Baker et al. (2019) — emergent phase detection
 
 ### Expected Species Types
 - **Explorers**: High movement entropy, high field writes, low food rate
