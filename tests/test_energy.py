@@ -306,6 +306,9 @@ def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
     agent_parent_ids = jnp.full((max_agents,), -1, dtype=jnp.int32)
     next_agent_id = jnp.int32(num_agents)
 
+    agent_birth_step = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    agent_birth_step = agent_birth_step.at[:num_agents].set(0)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -318,6 +321,7 @@ def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
         agent_ids=agent_ids,
         agent_parent_ids=agent_parent_ids,
         next_agent_id=next_agent_id,
+        agent_birth_step=agent_birth_step,
     )
 
 

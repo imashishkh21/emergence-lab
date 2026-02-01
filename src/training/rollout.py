@@ -74,7 +74,7 @@ def collect_rollout(
         )
 
         # Step the environment
-        env_state, rewards, dones, _info = vec_env.step(rs.env_state, actions)
+        env_state, rewards, dones, info = vec_env.step(rs.env_state, actions)
 
         # Get new observations
         new_obs = jax.vmap(lambda s: get_observations(s, config))(env_state)
@@ -90,6 +90,8 @@ def collect_rollout(
             'values': values,
             'log_probs': log_probs,
             'alive_mask': alive_mask,
+            'births_this_step': info['births_this_step'],  # (num_envs,)
+            'deaths_this_step': info['deaths_this_step'],  # (num_envs,)
         }
 
         # Update runner state

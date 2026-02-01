@@ -155,7 +155,7 @@
    - `get_dominant_lineages(tracker, top_k=5)` — lineages with most descendants                                                       
    **Verification:** `pytest tests/test_lineage.py -v` passes. Create this test file.                                                 
                                                                                                                                       
-   ### US-014: Add Population Metrics to Training [ ]                                                                                 
+   ### US-014: Add Population Metrics to Training [x]                                                                                 
    **Task:** Log population dynamics during training.                                                                                 
    **Files:** `src/training/train.py`                                                                                                 
    **Changes:**                                                                                                                       

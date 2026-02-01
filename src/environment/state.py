@@ -26,6 +26,8 @@ class EnvState:
         agent_ids: Unique ID per agent, shape (max_agents,). -1 for empty slots.
         agent_parent_ids: Parent agent ID, shape (max_agents,). -1 if original or empty.
         next_agent_id: Scalar counter for assigning unique IDs to new agents.
+        agent_birth_step: Step when each agent was born, shape (max_agents,).
+            0 for original agents, -1 for empty slots.
         agent_params: Per-agent network parameters. Pytree where each leaf has
             shape (max_agents, ...). None when evolution is disabled.
     """
@@ -40,6 +42,7 @@ class EnvState:
     agent_ids: jnp.ndarray         # (max_agents,)
     agent_parent_ids: jnp.ndarray  # (max_agents,)
     next_agent_id: jnp.ndarray     # scalar int
+    agent_birth_step: jnp.ndarray  # (max_agents,) int
     agent_params: Any = None       # per-agent params pytree, (max_agents, ...)
 
 
@@ -104,6 +107,10 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
 
     next_agent_id = jnp.int32(num_agents)
 
+    # Birth step: 0 for original agents, -1 for empty slots
+    agent_birth_step = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    agent_birth_step = agent_birth_step.at[:num_agents].set(0)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -116,4 +123,5 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
         agent_ids=agent_ids,
         agent_parent_ids=agent_parent_ids,
         next_agent_id=next_agent_id,
+        agent_birth_step=agent_birth_step,
     )

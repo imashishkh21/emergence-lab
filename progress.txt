@@ -232,3 +232,26 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 170 tests pass, mypy clean.
 
 ---
+
+### US-014: Add Population Metrics to Training ✓
+**What:** Added comprehensive population dynamics metrics to the training loop. Added `agent_birth_step` field to `EnvState` for tracking agent ages. Collected births/deaths from env info dict during rollout. Computed and logged population_size, births, deaths, energy stats (mean/max/min), and oldest_agent_age.
+**Decisions:**
+- Added `agent_birth_step` field to `EnvState` (shape `(max_agents,)`, int32). Original agents get birth_step=0, empty slots get -1, offspring get current step at birth.
+- Births/deaths are collected in the rollout batch from the env info dict (`births_this_step`, `deaths_this_step`), then summed across all rollout steps and envs for the total per training iteration.
+- `population_size` computed as mean of alive agent count across all rollout timesteps and envs — gives a representative population during the iteration.
+- Energy stats (`mean_energy`, `max_energy`, `min_energy`) computed from the final env state snapshot of alive agents. Uses `jnp.where(alive, energy, -inf/inf)` for clean max/min masking.
+- `oldest_agent_age` computed as `max(current_step - birth_step)` over alive agents across all envs from the final state.
+- All metrics flow through the existing `metrics` dict and are logged to W&B when enabled.
+- Progress bar now shows `pop=` instead of `value=` for more relevant Phase 2 monitoring.
+- Reproduction scan functions updated in both branches (with/without params) to carry and update `agent_birth_step`.
+**Files changed:**
+- `src/environment/state.py` — Added `agent_birth_step: jnp.ndarray` field to `EnvState`, initialized in `create_env_state`
+- `src/environment/env.py` — Added `agent_birth_step` initialization in `reset()`, updated both reproduction scan branches to set birth_step for offspring, included in `EnvState` construction
+- `src/training/rollout.py` — Collect `births_this_step` and `deaths_this_step` from env info dict in transition data
+- `src/training/train.py` — Added population metrics (population_size, births_this_step, deaths_this_step, mean_energy, max_energy, min_energy, oldest_agent_age) to train_step metrics dict. Updated progress bar to show population.
+- `src/analysis/ablation.py` — Updated `_replace_field` to pass through `agent_birth_step`
+- `tests/test_energy.py` — Added `agent_birth_step` to `_make_state_with_positions` helper
+- `tests/test_reproduction.py` — Added `agent_birth_step` to both `_make_state_with_positions` and `_make_state_with_params` helpers
+**Issues:** None. All 170 tests pass, mypy clean.
+
+---

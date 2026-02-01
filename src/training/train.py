@@ -288,8 +288,39 @@ def train_step(
     metrics['mean_value'] = jnp.sum(batch['values'] * alive_f) / alive_count
     metrics['mean_advantage'] = jnp.sum(advantages * alive_f) / alive_count
     metrics['mean_return'] = jnp.sum(returns * alive_f) / alive_count
-    # Population metrics
-    metrics['mean_population'] = jnp.mean(jnp.sum(alive_f, axis=-1))
+
+    # --- Population metrics ---
+    # Population size: mean across rollout steps and envs
+    # alive_mask: (T, num_envs, max_agents) -> sum over agents -> (T, num_envs)
+    pop_per_step = jnp.sum(alive_f, axis=-1)  # (T, num_envs)
+    metrics['population_size'] = jnp.mean(pop_per_step)
+
+    # Births and deaths aggregated over the rollout
+    # batch['births_this_step']: (T, num_envs), batch['deaths_this_step']: (T, num_envs)
+    metrics['births_this_step'] = jnp.sum(batch['births_this_step'])
+    metrics['deaths_this_step'] = jnp.sum(batch['deaths_this_step'])
+
+    # Energy stats of alive agents (snapshot from final env state)
+    final_env = runner_state.env_state
+    final_alive = final_env.agent_alive  # (num_envs, max_agents)
+    final_alive_f = final_alive.astype(jnp.float32)
+    final_energy = final_env.agent_energy  # (num_envs, max_agents)
+    final_alive_count = jnp.maximum(jnp.sum(final_alive_f), 1.0)
+    metrics['mean_energy'] = jnp.sum(final_energy * final_alive_f) / final_alive_count
+    # For max/min, mask dead agents with -inf/+inf respectively
+    metrics['max_energy'] = jnp.max(jnp.where(final_alive, final_energy, -jnp.inf))
+    metrics['min_energy'] = jnp.min(jnp.where(final_alive, final_energy, jnp.inf))
+
+    # Oldest agent age (steps alive) — snapshot from final env state
+    # age = current_step - birth_step for alive agents
+    final_step = final_env.step  # (num_envs,) scalar per env
+    final_birth = final_env.agent_birth_step  # (num_envs, max_agents)
+    agent_ages = jnp.where(
+        final_alive,
+        final_step[:, None] - final_birth,
+        jnp.int32(0),
+    )
+    metrics['oldest_agent_age'] = jnp.max(agent_ages)
 
     # Sync per-agent params: broadcast updated shared params to all alive agents
     env_state = runner_state.env_state
@@ -426,12 +457,13 @@ def train(config: Config) -> RunnerState:
             loss = float(metrics["total_loss"])
             entropy = float(metrics["entropy"])
             value = float(metrics["mean_value"])
+            pop = float(metrics["population_size"])
 
             pbar.set_postfix(
                 reward=f"{reward:.4f}",
                 loss=f"{loss:.4f}",
                 entropy=f"{entropy:.4f}",
-                value=f"{value:.4f}",
+                pop=f"{pop:.1f}",
                 steps=total_env_steps,
             )
 

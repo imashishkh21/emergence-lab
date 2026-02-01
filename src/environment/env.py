@@ -78,6 +78,10 @@ def reset(key: jax.Array, config: Config) -> EnvState:
 
     next_agent_id = jnp.int32(num_agents)
 
+    # Birth step: 0 for original agents, -1 for empty slots
+    agent_birth_step = jnp.full((max_agents,), -1, dtype=jnp.int32)
+    agent_birth_step = agent_birth_step.at[:num_agents].set(0)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -90,6 +94,7 @@ def reset(key: jax.Array, config: Config) -> EnvState:
         agent_ids=agent_ids,
         agent_parent_ids=agent_parent_ids,
         next_agent_id=next_agent_id,
+        agent_birth_step=agent_birth_step,
     )
 
 
@@ -265,10 +270,12 @@ def step(
     has_agent_params = state.agent_params is not None
     mutation_std = config.evolution.mutation_std
 
+    current_step = state.step
+
     if has_agent_params:
         def _process_reproductions(carry, agent_idx):
             """Process one agent's reproduction attempt sequentially (with params)."""
-            alive, energy, ids, parent_ids, positions, next_id, key, ag_params = carry
+            alive, energy, ids, parent_ids, positions, next_id, key, ag_params, birth_steps = carry
 
             eligible = (
                 can_reproduce[agent_idx]
@@ -290,6 +297,7 @@ def step(
             positions = jnp.where(eligible, positions.at[free_slot].set(child_pos), positions)
             ids = jnp.where(eligible, ids.at[free_slot].set(next_id), ids)
             parent_ids = jnp.where(eligible, parent_ids.at[free_slot].set(ids[agent_idx]), parent_ids)
+            birth_steps = jnp.where(eligible, birth_steps.at[free_slot].set(current_step), birth_steps)
             next_id = jnp.where(eligible, next_id + 1, next_id)
 
             # Mutate parent params -> child params
@@ -300,19 +308,19 @@ def step(
                 mutated,
             )
 
-            return (alive, energy, ids, parent_ids, positions, next_id, key, ag_params), eligible
+            return (alive, energy, ids, parent_ids, positions, next_id, key, ag_params, birth_steps), eligible
 
         repro_key, post_repro_key = jax.random.split(remaining_key)
 
         init_carry = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
-                      new_positions, state.next_agent_id, repro_key, state.agent_params)
-        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_agent_params), births_per_agent = (
+                      new_positions, state.next_agent_id, repro_key, state.agent_params, state.agent_birth_step)
+        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_agent_params, new_birth_steps), births_per_agent = (
             jax.lax.scan(_process_reproductions, init_carry, jnp.arange(max_agents))
         )
     else:
         def _process_reproductions_no_params(carry, agent_idx):
             """Process one agent's reproduction attempt sequentially (no params)."""
-            alive, energy, ids, parent_ids, positions, next_id, key = carry
+            alive, energy, ids, parent_ids, positions, next_id, key, birth_steps = carry
 
             eligible = (
                 can_reproduce[agent_idx]
@@ -334,15 +342,16 @@ def step(
             positions = jnp.where(eligible, positions.at[free_slot].set(child_pos), positions)
             ids = jnp.where(eligible, ids.at[free_slot].set(next_id), ids)
             parent_ids = jnp.where(eligible, parent_ids.at[free_slot].set(ids[agent_idx]), parent_ids)
+            birth_steps = jnp.where(eligible, birth_steps.at[free_slot].set(current_step), birth_steps)
             next_id = jnp.where(eligible, next_id + 1, next_id)
 
-            return (alive, energy, ids, parent_ids, positions, next_id, key), eligible
+            return (alive, energy, ids, parent_ids, positions, next_id, key, birth_steps), eligible
 
         repro_key, post_repro_key = jax.random.split(remaining_key)
 
         init_carry_np = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
-                         new_positions, state.next_agent_id, repro_key)
-        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _), births_per_agent = (
+                         new_positions, state.next_agent_id, repro_key, state.agent_birth_step)
+        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_birth_steps), births_per_agent = (
             jax.lax.scan(_process_reproductions_no_params, init_carry_np, jnp.arange(max_agents))
         )
         new_agent_params = None
@@ -369,6 +378,7 @@ def step(
         agent_ids=new_ids,
         agent_parent_ids=new_parent_ids,
         next_agent_id=new_next_id,
+        agent_birth_step=new_birth_steps,
         agent_params=new_agent_params,
     )
 
