@@ -1,9 +1,9 @@
 """Emergence detection: tracks field metrics over training and detects phase transitions."""
 
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
-import jax.numpy as jnp
 import numpy as np
 
 from src.analysis.field_metrics import field_entropy, field_structure

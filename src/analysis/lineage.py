@@ -4,7 +4,8 @@ Records birth/death events and computes family tree statistics
 for analyzing evolutionary pressure and dominant lineages.
 """
 
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 
 
 @dataclass

@@ -1,6 +1,5 @@
 """Field read/write operations for agent-field interaction."""
 
-import jax
 import jax.numpy as jnp
 
 from src.field.field import FieldState

@@ -1,8 +1,8 @@
 """PPO (Proximal Policy Optimization) loss function."""
 
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 
 
 def _masked_mean(x: jnp.ndarray, mask: jnp.ndarray | None) -> jnp.ndarray:

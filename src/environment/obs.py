@@ -1,12 +1,10 @@
 """Observation function for agents."""
 
-import jax
 import jax.numpy as jnp
 
 from src.configs import Config
 from src.environment.state import EnvState
 from src.field.ops import read_local
-
 
 # Number of nearest food items each agent observes.
 _K_NEAREST_FOOD = 5
@@ -53,7 +51,6 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
         Observations array of shape (max_agents, obs_dim).
     """
     grid_size = config.env.grid_size
-    max_agents = config.evolution.max_agents
     radius = config.env.observation_radius
     max_energy = jnp.float32(config.evolution.max_energy)
 

@@ -24,7 +24,7 @@ def compute_gae(
         advantages: shape (T,)
         returns: shape (T,) — advantages + values[:T]
     """
-    T = rewards.shape[0]
+    T = rewards.shape[0]  # noqa: N806
 
     # TD residuals: delta_t = r_t + gamma * V(s_{t+1}) * (1 - done_t) - V(s_t)
     not_dones = 1.0 - dones.astype(jnp.float32)

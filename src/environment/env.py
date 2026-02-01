@@ -5,12 +5,12 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
+from src.agents.reproduction import mutate_agent_params
 from src.configs import Config
 from src.environment.state import EnvState
-from src.field.field import create_field
 from src.field.dynamics import step_field
+from src.field.field import create_field
 from src.field.ops import write_local
-from src.agents.reproduction import mutate_agent_params
 
 
 def reset(key: jax.Array, config: Config) -> EnvState:
@@ -257,10 +257,6 @@ def step(
         & wants_reproduce
         & (new_energy >= reproduce_threshold)
     )  # (max_agents,)
-
-    # Check if there are free slots (any slot where agent_alive == False)
-    num_free_slots = jnp.sum((~new_alive).astype(jnp.int32))
-    any_free_slot = num_free_slots > 0
 
     # Only allow reproduction if there is at least one free slot
     # Process one reproduction at a time using scan to handle slot allocation

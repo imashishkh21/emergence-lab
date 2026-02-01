@@ -286,3 +286,36 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 174 tests pass, no regressions.
 
 ---
+
+### US-017: Final Review and Cleanup ✓
+**What:** Fixed all ruff lint issues (26 → 0), fixed `run_ablation.py` bug, updated deprecated pyproject.toml config, and added Phase 2 documentation to README.
+**Changes:**
+- **Ruff fixes (26 issues):** Auto-fixed 20 (import sorting, unused imports via `ruff --fix`). Manually fixed 6: removed unused `any_free_slot`/`num_free_slots` in `env.py`, removed unused `max_agents` var in `obs.py`, removed unused `effective_minibatch_size` and `value` vars in `train.py`, added `# noqa: N806` for `T` in `gae.py` (standard ML notation), added `# noqa: F821` for string annotation in `state.py`.
+- **run_ablation.py bug:** Changed `config.env.num_agents` to `config.evolution.max_agents` in `steps_per_iter` calculation (line 61), matching `train.py:398`.
+- **pyproject.toml:** Moved `select` and `ignore` from `[tool.ruff]` to `[tool.ruff.lint]` to fix deprecation warning.
+- **README.md:** Updated intro to mention evolution, updated "How It Works" with energy/reproduction steps, added "Phase 2: Evolutionary Pressure" section, updated project structure tree (added `reproduction.py`, `lineage.py`, `phase2.yaml`, `run_ablation.py`), added evolution configuration table, added evolution expected results and 2x2 ablation table, updated evaluate commands.
+**Verification:**
+- `ruff check src/` — 0 issues (no warnings)
+- `python -m mypy src/ --ignore-missing-imports` — 0 errors, 29 files
+- `pytest tests/ -v` — 174 passed
+- 1M step training — user running separately
+**Files changed:**
+- `src/environment/env.py` — Removed unused vars
+- `src/environment/obs.py` — Removed unused import and var
+- `src/environment/state.py` — Added noqa for string annotation
+- `src/training/train.py` — Removed unused vars, f-string fix (auto)
+- `src/training/gae.py` — Added noqa for T variable
+- `src/agents/reproduction.py` — Removed unused import (auto)
+- `src/analysis/emergence.py` — Removed unused import (auto)
+- `src/field/ops.py` — Removed unused import (auto)
+- `src/training/rollout.py` — Removed unused import (auto)
+- `src/utils/video.py` — Removed unused import (auto)
+- Various `src/` files — Import sorting (auto)
+- `scripts/run_ablation.py` — Fixed `steps_per_iter` bug
+- `pyproject.toml` — Fixed deprecated ruff config
+- `README.md` — Added Phase 2 documentation
+- `PRD.md` — Marked US-017 complete
+- `progress.txt` — Added US-017 entry
+**Issues:** None. All 17/17 user stories complete. Phase 2 done.
+
+---

@@ -13,13 +13,13 @@ from tqdm import tqdm
 
 from src.agents.network import ActorCritic
 from src.agents.policy import sample_actions
+from src.analysis.emergence import EmergenceTracker
 from src.configs import Config
 from src.environment.obs import get_observations, obs_dim
 from src.environment.vec_env import VecEnv
 from src.training.gae import compute_gae
 from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
-from src.analysis.emergence import EmergenceTracker
 from src.utils.logging import finish_wandb, init_wandb, log_metrics
 
 
@@ -201,8 +201,6 @@ def train_step(
     # 5. Run multiple epochs of minibatch updates
     num_epochs = config.train.num_epochs
     minibatch_size = config.train.minibatch_size
-    # Ensure minibatch_size doesn't exceed batch_size
-    effective_minibatch_size = jnp.minimum(minibatch_size, batch_size)
     num_minibatches = batch_size // minibatch_size if batch_size >= minibatch_size else 1
 
     def _epoch_step(
@@ -456,7 +454,6 @@ def train(config: Config) -> RunnerState:
             reward = float(metrics["mean_reward"])
             loss = float(metrics["total_loss"])
             entropy = float(metrics["entropy"])
-            value = float(metrics["mean_value"])
             pop = float(metrics["population_size"])
 
             pbar.set_postfix(
@@ -503,7 +500,7 @@ def train(config: Config) -> RunnerState:
     print("=" * 60)
     print("Training complete!")
     print(f"Total env steps: {total_env_steps}")
-    print(f"Final metrics:")
+    print("Final metrics:")
     for k, v in sorted(metrics.items()):
         print(f"  {k}: {float(v):.6f}")
     print("=" * 60)

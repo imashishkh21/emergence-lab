@@ -58,7 +58,7 @@ def main() -> None:
 
     # Compute how many total_steps we need for the desired iterations
     steps_per_iter = (
-        config.train.num_envs * config.train.num_steps * config.env.num_agents
+        config.train.num_envs * config.train.num_steps * config.evolution.max_agents
     )
     config.train.total_steps = args.iterations * steps_per_iter
 

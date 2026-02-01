@@ -5,7 +5,6 @@ from typing import Any
 import flax.struct
 import jax
 import jax.numpy as jnp
-import optax
 
 from src.agents.network import ActorCritic
 from src.agents.policy import sample_actions

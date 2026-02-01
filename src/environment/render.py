@@ -1,11 +1,9 @@
 """Environment rendering: produces RGB images of the simulation state."""
 
 import numpy as np
-import jax.numpy as jnp
 
 from src.configs import Config
 from src.environment.state import EnvState
-
 
 # Agent colors (up to 16 distinct agents; cycles if more)
 _AGENT_COLORS = [

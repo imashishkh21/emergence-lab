@@ -2,8 +2,8 @@
 
 from typing import Sequence
 
-import jax.numpy as jnp
 import flax.linen as nn
+import jax.numpy as jnp
 
 
 class ActorCritic(nn.Module):

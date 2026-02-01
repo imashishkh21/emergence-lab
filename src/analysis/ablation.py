@@ -29,7 +29,6 @@ from src.environment.obs import get_observations, obs_dim
 from src.environment.state import EnvState
 from src.field.field import FieldState, create_field
 
-
 FieldCondition = Literal["normal", "zeroed", "random"]
 
 

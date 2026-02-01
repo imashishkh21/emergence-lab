@@ -1,8 +1,7 @@
 """Video recording utilities for episode visualization."""
 
-import numpy as np
 import jax
-import jax.numpy as jnp
+import numpy as np
 
 from src.agents.network import ActorCritic
 from src.agents.policy import get_deterministic_actions

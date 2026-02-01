@@ -46,7 +46,7 @@ class EnvState:
     agent_params: Any = None       # per-agent params pytree, (max_agents, ...)
 
 
-def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState:  # type: ignore[name-defined]
+def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState:  # type: ignore[name-defined]  # noqa: F821
     """Create an initial EnvState from config.
 
     Agent and food positions are randomly placed on the grid.
@@ -60,7 +60,6 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
     Returns:
         A freshly initialized EnvState.
     """
-    from src.configs import Config  # local import to avoid circular
 
     k1, k2, k3 = jax.random.split(key, 3)
 
