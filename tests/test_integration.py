@@ -94,7 +94,7 @@ class TestIntegration:
         # ---- 3. Evaluate with deterministic policy ----
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=5,
+            num_actions=6,
         )
         eval_key = jax.random.PRNGKey(99)
         eval_state = reset(eval_key, config)
@@ -211,7 +211,7 @@ class TestIntegration:
 
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=5,
+            num_actions=6,
         )
 
         frames = record_episode(network, runner_state.params, config, jax.random.PRNGKey(0))

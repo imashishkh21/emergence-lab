@@ -231,7 +231,7 @@ def main() -> None:
     observation_dim = obs_dim(config)
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=5,
+        num_actions=6,
     )
 
     # Verify params by running a dummy forward pass

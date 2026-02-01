@@ -51,12 +51,13 @@ def collect_rollout(
 
     Returns:
         Tuple of (new_runner_state, batch) where batch is a dict containing:
-            - obs: (num_steps, num_envs, num_agents, obs_dim)
-            - actions: (num_steps, num_envs, num_agents)
-            - rewards: (num_steps, num_envs, num_agents)
+            - obs: (num_steps, num_envs, max_agents, obs_dim)
+            - actions: (num_steps, num_envs, max_agents)
+            - rewards: (num_steps, num_envs, max_agents)
             - dones: (num_steps, num_envs)
-            - values: (num_steps, num_envs, num_agents)
-            - log_probs: (num_steps, num_envs, num_agents)
+            - values: (num_steps, num_envs, max_agents)
+            - log_probs: (num_steps, num_envs, max_agents)
+            - alive_mask: (num_steps, num_envs, max_agents)
     """
     num_steps = config.train.num_steps
 
@@ -78,7 +79,9 @@ def collect_rollout(
         # Get new observations
         new_obs = jax.vmap(lambda s: get_observations(s, config))(env_state)
 
-        # Store transition data
+        # Store transition data (including alive mask for dead agent masking)
+        # alive_mask is from the state *before* the step, matching the obs
+        alive_mask = rs.env_state.agent_alive  # (num_envs, max_agents)
         transition = {
             'obs': rs.last_obs,
             'actions': actions,
@@ -86,6 +89,7 @@ def collect_rollout(
             'dones': dones,
             'values': values,
             'log_probs': log_probs,
+            'alive_mask': alive_mask,
         }
 
         # Update runner state

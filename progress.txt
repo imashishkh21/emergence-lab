@@ -174,3 +174,26 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 129 tests pass, mypy clean.
 
 ---
+
+### US-011: Update Training for Variable Population ✓
+**What:** Updated the training pipeline (rollout, PPO loss, GAE, train_step) to handle variable population with alive mask. Added per-agent params initialization and synchronization. Fixed `num_actions` from 5 to 6 across training, integration tests, ablation, and video utilities.
+**Decisions:**
+- **Alive mask in rollout**: Collect `agent_alive` from env state at each step alongside other transition data. Shape: `(num_steps, num_envs, max_agents)`.
+- **Masked PPO loss**: Added `_masked_mean` helper in `ppo.py` that computes `sum(x * mask) / max(sum(mask), 1)`. All PPO loss terms (policy loss, value loss, entropy, KL, clip fraction) use masked means when `alive_mask` is present in the batch. Backward-compatible: works without mask too.
+- **Masked GAE**: Rather than modifying `gae.py`, mask rewards and values to zero for dead agents before passing to GAE. This produces zero advantages/returns for dead agents naturally. Bootstrap values also masked by final alive state.
+- **Advantage normalization**: Updated minibatch advantage normalization to use masked mean and variance when alive mask is present.
+- **Per-agent params**: Initialized per-agent params by replicating shared params to `(num_envs, max_agents, ...)` in `create_train_state`. After each PPO update, sync updated shared params to all alive agent slots (dead slots keep their existing params for potential reuse on spawn). Uses `flax.struct.dataclass.replace()` for env state updates.
+- **num_actions=6**: Fixed all remaining hardcoded `num_actions=5` in `train.py` (both `create_train_state` and `train_step`), `test_integration.py`, `ablation.py` CLI, and `scripts/run_ablation.py`.
+- **Rollout metrics**: `mean_reward`, `mean_value`, `mean_advantage`, `mean_return` now computed as masked averages over alive agents only. Added `mean_population` metric.
+- **Steps per iteration**: Updated to use `max_agents` instead of `num_agents` since batch has `(max_agents,)` agent dimension.
+- **Training banner**: Updated to Phase 2 with evolution info.
+**Files changed:**
+- `src/training/rollout.py` — Added `alive_mask` to transition dict in rollout collection
+- `src/training/ppo.py` — Added `_masked_mean` helper, updated all loss/metric computations to use alive mask when present
+- `src/training/train.py` — Fixed `num_actions` to 6, added per-agent params init/sync, added alive mask to GAE inputs and flat batch, masked advantage normalization, masked rollout metrics, added `mean_population` metric, updated banner/steps_per_iter
+- `src/analysis/ablation.py` — Fixed `num_actions` from 5 to 6 in CLI main
+- `scripts/run_ablation.py` — Fixed `num_actions` from 5 to 6
+- `tests/test_integration.py` — Fixed `num_actions` from 5 to 6 in integration tests
+**Issues:** None. All 129 tests pass, mypy clean.
+
+---

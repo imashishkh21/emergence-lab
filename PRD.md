@@ -126,7 +126,7 @@
    - Mask out dead agents in relative position calculations                                                                           
    **Verification:** `pytest tests/test_obs.py -v` passes                                                                             
                                                                                                                                       
-   ### US-011: Update Training for Variable Population [ ]                                                                            
+   ### US-011: Update Training for Variable Population [x]                                                                            
    **Task:** Mask dead agents in training loop.                                                                                       
    **Files:** `src/training/rollout.py`, `src/training/train.py`, `src/training/ppo.py`                                               
    **Changes:**                                                                                                                       

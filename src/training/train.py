@@ -43,14 +43,29 @@ def create_train_state(config: Config, key: jax.Array) -> RunnerState:
 
     # Compute observation dimension and create network
     observation_dim = obs_dim(config)
+    num_actions = 6  # 0-4 movement + 5 reproduce
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=5,
+        num_actions=num_actions,
     )
 
     # Initialize network parameters
     dummy_obs = jnp.zeros((observation_dim,))
     params = network.init(init_key, dummy_obs)
+
+    # Initialize per-agent params: replicate shared params to (num_envs, max_agents, ...)
+    # Each leaf gets leading (num_envs, max_agents) dimensions for the batched state
+    if config.evolution.enabled:
+        max_agents = config.evolution.max_agents
+        num_envs = config.train.num_envs
+        per_agent_params = jax.tree.map(
+            lambda leaf: jnp.broadcast_to(
+                leaf[None, None], (num_envs, max_agents) + leaf.shape
+            ).copy(),
+            params,
+        )
+        # Set per-agent params on the batched env state
+        env_state = env_state.replace(agent_params=per_agent_params)  # type: ignore[attr-defined]
 
     # Create optimizer with gradient clipping
     optimizer = optax.chain(
@@ -93,9 +108,10 @@ def train_step(
         (new_runner_state, metrics) where metrics is a dict of scalar values.
     """
     vec_env = VecEnv(config)
+    num_actions = 6  # 0-4 movement + 5 reproduce
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=5,
+        num_actions=num_actions,
     )
     optimizer = optax.chain(
         optax.clip_by_global_norm(config.train.max_grad_norm),
@@ -105,13 +121,14 @@ def train_step(
     # 1. Collect rollout
     runner_state, batch = collect_rollout(runner_state, network, vec_env, config)
 
-    # batch shapes: (num_steps, num_envs, num_agents, ...) or (num_steps, num_envs)
-    # rewards: (num_steps, num_envs, num_agents)
+    # batch shapes: (num_steps, num_envs, max_agents, ...) or (num_steps, num_envs)
+    # rewards: (num_steps, num_envs, max_agents)
     # dones: (num_steps, num_envs)
-    # values: (num_steps, num_envs, num_agents)
-    # obs: (num_steps, num_envs, num_agents, obs_dim)
-    # actions: (num_steps, num_envs, num_agents)
-    # log_probs: (num_steps, num_envs, num_agents)
+    # values: (num_steps, num_envs, max_agents)
+    # obs: (num_steps, num_envs, max_agents, obs_dim)
+    # actions: (num_steps, num_envs, max_agents)
+    # log_probs: (num_steps, num_envs, max_agents)
+    # alive_mask: (num_steps, num_envs, max_agents)
 
     # 2. Compute bootstrap value for the last observation
     # We need value of the final state for GAE computation
@@ -120,46 +137,56 @@ def train_step(
     _, _, bootstrap_values, _ = sample_actions(
         network, runner_state.params, runner_state.last_obs, bootstrap_key
     )
-    # bootstrap_values: (num_envs, num_agents)
+    # bootstrap_values: (num_envs, max_agents)
 
     # 3. Compute GAE per environment per agent
-    # We need values with shape (T+1, num_envs, num_agents) for GAE
-    all_values = jnp.concatenate(
-        [batch['values'], bootstrap_values[None, :, :]], axis=0
-    )  # (T+1, num_envs, num_agents)
+    # Mask dead agents: zero rewards and values so GAE produces 0 advantages
+    alive_mask = batch['alive_mask']  # (T, num_envs, max_agents)
+    alive_f = alive_mask.astype(jnp.float32)
+    masked_rewards = batch['rewards'] * alive_f
+    masked_values = batch['values'] * alive_f
 
-    # Expand dones to match agent dimension: (T, num_envs) -> (T, num_envs, num_agents)
+    # Bootstrap values also masked by final alive state
+    final_alive = runner_state.env_state.agent_alive  # (num_envs, max_agents)
+    masked_bootstrap = bootstrap_values * final_alive.astype(jnp.float32)
+
+    # We need values with shape (T+1, num_envs, max_agents) for GAE
+    all_values = jnp.concatenate(
+        [masked_values, masked_bootstrap[None, :, :]], axis=0
+    )  # (T+1, num_envs, max_agents)
+
+    # Expand dones to match agent dimension: (T, num_envs) -> (T, num_envs, max_agents)
     dones_expanded = jnp.broadcast_to(
         batch['dones'][:, :, None],
-        batch['rewards'].shape,
+        masked_rewards.shape,
     )
 
     # Vectorize GAE over (env, agent) pairs
     def _gae_single(rewards: jnp.ndarray, values: jnp.ndarray, dones: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         return compute_gae(rewards, values, dones, config.train.gamma, config.train.gae_lambda)
 
-    # Reshape to map over env*agent: (T, num_envs * num_agents)
-    num_steps = batch['rewards'].shape[0]
-    num_envs = batch['rewards'].shape[1]
-    num_agents = batch['rewards'].shape[2]
+    # Reshape to map over env*agent: (T, num_envs * max_agents)
+    num_steps = masked_rewards.shape[0]
+    num_envs = masked_rewards.shape[1]
+    max_agents = masked_rewards.shape[2]
 
-    rewards_flat = batch['rewards'].reshape(num_steps, num_envs * num_agents)
-    values_flat = all_values.reshape(num_steps + 1, num_envs * num_agents)
-    dones_flat = dones_expanded.reshape(num_steps, num_envs * num_agents)
+    rewards_flat = masked_rewards.reshape(num_steps, num_envs * max_agents)
+    values_flat = all_values.reshape(num_steps + 1, num_envs * max_agents)
+    dones_flat = dones_expanded.reshape(num_steps, num_envs * max_agents)
 
     # vmap over the env*agent dimension (axis 1)
     advantages_flat, returns_flat = jax.vmap(
         _gae_single, in_axes=(1, 1, 1), out_axes=(1, 1)
     )(rewards_flat, values_flat, dones_flat)
-    # advantages_flat: (T, num_envs * num_agents)
-    # returns_flat: (T, num_envs * num_agents)
+    # advantages_flat: (T, num_envs * max_agents)
+    # returns_flat: (T, num_envs * max_agents)
 
-    advantages = advantages_flat.reshape(num_steps, num_envs, num_agents)
-    returns = returns_flat.reshape(num_steps, num_envs, num_agents)
+    advantages = advantages_flat.reshape(num_steps, num_envs, max_agents)
+    returns = returns_flat.reshape(num_steps, num_envs, max_agents)
 
     # 4. Flatten rollout into training batch
-    # Flatten (num_steps, num_envs, num_agents) -> (batch_size,)
-    batch_size = num_steps * num_envs * num_agents
+    # Flatten (num_steps, num_envs, max_agents) -> (batch_size,)
+    batch_size = num_steps * num_envs * max_agents
     obs_dim_val = batch['obs'].shape[-1]
 
     flat_batch = {
@@ -168,6 +195,7 @@ def train_step(
         'log_probs': batch['log_probs'].reshape(batch_size),
         'advantages': advantages.reshape(batch_size),
         'returns': returns.reshape(batch_size),
+        'alive_mask': alive_mask.reshape(batch_size),
     }
 
     # 5. Run multiple epochs of minibatch updates
@@ -204,9 +232,17 @@ def train_step(
                 for k, v in shuffled_batch.items()
             }
 
-            # Normalize advantages within minibatch
+            # Normalize advantages within minibatch (using alive mask)
             mb_adv = mb['advantages']
-            mb_adv = (mb_adv - jnp.mean(mb_adv)) / (jnp.std(mb_adv) + 1e-8)
+            mb_mask = mb.get('alive_mask', None)
+            if mb_mask is not None:
+                mask_f = mb_mask.astype(jnp.float32)
+                mask_sum = jnp.maximum(jnp.sum(mask_f), 1.0)
+                adv_mean = jnp.sum(mb_adv * mask_f) / mask_sum
+                adv_var = jnp.sum(jnp.square(mb_adv - adv_mean) * mask_f) / mask_sum
+                mb_adv = (mb_adv - adv_mean) / (jnp.sqrt(adv_var) + 1e-8)
+            else:
+                mb_adv = (mb_adv - jnp.mean(mb_adv)) / (jnp.std(mb_adv) + 1e-8)
             mb = {**mb, 'advantages': mb_adv}
 
             # Compute loss and gradients
@@ -245,16 +281,51 @@ def train_step(
     # Average metrics over epochs
     metrics = jax.tree.map(lambda x: jnp.mean(x), all_epoch_metrics)
 
-    # Add rollout-level metrics
-    metrics['mean_reward'] = jnp.mean(batch['rewards'])
-    metrics['mean_value'] = jnp.mean(batch['values'])
-    metrics['mean_advantage'] = jnp.mean(advantages)
-    metrics['mean_return'] = jnp.mean(returns)
+    # Add rollout-level metrics (masked to alive agents only)
+    alive_f = alive_mask.astype(jnp.float32)
+    alive_count = jnp.maximum(jnp.sum(alive_f), 1.0)
+    metrics['mean_reward'] = jnp.sum(batch['rewards'] * alive_f) / alive_count
+    metrics['mean_value'] = jnp.sum(batch['values'] * alive_f) / alive_count
+    metrics['mean_advantage'] = jnp.sum(advantages * alive_f) / alive_count
+    metrics['mean_return'] = jnp.sum(returns * alive_f) / alive_count
+    # Population metrics
+    metrics['mean_population'] = jnp.mean(jnp.sum(alive_f, axis=-1))
+
+    # Sync per-agent params: broadcast updated shared params to all alive agents
+    env_state = runner_state.env_state
+    if env_state.agent_params is not None:
+        num_envs = config.train.num_envs
+        max_agents_val = config.evolution.max_agents
+        # Replicate shared params to (num_envs, max_agents, ...) for all slots
+        updated_per_agent = jax.tree.map(
+            lambda leaf: jnp.broadcast_to(
+                leaf[None, None], (num_envs, max_agents_val) + leaf.shape
+            ).copy(),
+            new_params,
+        )
+        # Keep existing per-agent params for dead slots (they may be reused on spawn)
+        # For alive slots, use the updated shared params
+        current_alive = env_state.agent_alive  # (num_envs, max_agents)
+
+        def _sync_params(updated: jnp.ndarray, existing: jnp.ndarray) -> jnp.ndarray:
+            """Broadcast alive mask to match param leaf shape and select."""
+            # Both updated and existing: (num_envs, max_agents, ...)
+            # current_alive: (num_envs, max_agents)
+            ndim_extra = existing.ndim - current_alive.ndim
+            mask = current_alive
+            for _ in range(ndim_extra):
+                mask = mask[..., None]
+            return jnp.where(mask, updated, existing)
+
+        new_agent_params = jax.tree.map(
+            _sync_params, updated_per_agent, env_state.agent_params
+        )
+        env_state = env_state.replace(agent_params=new_agent_params)  # type: ignore[attr-defined]
 
     new_runner_state = RunnerState(
         params=new_params,
         opt_state=new_opt_state,
-        env_state=runner_state.env_state,
+        env_state=env_state,
         last_obs=runner_state.last_obs,
         key=key,
     )
@@ -277,10 +348,12 @@ def train(config: Config) -> RunnerState:
     key = jax.random.PRNGKey(config.train.seed)
 
     print("=" * 60)
-    print("Emergence Lab — Phase 1: Digital Petri Dish")
+    print("Emergence Lab — Phase 2: Evolutionary Pressure")
     print("=" * 60)
     print(f"Grid: {config.env.grid_size}x{config.env.grid_size}")
-    print(f"Agents: {config.env.num_agents}, Food: {config.env.num_food}")
+    print(f"Agents: {config.env.num_agents} (max: {config.evolution.max_agents})")
+    print(f"Food: {config.env.num_food}")
+    print(f"Evolution: {'enabled' if config.evolution.enabled else 'disabled'}")
     print(f"Field channels: {config.field.num_channels}")
     print(f"Num envs: {config.train.num_envs}")
     print(f"Total steps: {config.train.total_steps}")
@@ -288,9 +361,10 @@ def train(config: Config) -> RunnerState:
     print(f"Seed: {config.train.seed}")
     print("=" * 60)
 
-    # Steps per training iteration = num_envs * num_steps * num_agents
+    # Steps per training iteration = num_envs * num_steps * max_agents
+    # Uses max_agents since the batch has (max_agents,) agent dimension
     steps_per_iter = (
-        config.train.num_envs * config.train.num_steps * config.env.num_agents
+        config.train.num_envs * config.train.num_steps * config.evolution.max_agents
     )
     num_iterations = config.train.total_steps // steps_per_iter
     if num_iterations < 1:
