@@ -118,11 +118,14 @@ def render_frame(state: EnvState, config: Config, pixel_size: int = 0) -> np.nda
         cx = col * pixel_size + pixel_size // 2
         _draw_circle(img, cy, cx, food_radius, _FOOD_COLOR)
 
-    # --- 4. Agents as colored circles ---
-    agent_positions = np.asarray(state.agent_positions)  # (num_agents, 2)
+    # --- 4. Agents as colored circles (only alive agents) ---
+    agent_positions = np.asarray(state.agent_positions)  # (max_agents, 2)
+    agent_alive = np.asarray(state.agent_alive)  # (max_agents,)
     agent_radius = max(pixel_size // 3, 3)
 
     for i in range(agent_positions.shape[0]):
+        if not agent_alive[i]:
+            continue
         row, col = int(agent_positions[i, 0]), int(agent_positions[i, 1])
         cy = row * pixel_size + pixel_size // 2
         cx = col * pixel_size + pixel_size // 2

@@ -24,3 +24,28 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 56 tests pass, mypy clean.
 
 ---
+
+### US-002: Extend EnvState with Energy and Alive Mask ✓
+**What:** Added evolution tracking fields to `EnvState` and updated `agent_positions` from `(num_agents, 2)` to `(max_agents, 2)` with padding for dead agents.
+**Decisions:**
+- `agent_positions` padded to `(max_agents, 2)` — dead slots get `(0, 0)`.
+- `agent_energy` is `float32` for smooth gradient-friendly math later.
+- `agent_alive` is `bool_` mask — True for first `num_agents`, False for rest.
+- `agent_ids` starts at `[0, 1, ..., num_agents-1, -1, -1, ...]`.
+- `agent_parent_ids` all `-1` initially (no parents for original agents).
+- `next_agent_id` initialized to `num_agents` (scalar counter).
+- `step()` pads incoming actions to `(max_agents,)` so dead agents get action 0 (stay).
+- Dead agents masked out of movement, food collection, and field writes.
+- `obs.py` slices `[:num_agents]` for observations (US-010 will generalize).
+- `render.py` skips dead agents when drawing.
+- `ablation.py` `_replace_field` updated to pass through all new fields.
+**Files changed:**
+- `src/environment/state.py` — Added 5 new fields to `EnvState`, updated `create_env_state`
+- `src/environment/env.py` — Updated `reset()` and `step()` for `(max_agents, 2)` shapes and alive masking
+- `src/environment/obs.py` — Slice `[:num_agents]` for active agents only
+- `src/environment/render.py` — Skip dead agents when drawing
+- `src/analysis/ablation.py` — Updated `_replace_field` to include new fields
+- `tests/test_env.py` — Updated shape assertions for `max_agents`, added checks for new fields
+**Issues:** None. All 56 tests pass, mypy clean.
+
+---

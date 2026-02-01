@@ -52,12 +52,16 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
     num_agents = config.env.num_agents
     radius = config.env.observation_radius
 
+    # Use only the first num_agents slots (alive agents in initial config)
+    # US-010 will generalize this to handle variable population via alive mask
+    active_positions = state.agent_positions[:num_agents]
+
     # --- 1. Normalized own position ---
     # Map [0, grid_size-1] -> [-1, 1]
-    norm_pos = (state.agent_positions.astype(jnp.float32) / (grid_size - 1)) * 2.0 - 1.0  # (A, 2)
+    norm_pos = (active_positions.astype(jnp.float32) / (grid_size - 1)) * 2.0 - 1.0  # (A, 2)
 
     # --- 2. Local field values ---
-    field_obs = read_local(state.field_state, state.agent_positions, radius)  # (A, patch*C)
+    field_obs = read_local(state.field_state, active_positions, radius)  # (A, patch*C)
     # Clamp field observations to [-1, 1]
     field_obs = jnp.clip(field_obs, -1.0, 1.0)
 
@@ -80,10 +84,11 @@ def _compute_food_obs(state: EnvState, config: Config) -> jnp.ndarray:
         Array of shape (num_agents, K_NEAREST_FOOD * 3).
     """
     grid_size = config.env.grid_size
+    num_agents = config.env.num_agents
     k = _K_NEAREST_FOOD
 
-    # Relative positions from each agent to each food: (A, F, 2)
-    agent_pos_f = state.agent_positions.astype(jnp.float32)  # (A, 2)
+    # Use only the first num_agents slots
+    agent_pos_f = state.agent_positions[:num_agents].astype(jnp.float32)  # (A, 2)
     food_pos_f = state.food_positions.astype(jnp.float32)    # (F, 2)
 
     # (A, 1, 2) - (1, F, 2) -> (A, F, 2)
@@ -113,7 +118,7 @@ def _compute_food_obs(state: EnvState, config: Config) -> jnp.ndarray:
 
     # Gather the relative positions and distances for sorted food
     # Use advanced indexing: for each agent i, gather food sorted_indices[i]
-    agent_idx = jnp.arange(state.agent_positions.shape[0])[:, None]  # (A, 1)
+    agent_idx = jnp.arange(num_agents)[:, None]  # (A, 1)
     nearest_rel = rel_pos_norm[agent_idx, sorted_indices]  # (A, K, 2)
     nearest_dist = distances[agent_idx, sorted_indices]     # (A, K)
 
@@ -129,4 +134,4 @@ def _compute_food_obs(state: EnvState, config: Config) -> jnp.ndarray:
     )  # (A, K, 3)
 
     # Flatten to (A, K * 3)
-    return food_features.reshape(state.agent_positions.shape[0], k * 3)
+    return food_features.reshape(num_agents, k * 3)

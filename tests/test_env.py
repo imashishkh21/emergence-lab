@@ -13,20 +13,26 @@ class TestEnvState:
         """Test that EnvState has required fields."""
         from src.environment.state import EnvState
         from src.configs import Config
-        
+
         # Create a mock state to test structure
         config = Config()
         key = jax.random.PRNGKey(42)
-        
+
         # Import after module exists
         from src.environment.state import create_env_state
         state = create_env_state(key, config)
-        
+
         assert hasattr(state, 'agent_positions')
         assert hasattr(state, 'food_positions')
         assert hasattr(state, 'field_state')
         assert hasattr(state, 'step')
         assert hasattr(state, 'key')
+        # Phase 2 evolution fields
+        assert hasattr(state, 'agent_energy')
+        assert hasattr(state, 'agent_alive')
+        assert hasattr(state, 'agent_ids')
+        assert hasattr(state, 'agent_parent_ids')
+        assert hasattr(state, 'next_agent_id')
 
 
 class TestEnvReset:
@@ -36,22 +42,35 @@ class TestEnvReset:
         """Test that reset creates valid initial state."""
         from src.environment.env import reset
         from src.configs import Config
-        
+
         config = Config()
         key = jax.random.PRNGKey(42)
-        
+
         state = reset(key, config)
-        
-        # Check shapes
-        assert state.agent_positions.shape == (config.env.num_agents, 2)
+
+        # Check shapes — agent_positions is now (max_agents, 2)
+        assert state.agent_positions.shape == (config.evolution.max_agents, 2)
         assert state.food_positions.shape == (config.env.num_food, 2)
         assert state.step == 0
-        
-        # Check positions are within bounds
-        assert jnp.all(state.agent_positions >= 0)
-        assert jnp.all(state.agent_positions < config.env.grid_size)
+
+        # Check alive agent positions are within bounds
+        alive = state.agent_alive
+        alive_positions = state.agent_positions[:config.env.num_agents]
+        assert jnp.all(alive_positions >= 0)
+        assert jnp.all(alive_positions < config.env.grid_size)
         assert jnp.all(state.food_positions >= 0)
         assert jnp.all(state.food_positions < config.env.grid_size)
+
+        # Check evolution field shapes
+        assert state.agent_energy.shape == (config.evolution.max_agents,)
+        assert state.agent_alive.shape == (config.evolution.max_agents,)
+        assert state.agent_ids.shape == (config.evolution.max_agents,)
+        assert state.agent_parent_ids.shape == (config.evolution.max_agents,)
+
+        # Check alive mask
+        assert jnp.sum(state.agent_alive) == config.env.num_agents
+        assert jnp.all(state.agent_alive[:config.env.num_agents])
+        assert not jnp.any(state.agent_alive[config.env.num_agents:])
     
     def test_reset_different_seeds(self):
         """Test that different seeds produce different states."""
@@ -76,8 +95,8 @@ class TestEnvReset:
 
         for seed in range(10):
             state = reset(jax.random.PRNGKey(seed), config)
-            # Check all positions are unique
-            positions = state.agent_positions
+            # Check all alive agent positions are unique
+            positions = state.agent_positions[:config.env.num_agents]
             for i in range(config.env.num_agents):
                 for j in range(i + 1, config.env.num_agents):
                     assert not jnp.allclose(positions[i], positions[j])
@@ -232,8 +251,8 @@ class TestVecEnv:
         
         states = vec_env.reset(key)
         
-        # Should have batch dimension
-        assert states.agent_positions.shape == (8, config.env.num_agents, 2)
+        # Should have batch dimension — agent_positions is (max_agents, 2) per env
+        assert states.agent_positions.shape == (8, config.evolution.max_agents, 2)
     
     def test_vec_env_step(self):
         """Test that vectorized step works."""
@@ -255,7 +274,7 @@ class TestVecEnv:
         new_states, rewards, dones, info = vec_env.step(states, actions)
         
         assert rewards.shape == (8, config.env.num_agents)
-        assert new_states.agent_positions.shape == (8, config.env.num_agents, 2)
+        assert new_states.agent_positions.shape == (8, config.evolution.max_agents, 2)
     
     def test_vec_env_jit_compatible(self):
         """Test that VecEnv works with JIT."""

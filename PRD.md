@@ -32,7 +32,7 @@
    - Create `configs/phase2.yaml` with evolution enabled                                                                              
    **Verification:** `python -c "from src.configs import Config; c = Config(); print(c.evolution.starting_energy)"` prints `100`      
                                                                                                                                       
-   ### US-002: Extend EnvState with Energy and Alive Mask [ ]                                                                         
+   ### US-002: Extend EnvState with Energy and Alive Mask [x]                                                                         
    **Task:** Add energy tracking and alive status to environment state.                                                               
    **Files:** `src/environment/state.py`                                                                                              
    **Changes:**                                                                                                                       

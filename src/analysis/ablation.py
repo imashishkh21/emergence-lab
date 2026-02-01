@@ -115,6 +115,11 @@ def _replace_field(state: EnvState, field_state: FieldState) -> EnvState:
         field_state=field_state,
         step=state.step,
         key=state.key,
+        agent_energy=state.agent_energy,
+        agent_alive=state.agent_alive,
+        agent_ids=state.agent_ids,
+        agent_parent_ids=state.agent_parent_ids,
+        next_agent_id=state.next_agent_id,
     )
 
 
