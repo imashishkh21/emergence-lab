@@ -272,3 +272,17 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 170 tests pass, mypy clean. `python scripts/run_ablation.py --evolution` runs successfully.
 
 ---
+
+### US-016: Review and Integration Test ✓
+**What:** Verified all Phase 2 integration tests pass. Updated `test_full_pipeline` to assert Phase 2 population metrics. Added 4 new tests in `TestPhase2Integration`: population dynamics (no-food starvation vs abundant-food survival), lineage tracking across generations, weight divergence over mutations, and 2x2 evolution ablation.
+**Decisions:**
+- `test_population_dynamics` exercises two scenarios: no food (agents starve, population declines) and abundant food (population sustains). Uses `reset()` without per-agent params — tests reproduction without weight mutation.
+- `test_lineage_tracking_across_generations` forces action=5 (reproduce) every step, feeds birth/death events to `LineageTracker`, verifies family tree structure. Uses conditional assertions (`if total_births > 0`) to handle stochastic reproduction.
+- `test_weight_divergence` calls `mutate_agent_params` directly across 5 generations, verifying divergence increases. Does not go through `step()` — tests the mutation function in isolation.
+- `test_evolution_ablation` validates all 4 conditions (field+evolution, field_only, evolution_only, neither) have finite rewards and valid population stats. Asserts no births in evolution-disabled conditions.
+- `test_full_pipeline` updated to verify Phase 2 metric keys (population_size, births, deaths, energy stats, oldest_agent_age) and assert non-negative values.
+**Files changed:**
+- `tests/test_integration.py` — Updated `test_full_pipeline` with Phase 2 metric assertions, added `TestPhase2Integration` class with 4 tests
+**Issues:** None. All 174 tests pass, no regressions.
+
+---

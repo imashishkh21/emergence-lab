@@ -174,7 +174,7 @@
    - Report: final population, total births, total deaths, survival rate                                                              
    **Verification:** `python scripts/run_ablation.py --evolution` works                                                               
                                                                                                                                       
-   ### US-016: Review and Integration Test [ ]                                                                                        
+   ### US-016: Review and Integration Test [x]                                                                                        
    **Task:** Full system validation.                                                                                                  
    **Files:** `tests/test_integration.py`                                                                                             
    **Changes:**                                                                                                                       
