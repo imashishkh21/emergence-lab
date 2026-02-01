@@ -142,19 +142,19 @@ This is Phase 1 — get the infrastructure working and observe what happens.
 
 ---
 
-### US-009: Implement environment step [ ]
+### US-009: Implement environment step [x]
 
 **Description:** As a developer, I need the core simulation loop.
 
 **Acceptance Criteria:**
-- [ ] `step(state, actions, config) -> (EnvState, rewards, dones, info)`
-- [ ] Actions: 0=stay, 1=up, 2=down, 3=left, 4=right
-- [ ] Agents collect food when adjacent (within 1 cell)
-- [ ] Field updates: diffuse, decay, agents write presence
-- [ ] Reward: +1 per food collected (shared across team)
-- [ ] Done when `step >= max_steps`
-- [ ] Tests pass: `pytest tests/test_env.py::TestEnvStep -v`
-- [ ] Typecheck passes
+- [x] `step(state, actions, config) -> (EnvState, rewards, dones, info)`
+- [x] Actions: 0=stay, 1=up, 2=down, 3=left, 4=right
+- [x] Agents collect food when adjacent (within 1 cell)
+- [x] Field updates: diffuse, decay, agents write presence
+- [x] Reward: +1 per food collected (shared across team)
+- [x] Done when `step >= max_steps`
+- [x] Tests pass: `pytest tests/test_env.py::TestEnvStep -v`
+- [x] Typecheck passes
 
 ---
 

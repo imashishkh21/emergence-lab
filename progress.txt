@@ -62,8 +62,20 @@
 - All 5 TestEnvReset tests pass, typecheck passes
 - Files changed: src/environment/env.py (new), tests/test_env.py (added tests)
 
+### US-009: Implement environment step [x]
+- Implemented `step(state, actions, config) -> (EnvState, rewards, dones, info)` in src/environment/env.py
+- Actions map: 0=stay, 1=up(-row), 2=down(+row), 3=left(-col), 4=right(+col) using action_deltas lookup table
+- Agent positions clipped to grid boundaries after movement
+- Food collection uses Chebyshev distance <= 1 (within 1 cell in any direction)
+- Reward: shared +1 per food collected this step, broadcast to all agents
+- Field dynamics: step_field (diffuse + decay), then agents write presence (write_strength * ones for all channels)
+- Done when step >= max_steps
+- Info dict includes food_collected_this_step and total_food_collected
+- All 3 TestEnvStep tests pass, mypy clean
+- Files changed: src/environment/env.py (added step function + imports for step_field, write_local)
+
 ## Current Task
-US-009: Implement environment step
+US-010: Implement observation function
 
 ## Decisions Made
 - Using JAX/Flax/Optax stack (not PyTorch)
@@ -89,6 +101,7 @@ US-009: Implement environment step
 - src/field/dynamics.py (diffuse, decay, step_field)
 - src/field/ops.py (read_local, write_local)
 - src/environment/state.py (EnvState dataclass and create_env_state)
+- src/environment/env.py (added step function)
 
 ## Key Design Notes
 - The FIELD is the key innovation (shared medium between agents)

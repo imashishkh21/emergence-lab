@@ -1,11 +1,15 @@
 """Environment reset and step functions."""
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 
 from src.configs import Config
 from src.environment.state import EnvState
 from src.field.field import create_field
+from src.field.dynamics import step_field
+from src.field.ops import write_local
 
 
 def reset(key: jax.Array, config: Config) -> EnvState:
@@ -59,3 +63,102 @@ def reset(key: jax.Array, config: Config) -> EnvState:
         step=jnp.int32(0),
         key=k3,
     )
+
+
+def step(
+    state: EnvState, actions: jnp.ndarray, config: Config
+) -> tuple[EnvState, jnp.ndarray, jnp.ndarray, dict[str, Any]]:
+    """Advance the environment by one timestep.
+
+    Args:
+        state: Current environment state.
+        actions: Integer actions for each agent, shape (num_agents,).
+            0=stay, 1=up, 2=down, 3=left, 4=right.
+        config: Master configuration object.
+
+    Returns:
+        Tuple of (new_state, rewards, dones, info).
+    """
+    grid_size = config.env.grid_size
+
+    # --- 1. Move agents ---
+    # Action deltas: 0=stay, 1=up(-row), 2=down(+row), 3=left(-col), 4=right(+col)
+    action_deltas = jnp.array([
+        [0, 0],   # stay
+        [-1, 0],  # up
+        [1, 0],   # down
+        [0, -1],  # left
+        [0, 1],   # right
+    ], dtype=jnp.int32)
+
+    deltas = action_deltas[actions]  # (num_agents, 2)
+    new_positions = state.agent_positions + deltas
+
+    # Clip to grid boundaries
+    new_positions = jnp.clip(new_positions, 0, grid_size - 1)
+
+    # --- 2. Food collection ---
+    # An agent collects food if it is within 1 cell (Manhattan or Chebyshev)
+    # PRD says "adjacent (within 1 cell)" — use Chebyshev distance (max of abs diffs)
+    # agent_pos: (A, 2), food_pos: (F, 2)
+    # Compute pairwise distances: (A, F)
+    agent_rows = new_positions[:, 0:1]  # (A, 1)
+    agent_cols = new_positions[:, 1:2]  # (A, 1)
+    food_rows = state.food_positions[:, 0]  # (F,)
+    food_cols = state.food_positions[:, 1]  # (F,)
+
+    row_dist = jnp.abs(agent_rows - food_rows[None, :])  # (A, F)
+    col_dist = jnp.abs(agent_cols - food_cols[None, :])  # (A, F)
+    chebyshev_dist = jnp.maximum(row_dist, col_dist)  # (A, F)
+
+    # Food is collectible if within 1 cell AND not already collected
+    within_range = chebyshev_dist <= 1  # (A, F)
+    not_collected = ~state.food_collected  # (F,)
+    collectible = within_range & not_collected[None, :]  # (A, F)
+
+    # Any agent adjacent to uncollected food collects it
+    newly_collected = jnp.any(collectible, axis=0)  # (F,)
+    food_collected = state.food_collected | newly_collected
+
+    # --- 3. Compute reward ---
+    # +1 per food collected this step, shared across team
+    num_collected = jnp.sum(newly_collected.astype(jnp.float32))
+    rewards = jnp.full((config.env.num_agents,), num_collected)
+
+    # --- 4. Update field ---
+    # Step field dynamics (diffuse + decay)
+    field_state = step_field(
+        state.field_state,
+        diffusion_rate=config.field.diffusion_rate,
+        decay_rate=config.field.decay_rate,
+    )
+
+    # Agents write their presence to the field
+    write_values = jnp.ones(
+        (config.env.num_agents, config.field.num_channels),
+        dtype=jnp.float32,
+    ) * config.field.write_strength
+    field_state = write_local(field_state, new_positions, write_values)
+
+    # --- 5. Advance step counter and check done ---
+    new_step = state.step + 1
+    done = new_step >= config.env.max_steps
+
+    # --- 6. Split PRNG key ---
+    new_key, _ = jax.random.split(state.key)
+
+    new_state = EnvState(
+        agent_positions=new_positions,
+        food_positions=state.food_positions,
+        food_collected=food_collected,
+        field_state=field_state,
+        step=new_step,
+        key=new_key,
+    )
+
+    info: dict[str, Any] = {
+        "food_collected_this_step": num_collected,
+        "total_food_collected": jnp.sum(food_collected.astype(jnp.float32)),
+    }
+
+    return new_state, rewards, done, info
