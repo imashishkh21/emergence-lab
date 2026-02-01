@@ -145,7 +145,7 @@
    - Total food capped at `num_food`                                                                                                  
    **Verification:** `pytest tests/test_env.py::test_food_respawn -v` passes                                                          
                                                                                                                                       
-   ### US-013: Implement Lineage Tracking [ ]                                                                                         
+   ### US-013: Implement Lineage Tracking [x]                                                                                         
    **Task:** Track family trees for analysis.                                                                                         
    **Files:** `src/analysis/lineage.py` (new)                                                                                         
    **Changes:**                                                                                                                       

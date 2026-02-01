@@ -215,3 +215,20 @@ Previous Phase: Phase 1 COMPLETE — field ablation showed Normal (63.36) >> Zer
 **Issues:** None. All 137 tests pass, mypy clean.
 
 ---
+
+### US-013: Implement Lineage Tracking ✓
+**What:** Created `src/analysis/lineage.py` with `LineageTracker` class and `AgentRecord` dataclass for tracking agent family trees across evolutionary simulation. Created `tests/test_lineage.py` with 33 tests.
+**Decisions:**
+- Used pure Python dataclasses (not Flax struct) since lineage tracking runs outside the JIT boundary — consistent with `EmergenceTracker` pattern in `emergence.py`.
+- `AgentRecord` stores: agent_id, parent_id, birth_step, death_step, children list. Has `is_alive` property and `lifespan()` method.
+- `LineageTracker` provides: `register_birth()`, `register_death()`, `get_lineage_depth()` (walks parent chain), `get_family_tree()` (BFS over descendants), `get_dominant_lineages()` (finds originals with most descendants, sorted), `get_summary()` (full statistics dict).
+- `get_lineage_depth()` returns -1 for unknown agents, 0 for originals, N for N-th generation.
+- `get_family_tree()` returns all descendants (not including root) via breadth-first traversal.
+- `get_dominant_lineages()` only considers original ancestors (parent_id == -1) and ranks by total descendant count.
+- `get_summary()` returns dict with: total_agents, alive_agents, dead_agents, total_births, original_agents, max_depth, dominant_lineages.
+**Files changed:**
+- `src/analysis/lineage.py` — Created with `AgentRecord` dataclass and `LineageTracker` class
+- `tests/test_lineage.py` — Created with 33 tests across 7 test classes (TestAgentRecord, TestLineageTrackerBirth, TestLineageTrackerDeath, TestLineageDepth, TestFamilyTree, TestDominantLineages, TestSummary)
+**Issues:** None. All 170 tests pass, mypy clean.
+
+---
