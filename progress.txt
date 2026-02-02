@@ -291,3 +291,17 @@ Prove that field enables DIVERSITY, not just higher reward.
 ---
 
 COMPLETE: All Phase 3 tasks finished.
+
+
+================================================================================
+PHASE 4: Research Microscope
+================================================================================
+Started: Mon Feb  2 15:53:46 IST 2026
+
+Goals:
+- Fix gradient homogenization (agent-specific heads, freeze-evolve)
+- Build live visualization dashboard (Svelte + Pixi.js)
+- Implement emergence metrics (Transfer Entropy, DOL, Phase Detection)
+- Make it understandable to non-technical users (tooltips, glossary)
+
+
