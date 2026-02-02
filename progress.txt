@@ -325,3 +325,22 @@ Goals:
 - `tests/test_agent.py` — added `TestAgentSpecificHeads` class with 10 tests covering: output shapes, different agents different outputs, shared encoder structure, agent_id=None backward compat, out-of-range clamping, JIT compatibility, vmap over agents, gradient flow isolation, config field, different hidden dims
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 334/334 tests pass (10 new)
 
+---
+
+### US-002: Agent ID Embedding ✓
+**What:** Added learnable agent identity embedding to both `ActorCritic` and `AgentSpecificActorCritic` networks. Each agent gets a unique embedding vector (a "name tag") that is concatenated to its observation before the encoder processes it, allowing the network to learn agent-specific behavior even with shared weights.
+**Decisions:**
+- Added `agent_embed_dim` field to `AgentConfig` (default: 0 = disabled). When >0, a `nn.Embed(n_agents, agent_embed_dim)` lookup table is created inside the network
+- Embedding is concatenated to the observation vector before the first Dense layer, so the encoder input dim becomes `obs_dim + agent_embed_dim`
+- Both `ActorCritic` and `AgentSpecificActorCritic` support the embedding via new `agent_embed_dim` and `n_agents` module attributes
+- `ActorCritic.__call__` now accepts an optional `agent_id` parameter (default None). When `agent_id` is None or `agent_embed_dim=0`, no embedding is applied — full backward compatibility
+- `AgentSpecificActorCritic` reuses its existing `agent_id` parameter for both head selection and embedding lookup, with safe clamping
+- When `agent_embed_dim > 0`, the network must be initialized with an `agent_id` to properly shape the embedding params and first Dense layer. Subsequent calls also require `agent_id`
+- Gradients flow only through the selected agent's embedding row (verified by test)
+- The `obs.py` observation function is unchanged — the embedding is entirely internal to the network, not part of the environment observation
+**Files changed:**
+- `src/agents/network.py` — added `agent_embed_dim` and `n_agents` attributes to `ActorCritic`, added optional `agent_id` parameter to `ActorCritic.__call__`, added `agent_embed_dim` attribute to `AgentSpecificActorCritic`, both classes now optionally create and concatenate `nn.Embed` before encoding
+- `src/configs.py` — added `agent_embed_dim: int = 0` to `AgentConfig`
+- `tests/test_agent.py` — added `TestAgentEmbedding` class with 10 tests covering: output shapes with embedding, embedding param creation, no embedding when disabled, different agents produce different outputs, backward compat without embedding, agent-specific with embedding, JIT compatibility, vmap over agents, gradient flow through embedding table, config field
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 28/28 test_agent.py tests pass (10 new)
+

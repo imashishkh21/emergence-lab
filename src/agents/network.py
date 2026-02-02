@@ -11,6 +11,7 @@ class ActorCritic(nn.Module):
     """MLP actor-critic network with shared backbone.
 
     Architecture:
+        - Optional agent identity embedding (concatenated to observation)
         - Shared MLP backbone with LayerNorm + Tanh activations
         - Actor head: linear layer outputting logits for each action
         - Critic head: linear layer outputting scalar value estimate
@@ -23,19 +24,34 @@ class ActorCritic(nn.Module):
 
     hidden_dims: Sequence[int] = (64, 64)
     num_actions: int = 6
+    agent_embed_dim: int = 0
+    n_agents: int = 32
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(
+        self, x: jnp.ndarray, agent_id: jnp.ndarray | None = None
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Forward pass.
 
         Args:
             x: Observation vector of shape (obs_dim,).
+            agent_id: Optional scalar integer for agent identity embedding.
+                Only used when agent_embed_dim > 0.
 
         Returns:
             Tuple of (action_logits, value):
                 - action_logits: shape (num_actions,)
                 - value: shape () scalar
         """
+        # Agent identity embedding (optional)
+        if self.agent_embed_dim > 0 and agent_id is not None:
+            embedding = nn.Embed(
+                num_embeddings=self.n_agents,
+                features=self.agent_embed_dim,
+                name="agent_embedding",
+            )(agent_id)
+            x = jnp.concatenate([x, embedding], axis=-1)
+
         # Shared backbone
         for dim in self.hidden_dims:
             x = nn.Dense(
@@ -68,6 +84,7 @@ class AgentSpecificActorCritic(nn.Module):
     """Actor-Critic with shared encoder and per-agent output heads.
 
     Architecture:
+        - Optional agent identity embedding (concatenated to observation)
         - Shared MLP encoder (same weights for all agents)
         - Per-agent actor + critic heads (different weights per agent)
         - Forward pass selects head based on agent_id
@@ -84,6 +101,7 @@ class AgentSpecificActorCritic(nn.Module):
     hidden_dims: Sequence[int] = (64, 64)
     num_actions: int = 6
     n_agents: int = 32
+    agent_embed_dim: int = 0
 
     @nn.compact
     def __call__(
@@ -93,7 +111,8 @@ class AgentSpecificActorCritic(nn.Module):
 
         Args:
             x: Observation vector of shape (obs_dim,).
-            agent_id: Scalar integer identifying which agent head to use.
+            agent_id: Scalar integer identifying which agent head to use
+                and (when agent_embed_dim > 0) which embedding to look up.
                 If None, uses head 0 (backward compatible with ActorCritic).
 
         Returns:
@@ -101,6 +120,18 @@ class AgentSpecificActorCritic(nn.Module):
                 - action_logits: shape (num_actions,)
                 - value: shape () scalar
         """
+        # Agent identity embedding (optional)
+        if self.agent_embed_dim > 0 and agent_id is not None:
+            safe_embed_id = jnp.clip(
+                agent_id, 0, self.n_agents - 1
+            ).astype(jnp.int32)
+            embedding = nn.Embed(
+                num_embeddings=self.n_agents,
+                features=self.agent_embed_dim,
+                name="agent_embedding",
+            )(safe_embed_id)
+            x = jnp.concatenate([x, embedding], axis=-1)
+
         # Shared encoder backbone
         for dim in self.hidden_dims:
             x = nn.Dense(

@@ -135,7 +135,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-002: Agent ID Embedding
-[ ] **Task:** Add agent identity embedding to observations.
+[x] **Task:** Add agent identity embedding to observations.
 
 **Why (ELI5):** Give each agent a name tag that the brain can see. Agent #1 knows it's Agent #1, so it can learn to behave differently from Agent #2.
 

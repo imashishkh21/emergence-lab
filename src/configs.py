@@ -38,6 +38,10 @@ class AgentConfig:
     - "shared": All agents share the same weights (ActorCritic)
     - "agent_heads": Shared encoder + per-agent output heads (AgentSpecificActorCritic)
     """
+    agent_embed_dim: int = 0
+    """Dimension of learnable agent identity embedding. Each agent gets a unique
+    embedding vector that is concatenated to its observation before encoding.
+    0 = disabled (no embedding), >0 = embedding dimension. Default 8 when enabled."""
 
 
 @dataclass

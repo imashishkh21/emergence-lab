@@ -487,3 +487,263 @@ class TestAgentSpecificHeads:
                 )
                 assert logits.shape == (6,)
                 assert value.shape == ()
+
+
+class TestAgentEmbedding:
+    """Tests for Phase 4 US-002: Agent ID Embedding."""
+
+    def test_agent_embedding(self):
+        """Test that ActorCritic with embedding produces correct output shapes."""
+        from src.agents.network import ActorCritic
+
+        n_agents = 8
+        embed_dim = 8
+        network = ActorCritic(
+            hidden_dims=(64, 64),
+            num_actions=6,
+            agent_embed_dim=embed_dim,
+            n_agents=n_agents,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 64
+        dummy_obs = jnp.zeros((obs_dim,))
+        agent_id = jnp.int32(0)
+
+        params = network.init(key, dummy_obs, agent_id)
+        logits, value = network.apply(params, dummy_obs, agent_id)
+
+        assert logits.shape == (6,)
+        assert value.shape == ()
+
+    def test_embedding_creates_param(self):
+        """Test that embedding creates agent_embedding parameter in param tree."""
+        from src.agents.network import ActorCritic
+
+        n_agents = 4
+        embed_dim = 8
+        network = ActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            agent_embed_dim=embed_dim,
+            n_agents=n_agents,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        params = network.init(key, jnp.zeros((obs_dim,)), jnp.int32(0))
+
+        param_dict = params["params"]
+        assert "agent_embedding" in param_dict, (
+            f"Expected 'agent_embedding' in params, got {list(param_dict.keys())}"
+        )
+        # Embedding table should be (n_agents, embed_dim)
+        embedding_table = param_dict["agent_embedding"]["embedding"]
+        assert embedding_table.shape == (n_agents, embed_dim)
+
+    def test_no_embedding_when_disabled(self):
+        """Test that no embedding param exists when agent_embed_dim=0."""
+        from src.agents.network import ActorCritic
+
+        network = ActorCritic(
+            hidden_dims=(32, 32), num_actions=6, agent_embed_dim=0
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        params = network.init(key, jnp.zeros((obs_dim,)))
+
+        param_dict = params["params"]
+        assert "agent_embedding" not in param_dict, (
+            "Should not have agent_embedding when embed_dim=0"
+        )
+
+    def test_different_agents_different_embeddings(self):
+        """Test that different agent_ids produce different outputs via embedding."""
+        from src.agents.network import ActorCritic
+
+        n_agents = 4
+        embed_dim = 8
+        network = ActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            agent_embed_dim=embed_dim,
+            n_agents=n_agents,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.ones((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        # With embedding, same observation + different agent_id should give different outputs
+        outputs = []
+        for i in range(n_agents):
+            logits, value = network.apply(params, dummy_obs, jnp.int32(i))
+            outputs.append(np.array(logits))
+
+        # At least some agents should differ (different embeddings → different encoder input)
+        any_different = False
+        for i in range(len(outputs)):
+            for j in range(i + 1, len(outputs)):
+                if not np.allclose(outputs[i], outputs[j], atol=1e-6):
+                    any_different = True
+                    break
+        assert any_different, "Different agent_ids should produce different outputs via embedding"
+
+    def test_backward_compat_no_embedding(self):
+        """Test that ActorCritic with embed_dim=0 works without agent_id."""
+        from src.agents.network import ActorCritic
+
+        network = ActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            agent_embed_dim=0,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.zeros((obs_dim,))
+        # Init without agent_id — no embedding
+        params = network.init(key, dummy_obs)
+
+        # Call without agent_id — should work fine
+        logits, value = network.apply(params, dummy_obs)
+        assert logits.shape == (6,)
+        assert value.shape == ()
+
+        # Also works with agent_id=None explicitly
+        logits2, value2 = network.apply(params, dummy_obs, None)
+        np.testing.assert_allclose(np.array(logits), np.array(logits2), atol=1e-6)
+
+    def test_agent_specific_with_embedding(self):
+        """Test AgentSpecificActorCritic with embedding enabled."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        embed_dim = 8
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            n_agents=n_agents,
+            agent_embed_dim=embed_dim,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.ones((obs_dim,))
+        agent_id = jnp.int32(0)
+
+        params = network.init(key, dummy_obs, agent_id)
+
+        # Check embedding exists
+        assert "agent_embedding" in params["params"]
+
+        # Forward pass for each agent
+        for i in range(n_agents):
+            logits, value = network.apply(params, dummy_obs, jnp.int32(i))
+            assert logits.shape == (6,)
+            assert value.shape == ()
+
+    def test_embedding_jit_compatible(self):
+        """Test that embedding works with JIT compilation."""
+        from src.agents.network import ActorCritic
+
+        n_agents = 8
+        embed_dim = 8
+        network = ActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            agent_embed_dim=embed_dim,
+            n_agents=n_agents,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.zeros((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        @jax.jit
+        def forward(obs, agent_id):
+            return network.apply(params, obs, agent_id)
+
+        obs = jax.random.normal(key, (obs_dim,))
+        for i in range(n_agents):
+            logits, value = forward(obs, jnp.int32(i))
+            assert logits.shape == (6,)
+            assert value.shape == ()
+
+    def test_embedding_vmap_over_agents(self):
+        """Test that embedding works with vmap over agent_ids."""
+        from src.agents.network import ActorCritic
+
+        n_agents = 4
+        embed_dim = 8
+        network = ActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            agent_embed_dim=embed_dim,
+            n_agents=n_agents,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        params = network.init(key, jnp.zeros((obs_dim,)), jnp.int32(0))
+
+        batch_obs = jax.random.normal(key, (n_agents, obs_dim))
+        agent_ids = jnp.arange(n_agents, dtype=jnp.int32)
+
+        batched_apply = jax.vmap(
+            lambda obs, aid: network.apply(params, obs, aid),
+            in_axes=(0, 0),
+        )
+        logits, values = batched_apply(batch_obs, agent_ids)
+
+        assert logits.shape == (n_agents, 6)
+        assert values.shape == (n_agents,)
+
+    def test_embedding_gradients_flow(self):
+        """Test that gradients flow through the embedding table."""
+        from src.agents.network import ActorCritic
+
+        n_agents = 4
+        embed_dim = 8
+        network = ActorCritic(
+            hidden_dims=(32, 32),
+            num_actions=6,
+            agent_embed_dim=embed_dim,
+            n_agents=n_agents,
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.ones((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        def loss_fn(p, agent_id):
+            logits, value = network.apply(p, dummy_obs, agent_id)
+            return jnp.sum(logits) + value
+
+        grads = jax.grad(loss_fn)(params, jnp.int32(1))
+
+        # Embedding should have gradients
+        embed_grad = grads["params"]["agent_embedding"]["embedding"]
+        assert embed_grad.shape == (n_agents, embed_dim)
+
+        # Only the row for agent 1 should have non-zero gradients
+        assert float(jnp.abs(embed_grad[1]).sum()) > 1e-8, (
+            "Agent 1 embedding should have gradients"
+        )
+        assert float(jnp.abs(embed_grad[0]).sum()) < 1e-8, (
+            "Agent 0 embedding should NOT have gradients when agent_id=1"
+        )
+
+    def test_config_agent_embed_dim(self):
+        """Test that config has agent_embed_dim field with default 0."""
+        from src.configs import Config
+
+        config = Config()
+        assert config.agent.agent_embed_dim == 0
+
+        config.agent.agent_embed_dim = 8
+        assert config.agent.agent_embed_dim == 8
