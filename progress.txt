@@ -290,7 +290,7 @@ Prove that field enables DIVERSITY, not just higher reward.
 
 ---
 
-COMPLETE: All Phase 3 tasks finished.
+--- PHASE 3 COMPLETE ---
 
 
 ================================================================================
