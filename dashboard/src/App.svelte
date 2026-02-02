@@ -8,6 +8,8 @@
   import ReplayControls from "./lib/ReplayControls.svelte";
   import HelpSystem from "./lib/HelpSystem.svelte";
   import GlossaryPanel from "./lib/GlossaryPanel.svelte";
+  import StatusBar from "./lib/StatusBar.svelte";
+  import AlertSystem from "./lib/AlertSystem.svelte";
 
   const store = createTrainingStore();
   let glossaryOpen = $state(false);
@@ -21,6 +23,7 @@
 
 <div class="app">
   <Header {store} />
+  <StatusBar {store} />
 
   <main class="content">
     <div class="canvas-area">
@@ -38,6 +41,7 @@
 </div>
 
 <GlossaryPanel open={glossaryOpen} onclose={() => glossaryOpen = false} />
+<AlertSystem {store} />
 
 <style>
   :global(body) {

@@ -658,3 +658,30 @@ Goals:
 - `tests/test_replay.py` (new) — 72 tests across 9 classes: `TestBookmark` (5 tests), `TestFrameSerialization` (7 tests), `TestSessionRecorder` (14 tests), `TestSessionPlayer` (24 tests), `TestListSessions` (5 tests), `TestServerRecording` (6 tests), `TestReplayWebSocket` (9 tests), `TestRecordReplayRoundTrip` (2 tests)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 656/656 tests pass (72 new). `npm run build` succeeds (865 modules). Can replay saved session at variable speed.
 
+---
+
+### US-017: Status Indicators & Alerts ✓
+**What:** Added a StatusBar component with connection status, training mode indicator, and health indicators (population and divergence), plus an AlertSystem component with toast notifications for important simulation events. Extended the training store with health status derivation, alert state management, and automatic threshold-crossing detection.
+**Decisions:**
+- **StatusBar placement:** Positioned between Header and main content as a thin (32px) horizontal bar spanning the full width. Shows connection dot (green/orange/red), training mode badge (Learning/Evolving/Paused with color coding), and two health indicators for population and divergence.
+- **Health indicators:** Population health derived from alive/maxAgents ratio: stable (>=30%), declining (15-30%), collapsing (<15%). Divergence health derived from `weight_divergence` metric: increasing (>=0.05), flat (0.01-0.05), homogenizing (<0.01). Both use traffic-light coloring (green/orange/red).
+- **AlertSystem:** Fixed-position toast container in bottom-right corner. Toasts stack from bottom up with slide-in animation, auto-dismiss after 8 seconds, manual dismiss via X button. Four alert types: info (cyan, lightning bolt), success (green, party popper), warning (orange, warning sign), danger (red, rotating light).
+- **Alert triggers:** Automatic threshold-crossing detection in the store's `processFrame()` via `checkAlertThresholds()`:
+  - Phase transition detected (phase_transition crosses 0.5)
+  - Specialization score crosses 0.7
+  - Population drops below 10 or below 3 (two levels)
+  - Weight divergence crosses 0.1
+  - Weight divergence drops by >50% (homogenization warning)
+- **Previous value tracking:** Store tracks `prevSpecializationScore`, `prevPopulationSize`, `prevPhaseTransition`, `prevDivergence` to detect threshold crossings (fires only on the transition, not every frame).
+- **Store API additions:** `populationHealth` and `divergenceHealth` derived getters, `alerts` array getter, `addAlert(type, message)` and `dismissAlert(id)` methods.
+- **Tooltip integration:** Both health indicators and the training mode badge have Tooltip components explaining what each state means in plain English.
+- **Accessibility:** AlertSystem uses `role="log"` with `aria-live="polite"` for screen readers. Dismiss buttons have `aria-label`.
+- **No new Python code needed:** All status indicators and alerts are derived from existing metrics already streamed in the Frame protocol. No server changes required.
+**Files changed:**
+- `dashboard/src/lib/StatusBar.svelte` (new) — Connection status dot, training mode badge, population health indicator, divergence health indicator, all with Tooltip help
+- `dashboard/src/lib/AlertSystem.svelte` (new) — Toast notification container with 4 alert types, slide-in animation, auto-dismiss, manual dismiss
+- `dashboard/src/stores/training.svelte.js` — Added alert state (alerts array, alertIdCounter, MAX_ALERTS, ALERT_DURATION), threshold tracking variables (prevSpecializationScore, prevPopulationSize, prevPhaseTransition, prevDivergence), addAlert(), dismissAlert(), checkAlertThresholds() functions, populationHealth and divergenceHealth derived getters, exposed alerts/addAlert/dismissAlert/populationHealth/divergenceHealth in return object
+- `dashboard/src/App.svelte` — Imported and integrated StatusBar (between Header and content) and AlertSystem (portal at root level)
+- `PRD.md` — Marked US-017 as complete
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 656/656 tests pass (no regressions). `npm run build` succeeds (869 modules). Alerts fire for simulated events from mock server data.
+

@@ -88,6 +88,88 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
   let speedMultiplier = $state(1);
   let trainingMode = $state("gradient"); // "gradient" | "evolve" | "paused"
 
+  // Alert system state
+  let alerts = $state([]); // Array of { id, type, message, timestamp }
+  let alertIdCounter = 0;
+  const MAX_ALERTS = 20;
+  const ALERT_DURATION = 8000; // ms before auto-dismiss
+
+  // Track previous metric values for threshold-crossing detection
+  let prevSpecializationScore = 0;
+  let prevPopulationSize = 0;
+  let prevPhaseTransition = 0;
+  let prevDivergence = 0;
+
+  /**
+   * Add an alert toast notification.
+   * @param {"info"|"success"|"warning"|"danger"} type - Alert severity
+   * @param {string} message - Alert message
+   */
+  function addAlert(type, message) {
+    const id = ++alertIdCounter;
+    alerts = [...alerts.slice(-(MAX_ALERTS - 1)), { id, type, message, timestamp: Date.now() }];
+    // Auto-dismiss after duration
+    setTimeout(() => {
+      dismissAlert(id);
+    }, ALERT_DURATION);
+  }
+
+  /**
+   * Dismiss an alert by ID.
+   * @param {number} id - Alert ID to dismiss
+   */
+  function dismissAlert(id) {
+    alerts = alerts.filter((a) => a.id !== id);
+  }
+
+  /**
+   * Check metrics for alert-worthy events and fire alerts.
+   * Called after each frame is processed.
+   */
+  function checkAlertThresholds(frameMetrics) {
+    if (!frameMetrics) return;
+
+    const specScore = frameMetrics.specialization_score ?? 0;
+    const popSize = frameMetrics.population_size ?? 0;
+    const phaseTrans = frameMetrics.phase_transition ?? 0;
+    const divergence = frameMetrics.weight_divergence ?? 0;
+
+    // Phase transition detected
+    if (phaseTrans > 0.5 && prevPhaseTransition <= 0.5) {
+      addAlert("info", `Phase transition detected at step ${step.toLocaleString()}!`);
+    }
+
+    // Specialization crossed 0.7
+    if (specScore >= 0.7 && prevSpecializationScore < 0.7) {
+      addAlert("success", `Specialization score crossed 0.7!`);
+    }
+
+    // Population dropped below 10
+    if (popSize > 0 && popSize < 10 && prevPopulationSize >= 10) {
+      addAlert("warning", `Population dropped below 10`);
+    }
+
+    // Population collapsed (below 3)
+    if (popSize > 0 && popSize < 3 && prevPopulationSize >= 3) {
+      addAlert("danger", `Population collapsing! Only ${Math.round(popSize)} agents left`);
+    }
+
+    // Divergence crossed 0.1 (significant differentiation)
+    if (divergence >= 0.1 && prevDivergence < 0.1) {
+      addAlert("success", `Weight divergence crossed 0.1 — agents are differentiating!`);
+    }
+
+    // Divergence dropping (homogenizing)
+    if (divergence < prevDivergence * 0.5 && prevDivergence > 0.05 && divergence > 0) {
+      addAlert("warning", `Weight divergence dropping — agents may be homogenizing`);
+    }
+
+    prevSpecializationScore = specScore;
+    prevPopulationSize = popSize;
+    prevPhaseTransition = phaseTrans;
+    prevDivergence = divergence;
+  }
+
   // Connection internals
   let ws = null;
   let reconnectTimer = null;
@@ -160,6 +242,8 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
       // Append to history
       const entry = { step: frame.step, ...frame.metrics };
       metricsHistory = [...metricsHistory.slice(-(MAX_HISTORY - 1)), entry];
+      // Check for alert-worthy events
+      checkAlertThresholds(frame.metrics);
     }
   }
 
@@ -380,6 +464,23 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
 
   let maxAgents = $derived(alive ? alive.length : 0);
 
+  // Health status derivations
+  let populationHealth = $derived.by(() => {
+    if (!maxAgents || !connected) return "unknown";
+    const ratio = aliveCount / maxAgents;
+    if (ratio >= 0.3) return "stable";      // 30%+ alive
+    if (ratio >= 0.15) return "declining";   // 15-30% alive
+    return "collapsing";                     // <15% alive
+  });
+
+  let divergenceHealth = $derived.by(() => {
+    const d = metrics?.weight_divergence;
+    if (d == null || !connected) return "unknown";
+    if (d >= 0.05) return "increasing";      // Good: agents differentiating
+    if (d >= 0.01) return "flat";            // Stagnant
+    return "homogenizing";                   // Bad: all agents converging
+  });
+
   return {
     // Connection state
     get connected() { return connected; },
@@ -415,6 +516,15 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     get paused() { return paused; },
     get speedMultiplier() { return speedMultiplier; },
     get trainingMode() { return trainingMode; },
+
+    // Health status
+    get populationHealth() { return populationHealth; },
+    get divergenceHealth() { return divergenceHealth; },
+
+    // Alert system
+    get alerts() { return alerts; },
+    addAlert,
+    dismissAlert,
 
     // Replay state
     get replayConnected() { return replayConnected; },

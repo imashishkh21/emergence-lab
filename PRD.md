@@ -452,7 +452,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-017: Status Indicators & Alerts
-[ ] **Task:** Clear visual feedback for system state and important events.
+[x] **Task:** Clear visual feedback for system state and important events.
 
 **Why (ELI5):** Make it obvious what's happening — like traffic lights.
 
