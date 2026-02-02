@@ -215,3 +215,20 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (32 files), 323/323 tests pass
 
 ---
+
+### US-012: Specialization Report ✓
+**What:** Created `scripts/generate_specialization_report.py` that generates a comprehensive markdown report with visualizations from a trained model's specialization analysis.
+**Decisions:**
+- Script follows the same pattern as `run_specialization_ablation.py`: supports both training from scratch and loading from checkpoint
+- Report generation pipeline: (1) load/train model → (2) compute weight divergence → (3) record trajectories → (4) extract features & compute specialization score → (5) detect species → (6) analyze field usage → (7) run ablation (optional) → (8) generate visualizations → (9) write markdown report
+- Multiple trajectory episodes (default 5) are recorded and averaged for more stable behavioral clustering
+- Tracks specialization metrics during training (when training from scratch) to produce time-series plots
+- Generates 5 PNG figures: PCA clusters, t-SNE clusters, weight divergence over time, field usage by cluster, specialization score over time
+- Markdown report includes tables for: specialization score breakdown, species characteristics, field usage per cluster, lineage correlations (when available), and ablation results (when not skipped)
+- Supports `--skip-ablation` for faster report generation, `--output-dir` for custom output location
+- Report includes interpretive text (conclusions from ablation comparison)
+**Files changed:**
+- `scripts/generate_specialization_report.py` (new) — full report generation script with 5 phases: load/train, analysis, ablation, visualization, report writing
+**Validation:** mypy clean (32 files), 323/323 tests pass, script produces report with markdown + 5 PNG figures
+
+---

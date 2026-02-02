@@ -154,7 +154,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Return: list of species with characteristics
 **Verification:** `pytest tests/test_specialization.py::test_species_detection -v` passes
 
-### US-012: Specialization Report [ ]
+### US-012: Specialization Report [x]
 **Task:** Generate comprehensive specialization analysis report.
 **Files:** `scripts/generate_specialization_report.py` (new)
 **Changes:**
