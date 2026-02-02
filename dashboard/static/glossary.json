@@ -64,6 +64,41 @@
       "term": "Phase Transition",
       "simple": "A sudden shift from 'no organization' to 'organized'",
       "analogy": "Like water freezing — a sudden change!"
+    },
+    {
+      "term": "Cluster",
+      "simple": "A group of agents that behave similarly — shown as the same color on the canvas",
+      "analogy": "Like sorting people into teams by how they play"
+    },
+    {
+      "term": "Field",
+      "simple": "A shared 'pheromone' layer that agents read and write to. It diffuses and decays over time",
+      "analogy": "Like invisible ink that slowly fades — ants do this with scent trails!"
+    },
+    {
+      "term": "Gradient",
+      "simple": "The math used to adjust brain numbers during training — points toward 'better'",
+      "analogy": "Like rolling a ball downhill to find the lowest point"
+    },
+    {
+      "term": "Freeze-Evolve",
+      "simple": "Alternating between math-based training and natural selection to help agents develop unique styles",
+      "analogy": "Like alternating between practice drills and real games"
+    },
+    {
+      "term": "Fitness",
+      "simple": "How well an agent is doing — based on food collected and energy level",
+      "analogy": "Like a score in a video game"
+    },
+    {
+      "term": "Lineage",
+      "simple": "The family tree of agents — who is whose parent and child",
+      "analogy": "Like a family tree showing grandparents, parents, and children"
+    },
+    {
+      "term": "Heatmap",
+      "simple": "Colors showing intensity — blue areas have more field activity, dark areas have less",
+      "analogy": "Like a weather map showing temperature with colors"
     }
   ]
 }

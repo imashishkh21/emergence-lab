@@ -4,8 +4,11 @@
   import AgentCanvas from "./lib/AgentCanvas.svelte";
   import MetricsPanel from "./lib/MetricsPanel.svelte";
   import ControlPanel from "./lib/ControlPanel.svelte";
+  import HelpSystem from "./lib/HelpSystem.svelte";
+  import GlossaryPanel from "./lib/GlossaryPanel.svelte";
 
   const store = createTrainingStore();
+  let glossaryOpen = $state(false);
 
   // Auto-connect on mount
   $effect(() => {
@@ -23,11 +26,14 @@
     </div>
 
     <div class="sidebar">
+      <HelpSystem {store} showGlossary={() => glossaryOpen = true} />
       <MetricsPanel {store} />
       <ControlPanel {store} />
     </div>
   </main>
 </div>
+
+<GlossaryPanel open={glossaryOpen} onclose={() => glossaryOpen = false} />
 
 <style>
   :global(body) {

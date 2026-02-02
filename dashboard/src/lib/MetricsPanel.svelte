@@ -12,6 +12,7 @@
    * and a rolling window of 1000 data points.
    */
   import { onMount } from "svelte";
+  import Tooltip from "./Tooltip.svelte";
 
   let { store } = $props();
 
@@ -237,7 +238,7 @@
           <span class="chart-value" style="color: {def.color}">
             {fmt(currentMetrics[def.metricKey], def.metricKey === "population_size" ? 0 : 3)}
           </span>
-          <span class="info-icon" title={def.help}>i</span>
+          <Tooltip text={def.help} />
         </div>
         <div class="chart-area" id={def.id}></div>
       </div>
@@ -307,21 +308,6 @@
     font-size: 13px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-  }
-
-  .info-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.06);
-    font-size: 9px;
-    color: #666;
-    font-style: italic;
-    cursor: help;
-    flex-shrink: 0;
   }
 
   .chart-area {

@@ -7,6 +7,7 @@
    * agent trails. Uses WebGPU with WebGL fallback.
    */
   import { createRenderer } from "./renderer.js";
+  import Tooltip from "./Tooltip.svelte";
 
   let { store } = $props();
 
@@ -14,6 +15,18 @@
   let renderer = null;
   let animFrameId;
   let showTrails = $state(false);
+
+  // Cluster colors matching renderer.js
+  const CLUSTER_COLORS = [
+    { hex: "#e94560", label: "Group 1" },
+    { hex: "#0f3460", label: "Group 2" },
+    { hex: "#533483", label: "Group 3" },
+    { hex: "#16c79a", label: "Group 4" },
+    { hex: "#f5a623", label: "Group 5" },
+    { hex: "#11999e", label: "Group 6" },
+    { hex: "#e84545", label: "Group 7" },
+    { hex: "#903749", label: "Group 8" },
+  ];
 
   function renderLoop() {
     if (renderer) {
@@ -93,6 +106,29 @@
   </button>
 </div>
 
+<div class="color-legend">
+  <div class="legend-header">
+    <span class="legend-title">Legend</span>
+    <Tooltip text="Each color represents a different behavioral group (cluster). Agents in the same group behave similarly. Green dots are food." />
+  </div>
+  <div class="legend-items">
+    {#each CLUSTER_COLORS.slice(0, 4) as c, i}
+      <div class="legend-item">
+        <span class="legend-dot" style="background: {c.hex};"></span>
+        <span class="legend-text">{c.label}</span>
+      </div>
+    {/each}
+    <div class="legend-item">
+      <span class="legend-dot legend-food"></span>
+      <span class="legend-text">Food</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot legend-field"></span>
+      <span class="legend-text">Field (heatmap)</span>
+    </div>
+  </div>
+</div>
+
 <style>
   .canvas-container {
     display: flex;
@@ -153,5 +189,68 @@
   .trail-toggle:hover {
     color: #e0e0e0;
     border-color: #333366;
+  }
+
+  /* Color Legend */
+  .color-legend {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 5;
+    background: rgba(17, 17, 40, 0.85);
+    border: 1px solid #1a1a3e;
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+
+  .legend-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .legend-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #888;
+    flex: 1;
+  }
+
+  .legend-items {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-food {
+    background: #4caf50;
+  }
+
+  .legend-field {
+    background: #1e3c78;
+    width: 12px;
+    height: 6px;
+    border-radius: 2px;
+  }
+
+  .legend-text {
+    font-size: 10px;
+    color: #999;
   }
 </style>

@@ -369,7 +369,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-013: Help System & Tooltips
-[ ] **Task:** Add contextual help throughout the dashboard.
+[x] **Task:** Add contextual help throughout the dashboard.
 
 **Why (ELI5):** Make sure anyone — even a 5-year-old — can understand what's happening.
 

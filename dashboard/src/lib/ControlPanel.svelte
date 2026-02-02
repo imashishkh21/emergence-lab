@@ -9,6 +9,8 @@
    * - Diversity bonus slider
    * - Training mode indicator (Gradient / Evolve / Paused)
    */
+  import Tooltip from "./Tooltip.svelte";
+
   let { store } = $props();
 
   const SPEED_OPTIONS = [0.5, 1, 2, 4, 8];
@@ -55,9 +57,10 @@
   <h2 class="panel-title">Controls</h2>
 
   <!-- Training Mode Indicator -->
-  <div class="mode-indicator {modeClass}" title="Current training phase. Gradient = adjusting brain weights via math. Evolve = letting natural selection drive changes.">
+  <div class="mode-indicator {modeClass}">
     <span class="mode-icon">{modeIcon}</span>
     <span class="mode-label">{modeLabel}</span>
+    <Tooltip text="Current training phase. Gradient = adjusting brain weights via math. Evolve = letting natural selection drive changes." />
   </div>
 
   <!-- Play/Pause -->
@@ -77,7 +80,7 @@
     <div class="control-header">
       <label class="control-label">Speed</label>
       <span class="control-value">{store.speedMultiplier}x</span>
-      <span class="info-icon" title="How fast to run the simulation. Higher = more steps per second, but may reduce frame smoothness.">i</span>
+      <Tooltip text="How fast to run the simulation. Higher = more steps per second, but may reduce frame smoothness." />
     </div>
     <div class="speed-buttons">
       {#each SPEED_OPTIONS as speed}
@@ -98,7 +101,7 @@
     <div class="control-header">
       <label class="control-label">Mutation Rate</label>
       <span class="control-value">{mutationRate.toFixed(3)}</span>
-      <span class="info-icon" title="How much do babies differ from parents? Higher = more variation between generations. Too high = chaotic. Too low = everyone stays the same.">i</span>
+      <Tooltip text="How much do babies differ from parents? Higher = more variation between generations. Too high = chaotic. Too low = everyone stays the same." />
     </div>
     <input
       type="range"
@@ -121,7 +124,7 @@
     <div class="control-header">
       <label class="control-label">Diversity Bonus</label>
       <span class="control-value">{diversityBonus.toFixed(2)}</span>
-      <span class="info-icon" title="Extra reward for being different from other agents. Higher = stronger push for agents to develop unique strategies. 0 = no bonus.">i</span>
+      <Tooltip text="Extra reward for being different from other agents. Higher = stronger push for agents to develop unique strategies. 0 = no bonus." />
     </div>
     <input
       type="range"
@@ -229,26 +232,6 @@
     color: #e0e0e0;
     font-weight: 600;
     font-family: "JetBrains Mono", "Fira Code", monospace;
-  }
-
-  .info-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-    color: #666;
-    font-size: 10px;
-    font-style: italic;
-    cursor: help;
-    flex-shrink: 0;
-  }
-
-  .info-icon:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #aaa;
   }
 
   /* Play/Pause button */

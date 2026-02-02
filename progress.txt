@@ -561,3 +561,28 @@ Goals:
 - `tests/test_emergence.py` (new) — 34 tests across 7 classes: `TestAutocorrelationTime` (6 tests: short/constant series, positive autocorrelation, noisy series, window limiting, non-negativity), `TestPhaseTransitionEvent` (2 tests: str representation, fields), `TestPhaseTransitionDetectorInit` (2 tests: default/custom params), `TestPhaseTransitionDetectorUpdate` (6 tests: recording, multiple updates, susceptibility timing, returns, step recording), `TestPhaseTransitionDetection` (5 tests: sudden jump detection, gradual change no detection, event fields, steady-then-variable, dual condition requirement), `TestPhaseTransitionDetectorMetrics` (8 tests: empty/after-updates metrics, finiteness, empty/after-updates summary, event strings, latest value, correct statistics), `TestPhaseTransitionDetectorEdgeCases` (5 tests: negative values, large values, constant values, alternating no false positive, single update)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 543/543 tests pass (34 new).
 
+---
+
+### US-013: Help System & Tooltips ✓
+**What:** Added a comprehensive help system to the dashboard with reusable Tooltip component, Glossary panel, "What's happening?" plain-English summary, onboarding tour for first-time users, info icons next to all metrics and controls, and a color legend for the agent canvas.
+**Decisions:**
+- **Tooltip component (`Tooltip.svelte`):** Reusable, positioned via `fixed` CSS with viewport-aware placement (above/below trigger). Uses Svelte 5 `children` snippet for slot content. Shows a styled dark popup on hover/focus with smooth animation. When no children provided, renders a default (i) icon.
+- **GlossaryPanel (`GlossaryPanel.svelte`):** Slide-out panel from the right side. Loads terms from `static/glossary.json` with search/filter functionality. Each term card shows the term name, simple explanation, and an analogy with a red left-border accent. Closes on backdrop click or Escape key.
+- **glossary.json expanded:** Added 8 new terms (Cluster, Field, Gradient, Freeze-Evolve, Fitness, Lineage, Heatmap) to the original 13, for a total of 21 glossary entries. All terms from the PRD glossary are covered plus dashboard-specific terms.
+- **HelpSystem (`HelpSystem.svelte`):** Two features in one component:
+  1. "What's happening?" panel at the top of the sidebar — generates plain-English summaries from live metrics (population status, specialization progress, divergence, transfer entropy, division of labor, phase transitions, training mode). Conditionally assembles sentences based on metric values and thresholds.
+  2. Onboarding tour — 5-step guided walkthrough covering: welcome, canvas, metrics, controls, and completion. Uses localStorage to show only on first visit. Tour can be restarted via (?) button.
+- **Tooltip integration:** Replaced bare `title` attributes on `<span class="info-icon">` elements in MetricsPanel and ControlPanel with the new `<Tooltip>` component. Removed the `.info-icon` CSS from both components since Tooltip handles its own styling. Each metric chart and each control slider now has a rich hover tooltip.
+- **Color legend:** Added to AgentCanvas with 4 cluster colors (matching renderer.js), plus Food (green) and Field/heatmap (blue) indicators. Positioned bottom-right of the canvas with a semi-transparent dark background. Includes a Tooltip explaining what the colors mean.
+- **Layout integration in App.svelte:** HelpSystem placed at the top of the sidebar (above MetricsPanel), GlossaryPanel rendered at root level (portal-style). Glossary open state managed via `$state` in App and toggled via book icon in HelpSystem.
+**Files changed:**
+- `dashboard/src/lib/Tooltip.svelte` (new) — Reusable tooltip with viewport-aware positioning, hover/focus triggers, default (i) icon, animation
+- `dashboard/src/lib/GlossaryPanel.svelte` (new) — Slide-out glossary panel with search, term cards, backdrop close
+- `dashboard/src/lib/HelpSystem.svelte` (new) — "What's happening?" summary panel + 5-step onboarding tour with localStorage persistence
+- `dashboard/src/lib/MetricsPanel.svelte` — Replaced `<span class="info-icon" title=...>` with `<Tooltip>` component, removed .info-icon CSS
+- `dashboard/src/lib/ControlPanel.svelte` — Replaced 3 info-icon spans with `<Tooltip>` components, added Tooltip to mode indicator, removed .info-icon CSS
+- `dashboard/src/lib/AgentCanvas.svelte` — Added color legend with cluster colors, food, and field indicators; imported Tooltip
+- `dashboard/src/App.svelte` — Imported and integrated HelpSystem and GlossaryPanel; added glossaryOpen state
+- `dashboard/static/glossary.json` — Expanded from 13 to 21 terms (added Cluster, Field, Gradient, Freeze-Evolve, Fitness, Lineage, Heatmap)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 543/543 tests pass (no new Python tests — frontend task). `npm run build` succeeds (861 modules). Every metric has hover help, glossary contains all terms.
+
