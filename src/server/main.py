@@ -202,6 +202,12 @@ def _generate_mock_frame(
         "specialization_score": float(
             max(0, rng.uniform(-0.05, 0.05) + progress * 0.75)
         ),
+        "transfer_entropy": float(
+            max(0, rng.uniform(-0.01, 0.01) + progress * 0.15)
+        ),
+        "te_density": float(
+            max(0, min(1.0, rng.uniform(-0.05, 0.05) + progress * 0.6))
+        ),
     }
 
     return Frame(

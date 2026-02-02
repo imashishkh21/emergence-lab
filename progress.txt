@@ -502,3 +502,24 @@ Goals:
 - `tests/test_server.py` — added `TestTrainingControls` class with 16 tests covering: speed multiplier defaults/setting/clamping, training mode defaults/setting, set_speed command handling, frame training_mode, packed frame includes mode, config endpoint, mock frames, WebSocket speed and set_param commands
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 460/460 tests pass (16 new). `npm run build` succeeds (855 modules).
 
+---
+
+### US-010: Transfer Entropy Metric ✓
+**What:** Implemented transfer entropy computation between agent pairs using the KSG (Kraskov-Stögbauer-Grassberger) k-nearest-neighbor estimator. Created `src/analysis/information.py` with core TE functions, pairwise TE matrix computation, trajectory convenience wrapper, and a `TransferEntropyTracker` class for training loop integration. Added mock TE metrics to the server streaming.
+**Decisions:**
+- Used the KSG estimator (Kraskov et al., 2004) for continuous transfer entropy estimation — it's non-parametric, works for any distribution, and handles the discrete action data well with small jitter added to avoid zero distances in k-NN lookups
+- `compute_transfer_entropy(source, target, lag, k)` computes TE(X→Y) as conditional mutual information I(Y_future; X_past | Y_past) using the KSG formula: ψ(k) - <ψ(n_z1) + ψ(n_z2) - ψ(n_z3)> where ψ is the digamma function
+- Uses Chebyshev (L-infinity) distance with `scipy.spatial.KDTree` for efficient neighbor counting in joint and marginal spaces
+- `compute_te_matrix()` computes full pairwise TE matrix with alive_mask support. Returns mean_te, max_te, te_density (fraction of pairs with TE > 0.01 threshold) as aggregate metrics
+- `transfer_entropy_from_trajectory()` is a convenience wrapper that accepts trajectory dicts (from TrajectoryRecorder) and supports both 'actions' and 'positions' features
+- `TransferEntropyTracker` follows the EmergenceTracker/SpecializationTracker pattern: rolling window z-score detection for sudden changes in TE metrics, prefixed as `information/` for W&B logging
+- TE is always non-negative (clamped to 0.0 minimum) — negative values from estimation noise are zeroed out
+- Graceful handling of edge cases: empty sequences, short sequences, single agent, all-dead agents all return 0.0
+- Added `transfer_entropy` and `te_density` to mock frame metrics in server (simulates gradual increase 0→0.15 and 0→0.6 over 500 steps)
+- Dashboard store already handles metrics generically — new TE metrics flow through automatically to metricsHistory
+**Files changed:**
+- `src/analysis/information.py` (new) — `compute_transfer_entropy()`, `compute_te_matrix()`, `transfer_entropy_from_trajectory()`, `TEEvent` dataclass, `TransferEntropyTracker` class
+- `src/server/main.py` — added `transfer_entropy` and `te_density` to mock frame metrics
+- `tests/test_information.py` (new) — 35 tests across 4 classes: `TestComputeTransferEntropy` (9 tests: independent/correlated sequences, non-negativity, short/empty input, different lags, multidimensional, self-TE), `TestComputeTEMatrix` (10 tests: output keys, matrix shape, zero diagonal, alive mask, single agent, non-negative, 3D input, mean/max correctness, density range), `TestTransferEntropyFromTrajectory` (5 tests: actions/positions features, invalid feature, alive mask, partial alive), `TestTransferEntropyTracker` (11 tests: init, update, step count, history, metrics keys/finiteness, summary, event detection, steady state, event str, None alive mask)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 495/495 tests pass (35 new).
+

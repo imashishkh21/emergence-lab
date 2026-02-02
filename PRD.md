@@ -306,7 +306,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-010: Transfer Entropy Metric
-[ ] **Task:** Implement transfer entropy between agent pairs.
+[x] **Task:** Implement transfer entropy between agent pairs.
 
 **Why (ELI5):** Measure if agents are "talking" to each other through their behavior. If Agent A moves and then Agent B follows, that's information transfer!
 
