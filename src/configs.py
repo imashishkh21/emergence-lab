@@ -8,6 +8,18 @@ from typing import Literal
 import yaml
 
 
+@dataclass
+class ArchiveConfig:
+    """MAP-Elites behavioral archive configuration."""
+    grid_size: int = 100
+    """Number of cells along each axis of the 2D behavioral descriptor
+    grid. Total capacity = grid_size ** 2. Default 100."""
+    enabled: bool = False
+    """Whether to maintain a behavioral archive during training.
+    When enabled, agents are added to the archive based on their
+    behavioral descriptors (movement_entropy, field_write_frequency)."""
+
+
 class TrainingMode(Enum):
     """Training mode for the training loop.
 
@@ -171,6 +183,7 @@ class Config:
     evolution: EvolutionConfig = dataclass_field(default_factory=EvolutionConfig)
     specialization: SpecializationConfig = dataclass_field(default_factory=SpecializationConfig)
     freeze_evolve: FreezeEvolveConfig = dataclass_field(default_factory=FreezeEvolveConfig)
+    archive: ArchiveConfig = dataclass_field(default_factory=ArchiveConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -192,6 +205,7 @@ class Config:
             evolution=EvolutionConfig(**data.get("evolution", {})),
             specialization=SpecializationConfig(**data.get("specialization", {})),
             freeze_evolve=FreezeEvolveConfig(**data.get("freeze_evolve", {})),
+            archive=ArchiveConfig(**data.get("archive", {})),
         )
 
     def to_yaml(self, path: str) -> None:

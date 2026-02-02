@@ -367,3 +367,23 @@ Goals:
 - `tests/test_training.py` — added `TestFreezeEvolve` class with 13 tests covering: TrainingMode enum values, FreezeEvolveConfig defaults, Config integration, training mode configurability, evolve_step execution and metric keys, evolve_step no shared param change, evolve_step JIT compatibility, gradient mode train_step, mutation boost calculation, modified config creation, phase switching logic simulation, population metrics from evolve_step, full gradient→evolve→gradient cycle
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 357/357 tests pass (13 new)
 
+---
+
+### US-004: MAP-Elites Behavioral Archive ✓
+**What:** Implemented `BehavioralArchive` class and `extract_descriptors()` function in `src/analysis/archive.py` — a MAP-Elites grid archive that stores the best-fitness agent params for each cell in a 2D behavioral descriptor space. Added `ArchiveConfig` to `src/configs.py`.
+**Decisions:**
+- Archive is a sparse 2D grid indexed by two behavioral descriptors: movement_entropy (axis 0, [0,1]) and field_write_frequency (axis 1, [0,1])
+- Each cell stores at most one agent — the one with the highest fitness observed for that cell. New agents only replace if strictly higher fitness.
+- `_descriptor_to_cell()` maps continuous [0,1]^2 descriptors to grid indices via `floor(value * grid_size)`, with clipping for edge cases (values at exactly 1.0, out-of-range)
+- `sample(n)` uses without-replacement when n <= size, with-replacement when n > size
+- `extract_descriptors()` computes the two MAP-Elites axes from trajectory data: movement_entropy (normalized Shannon entropy of action distribution) and field_write_frequency (fraction of total steps the agent was alive)
+- `as_feature_array()` exports all occupied cells' descriptors for use with `novelty_score()` from specialization.py
+- Helper methods: `coverage()`, `fitness_stats()`, `get_cell()`, `clear()` for archive inspection and management
+- `ArchiveConfig` has `grid_size` (default 100) and `enabled` (default False) fields — opt-in feature that doesn't affect existing behavior
+- Uses sparse dict storage (only occupied cells stored) rather than pre-allocated dense array
+**Files changed:**
+- `src/analysis/archive.py` (new) — `ArchiveEntry` dataclass, `BehavioralArchive` class with `add()`, `sample()`, `as_feature_array()`, `get_cell()`, `clear()`, `coverage()`, `fitness_stats()`; `extract_descriptors()` function
+- `src/configs.py` — added `ArchiveConfig` dataclass, added `archive` field to `Config`, updated `from_yaml()`
+- `tests/test_archive.py` (new) — 49 tests across 8 classes: `TestBehavioralArchiveInit` (6 tests), `TestBehavioralArchiveAdd` (8 tests), `TestBehavioralArchiveSample` (7 tests), `TestBehavioralArchiveQuery` (9 tests), `TestDescriptorMapping` (6 tests), `TestExtractDescriptors` (7 tests), `TestArchiveWithDescriptors` (3 tests: full pipeline, fitness preservation, novelty_score compatibility), `TestArchiveConfig` (3 tests)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 406/406 tests pass (49 new)
+

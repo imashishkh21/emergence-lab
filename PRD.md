@@ -171,7 +171,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-004: MAP-Elites Behavioral Archive
-[ ] **Task:** Maintain archive of behaviorally diverse agents.
+[x] **Task:** Maintain archive of behaviorally diverse agents.
 
 **Why (ELI5):** Keep a "hall of fame" of different types of agents — the best explorer, the best follower, etc. When making babies, pick parents from different categories to maintain variety.
 
