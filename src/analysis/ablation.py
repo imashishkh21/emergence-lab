@@ -719,7 +719,7 @@ def print_specialization_ablation_results(
         reward_diff = div_r.mean_reward - uni_r.mean_reward
         food_diff = div_r.food_collected - uni_r.food_collected
         surv_diff = div_r.survival_rate - uni_r.survival_rate
-        print(f"\nDivergent vs Uniform:")
+        print("\nDivergent vs Uniform:")
         print(f"  Reward gap:   {reward_diff:+.2f}")
         print(f"  Food gap:     {food_diff:+.1f}")
         print(f"  Survival gap: {surv_diff:+.1%}")
@@ -734,7 +734,7 @@ def print_specialization_ablation_results(
         div_r = results["divergent"]
         rnd_r = results["random_weights"]
         reward_diff = div_r.mean_reward - rnd_r.mean_reward
-        print(f"\nDivergent vs Random:")
+        print("\nDivergent vs Random:")
         print(f"  Reward gap:   {reward_diff:+.2f}")
         if reward_diff > 0:
             print("  -> Trained divergence is better than random — specialization is learned")

@@ -51,7 +51,6 @@ def _compute_specialization_bonuses(
 
     max_agents = weight_matrix.shape[0]
     alive_f = alive_mask.astype(jnp.float32)
-    n_alive = jnp.maximum(jnp.sum(alive_f), 1.0)
 
     # Compute pairwise cosine distances: 1 - cos_sim(a, b)
     norms = jnp.linalg.norm(weight_matrix, axis=-1, keepdims=True)  # (max_agents, 1)

@@ -1,7 +1,6 @@
 """Specialization detection: weight divergence, behavioral clustering, and species detection."""
 
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from typing import Any
 
 import jax
@@ -572,7 +571,6 @@ def analyze_field_usage(
         field_values = np.asarray(trajectories["field_values"])  # (T, A)
 
     cluster_labels = np.asarray(cluster_labels)
-    num_agents = actions.shape[1]
     num_steps = actions.shape[0]
 
     unique_clusters = sorted(set(int(c) for c in cluster_labels))
@@ -872,7 +870,6 @@ def detect_species(
         - ``'is_speciated'``: ``True`` if at least one species detected.
     """
     features = np.asarray(behavior_features, dtype=np.float64)
-    n_samples = features.shape[0]
 
     # --- Clustering ---
     clustering = find_optimal_clusters(
