@@ -262,7 +262,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-008: Real-Time Metrics Charts
-[ ] **Task:** Add live-updating charts for key metrics.
+[x] **Task:** Add live-updating charts for key metrics.
 
 **Why (ELI5):** Show graphs that update live, so you can see if things are getting better or worse over time.
 

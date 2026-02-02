@@ -461,3 +461,22 @@ Goals:
 - `dashboard/src/lib/AgentCanvas.svelte` — rewrote to use renderer.js, added trail toggle button, moved disconnected overlay to CSS
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (no new Python tests — frontend task). `npm run build` succeeds (852 modules, 1.37s). Pixi.js v8 tree-shakes to ~294KB gzipped main bundle + ~37KB WebGPU renderer chunk + ~63KB WebGL renderer chunk.
 
+---
+
+### US-008: Real-Time Metrics Charts ✓
+**What:** Replaced the static metrics display in MetricsPanel.svelte with 4 live-updating Plotly.js charts (Reward, Weight Divergence, Specialization Score, Population). Added `plotly.js-dist-min` dependency. Updated mock server to stream `weight_divergence` and `specialization_score` metrics with simulated gradual improvement over time.
+**Decisions:**
+- **Plotly.js with WebGL (scattergl):** Used `scattergl` trace type for GPU-accelerated rendering of time-series lines, matching the PRD requirement. Plotly is dynamically imported via `import("plotly.js-dist-min")` to avoid SSR issues and enable code splitting.
+- **Efficient incremental updates:** Uses `Plotly.extendTraces()` for appending new data points (O(1) per frame). When the rolling window (1000 points) is exceeded, switches to a full `Plotly.react()` call with trimmed data to prevent unbounded memory growth.
+- **Rolling window tracking:** A `lastHistoryLen` counter tracks which history entries have been charted, so only new entries are processed each reactive cycle. This avoids re-processing the entire history every frame.
+- **Chart per metric:** 4 charts stacked vertically in the sidebar: Reward (#4ecdc4 teal), Weight Divergence (#ff6b6b red), Specialization (#ffd93d gold, fixed y-axis 0–1), Population (#6bcb77 green). Each has current value displayed next to the title.
+- **Dark theme layout:** Transparent backgrounds, gray grid lines, minimal margins (l:40, r:8, t:4, b:24) to fit the 340px sidebar. No mode bar, no legend.
+- **Helper tooltips:** Each chart has an info icon (i) with title attribute explaining the metric in plain English (e.g., "Are agents getting better at collecting food?"). Hover on chart points shows value + step.
+- **Mock server improvements:** Mock frame metrics now simulate gradual improvement over 500 steps (reward increases, loss decreases, divergence grows from 0→0.12, specialization from 0→0.75). This makes the dashboard demo more realistic.
+- **Summary row preserved:** Alive/Max/FPS summary cards remain at the bottom of the panel below the charts.
+**Files changed:**
+- `dashboard/package.json` — added `plotly.js-dist-min: ^2.30.0` to dependencies
+- `dashboard/src/lib/MetricsPanel.svelte` — rewrote from static metric cards to 4 live Plotly.js charts with dark theme, incremental updates, rolling window, and helper tooltips
+- `src/server/main.py` — added `weight_divergence` and `specialization_score` to mock frame metrics with gradual improvement simulation
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (no regressions). `npm run build` succeeds (855 modules). Plotly.js chunk is ~1.4MB gzipped (dynamically loaded, does not block initial render).
+

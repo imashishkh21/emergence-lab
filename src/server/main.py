@@ -179,12 +179,20 @@ def _generate_mock_frame(step: int, max_agents: int = 32) -> Frame:
     cluster_labels[: max_agents // 2] = 0
     cluster_labels[max_agents // 2 :] = 1
 
+    # Simulate gradually improving metrics over time
+    progress = min(step / 500.0, 1.0)  # 0→1 over 500 steps
     metrics = {
-        "mean_reward": float(rng.uniform(0, 10)),
-        "total_loss": float(rng.uniform(0, 1)),
-        "entropy": float(rng.uniform(0, 2)),
+        "mean_reward": float(rng.uniform(0, 3) + progress * 5),
+        "total_loss": float(rng.uniform(0, 0.5) + (1 - progress) * 0.5),
+        "entropy": float(rng.uniform(0.5, 1.5) + (1 - progress) * 0.5),
         "population_size": float(alive.sum()),
         "mean_energy": float(energy[alive].mean()) if alive.any() else 0.0,
+        "weight_divergence": float(
+            rng.uniform(0, 0.02) + progress * 0.12
+        ),
+        "specialization_score": float(
+            max(0, rng.uniform(-0.05, 0.05) + progress * 0.75)
+        ),
     }
 
     return Frame(
