@@ -176,7 +176,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Optional: different mutation rates for different weight layers
 **Verification:** Training with diversity_bonus > 0 increases specialization score
 
-### US-014: Integration Test [ ]
+### US-014: Integration Test [x]
 **Task:** End-to-end specialization detection test.
 **Files:** `tests/test_integration.py`
 **Changes:**

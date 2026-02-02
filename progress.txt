@@ -255,3 +255,23 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (32 files), 323/323 tests pass, verification script confirms all configs run without errors and bonuses are computed correctly
 
 ---
+
+### US-014: Integration Test ✓
+**What:** Added `TestPhase3Integration` class with `test_specialization_emerges` to `tests/test_integration.py` — end-to-end test of the full Phase 3 specialization detection pipeline.
+**Decisions:**
+- Test follows the established `TestPhase2Integration` pattern: small config, train a few updates, then run the full analysis pipeline
+- Pipeline tested end-to-end: create_train_state → train_step (multiple updates) → record_episode → extract_behavior_features → specialization_score → compute_weight_divergence → cluster_agents → find_optimal_clusters → SpecializationTracker
+- Verifies per-agent params are initialized when evolution is enabled
+- Verifies trajectory recording returns correct structure and shapes (actions, positions, rewards, alive_mask, energy, births, field_values)
+- Verifies behavioral features have correct shape (max_agents, 7) and all finite values
+- Verifies specialization score result has all expected keys and score in [0, 1]
+- Verifies weight divergence returns non-negative finite values
+- Verifies clustering and optimal cluster finding work on alive agent features
+- Verifies SpecializationTracker produces correct metrics and summary after multiple updates
+- Compares trained model's specialization score against a random baseline (uniform random features) — both must be well-formed [0, 1] values
+- 180-second timeout (slightly longer than Phase 2 tests due to trajectory recording overhead)
+**Files changed:**
+- `tests/test_integration.py` — updated module docstring for Phase 3, added `TestPhase3Integration` class with `test_specialization_emerges` test
+**Validation:** mypy clean (32 files), 324/324 tests pass (1 new test added)
+
+---
