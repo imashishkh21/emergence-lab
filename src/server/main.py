@@ -208,6 +208,9 @@ def _generate_mock_frame(
         "te_density": float(
             max(0, min(1.0, rng.uniform(-0.05, 0.05) + progress * 0.6))
         ),
+        "division_of_labor": float(
+            max(0, min(1.0, rng.uniform(-0.03, 0.03) + progress * 0.65))
+        ),
     }
 
     return Frame(

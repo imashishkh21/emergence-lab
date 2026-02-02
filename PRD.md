@@ -326,7 +326,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-011: Division of Labor Index
-[ ] **Task:** Quantify role specialization.
+[x] **Task:** Quantify role specialization.
 
 **Why (ELI5):** Are agents doing different jobs? Like measuring if a team has a goalie, defenders, and strikers vs everyone just running around randomly.
 

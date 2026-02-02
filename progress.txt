@@ -523,3 +523,23 @@ Goals:
 - `tests/test_information.py` (new) — 35 tests across 4 classes: `TestComputeTransferEntropy` (9 tests: independent/correlated sequences, non-negativity, short/empty input, different lags, multidimensional, self-TE), `TestComputeTEMatrix` (10 tests: output keys, matrix shape, zero diagonal, alive mask, single agent, non-negative, 3D input, mean/max correctness, density range), `TestTransferEntropyFromTrajectory` (5 tests: actions/positions features, invalid feature, alive mask, partial alive), `TestTransferEntropyTracker` (11 tests: init, update, step count, history, metrics keys/finiteness, summary, event detection, steady state, event str, None alive mask)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 495/495 tests pass (35 new).
 
+---
+
+### US-011: Division of Labor Index ✓
+**What:** Implemented `compute_division_of_labor()` in `src/analysis/specialization.py` — a composite metric that quantifies how well agents have differentiated into distinct task roles. Added `division_of_labor` to mock server metrics streaming.
+**Decisions:**
+- DOL uses two complementary components combined multiplicatively:
+  - **Task allocation** (0–1): Normalized Shannon entropy of cluster membership distribution. 1.0 = agents perfectly balanced across all K task types. Measures whether all roles are filled.
+  - **Individual specialization** (0–1): Mean per-agent concentration on a single task type, computed as `1 - normalized_entropy(soft_task_probs)`. 1.0 = each agent belongs entirely to one cluster.
+- `dol_index = task_allocation * individual_specialization` — both components needed for true DOL (roles must exist AND agents must specialize in them)
+- Soft task-type membership computed via softmin over Euclidean distances to cluster centroids in standardized feature space (same StandardScaler as clustering)
+- Supports both automatic cluster count (via `find_optimal_clusters`) and fixed `n_clusters` parameter
+- Edge cases: single agent → DOL=0, identical agents → DOL=0 (degenerate clustering yields k=1), two well-separated agents → valid DOL
+- Returns comprehensive dict: `dol_index`, `task_allocation`, `individual_specialization`, `n_task_types`, `task_counts`, `agent_task_probs`
+- Added `division_of_labor` to mock frame metrics in server (simulates gradual increase 0→0.65 over 500 steps)
+**Files changed:**
+- `src/analysis/specialization.py` — added `compute_division_of_labor()` function (placed before `SpecializationEvent` class)
+- `src/server/main.py` — added `division_of_labor` to mock frame metrics
+- `tests/test_specialization.py` — added `TestDivisionOfLabor` class with 14 tests covering: required keys, index range [0,1], identical agents (low DOL), well-separated groups (high DOL), single agent, fixed n_clusters, task counts sum, probs shape, probs sum to 1, probs non-negative, three groups > uniform, two agents, full pipeline (features→DOL), reproducibility
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 509/509 tests pass (14 new).
+

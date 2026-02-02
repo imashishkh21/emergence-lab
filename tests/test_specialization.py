@@ -2272,3 +2272,195 @@ class TestSpeciesDetection:
         # Should detect at least some structure
         assert result["optimal_k"] >= 2
         assert isinstance(result["species"], list)
+
+
+class TestDivisionOfLabor:
+    """US-011: Division of Labor index tests."""
+
+    def test_required_keys(self):
+        """Result dict should contain all expected keys."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(10, 7)
+        result = compute_division_of_labor(features)
+        expected_keys = {
+            "dol_index",
+            "task_allocation",
+            "individual_specialization",
+            "n_task_types",
+            "task_counts",
+            "agent_task_probs",
+        }
+        assert expected_keys <= set(result.keys())
+
+    def test_dol_index_range(self):
+        """DOL index should be in [0, 1]."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(20, 7)
+        result = compute_division_of_labor(features)
+        assert 0.0 <= result["dol_index"] <= 1.0
+        assert 0.0 <= result["task_allocation"] <= 1.0
+        assert 0.0 <= result["individual_specialization"] <= 1.0
+
+    def test_identical_agents_low_dol(self):
+        """Identical agents should have low DOL (no specialization)."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        # All agents have the same feature vector
+        features = np.tile([0.5, 0.3, 0.7, 0.1, 50.0, 0.4, 0.2], (10, 1))
+        result = compute_division_of_labor(features)
+        assert result["dol_index"] == 0.0
+        assert result["n_task_types"] == 1
+
+    def test_well_separated_groups_high_dol(self):
+        """Well-separated agent groups should have higher DOL."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        rng = np.random.RandomState(42)
+        # Two clearly distinct groups
+        group_a = rng.randn(10, 7) * 0.1 + np.array([0, 0, 0, 0, 0, 0, 0])
+        group_b = rng.randn(10, 7) * 0.1 + np.array([5, 5, 5, 5, 5, 5, 5])
+        features = np.vstack([group_a, group_b])
+        result = compute_division_of_labor(features)
+
+        # Should detect 2 task types with clear specialization
+        assert result["n_task_types"] >= 2
+        assert result["dol_index"] > 0.3
+        assert result["individual_specialization"] > 0.3
+
+    def test_single_agent(self):
+        """Single agent should return DOL = 0."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.array([[0.5, 0.3, 0.7, 0.1, 50.0, 0.4, 0.2]])
+        result = compute_division_of_labor(features)
+        assert result["dol_index"] == 0.0
+        assert result["n_task_types"] == 1
+        assert result["task_counts"][0] == 1
+
+    def test_fixed_n_clusters(self):
+        """Should use specified n_clusters when provided."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        rng = np.random.RandomState(42)
+        features = rng.randn(20, 7)
+        result = compute_division_of_labor(features, n_clusters=3)
+        assert result["n_task_types"] == 3
+
+    def test_task_counts_sum_to_n_agents(self):
+        """Task counts should sum to total number of agents."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(15, 7)
+        result = compute_division_of_labor(features)
+        assert np.sum(result["task_counts"]) == 15
+
+    def test_agent_task_probs_shape(self):
+        """Agent task probs should have shape (n_agents, n_task_types)."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(12, 7)
+        result = compute_division_of_labor(features)
+        k = result["n_task_types"]
+        assert result["agent_task_probs"].shape == (12, k)
+
+    def test_agent_task_probs_sum_to_one(self):
+        """Each agent's task probabilities should sum to 1."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(10, 7)
+        result = compute_division_of_labor(features)
+        row_sums = np.sum(result["agent_task_probs"], axis=1)
+        np.testing.assert_allclose(row_sums, 1.0, atol=1e-10)
+
+    def test_agent_task_probs_non_negative(self):
+        """All task probabilities should be non-negative."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(10, 7)
+        result = compute_division_of_labor(features)
+        assert np.all(result["agent_task_probs"] >= 0.0)
+
+    def test_three_groups_higher_dol_than_uniform(self):
+        """Three separated groups should have higher DOL than uniform noise."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        rng = np.random.RandomState(42)
+        # Three well-separated groups
+        group_a = rng.randn(8, 7) * 0.1 + np.array([0, 0, 0, 0, 0, 0, 0])
+        group_b = rng.randn(8, 7) * 0.1 + np.array([5, 5, 5, 5, 5, 5, 5])
+        group_c = rng.randn(8, 7) * 0.1 + np.array([10, 10, 10, 10, 10, 10, 10])
+        separated = np.vstack([group_a, group_b, group_c])
+        result_sep = compute_division_of_labor(separated)
+
+        # Uniform random features (no structure)
+        uniform = rng.randn(24, 7) * 0.5
+        result_uni = compute_division_of_labor(uniform)
+
+        # Separated should have higher DOL
+        assert result_sep["dol_index"] > result_uni["dol_index"]
+
+    def test_two_agents(self):
+        """Two different agents should produce a valid DOL."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.array([
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0],
+        ])
+        result = compute_division_of_labor(features)
+        assert 0.0 <= result["dol_index"] <= 1.0
+        assert result["n_task_types"] >= 1
+
+    def test_pipeline_features_to_dol(self):
+        """Full pipeline: extract_behavior_features -> compute_division_of_labor."""
+        from src.analysis.specialization import (
+            compute_division_of_labor,
+            extract_behavior_features,
+        )
+
+        rng = np.random.RandomState(88)
+        num_steps, num_agents = 200, 10
+
+        # Create trajectory with two distinct behavior groups
+        actions = np.zeros((num_steps, num_agents), dtype=int)
+        positions = np.zeros((num_steps, num_agents, 2), dtype=int)
+
+        # Group A (0-4): stationary, always action 0
+        actions[:, :5] = 0
+        for a in range(5):
+            positions[:, a] = [a, a]
+
+        # Group B (5-9): moving around, varied actions
+        for t in range(num_steps):
+            actions[t, 5:] = rng.randint(1, 5, size=5)
+            for a in range(5, 10):
+                positions[t, a] = [t % 20, (a * t) % 20]
+
+        traj = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rng.uniform(0, 1, size=(num_steps, num_agents)),
+            "alive_mask": np.ones((num_steps, num_agents), dtype=bool),
+            "energy": rng.uniform(10, 100, size=(num_steps, num_agents)),
+        }
+
+        features = extract_behavior_features(traj)
+        result = compute_division_of_labor(features)
+
+        assert 0.0 <= result["dol_index"] <= 1.0
+        assert result["n_task_types"] >= 2
+        assert np.sum(result["task_counts"]) == num_agents
+
+    def test_reproducibility(self):
+        """Same input should produce same DOL with same random_state."""
+        from src.analysis.specialization import compute_division_of_labor
+
+        features = np.random.RandomState(42).randn(20, 7)
+        result1 = compute_division_of_labor(features, random_state=42)
+        result2 = compute_division_of_labor(features, random_state=42)
+
+        assert result1["dol_index"] == pytest.approx(result2["dol_index"])
+        assert result1["n_task_types"] == result2["n_task_types"]
+        np.testing.assert_array_equal(result1["task_counts"], result2["task_counts"])

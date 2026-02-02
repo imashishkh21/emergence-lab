@@ -970,6 +970,146 @@ def detect_species(
     }
 
 
+def compute_division_of_labor(
+    behavior_features: np.ndarray,
+    n_clusters: int | None = None,
+    max_k: int = 5,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Quantify Division of Labor (DOL) across agents.
+
+    Measures how well agents have differentiated into distinct task roles.
+    Uses behavioral clustering to identify task types, then computes how
+    unevenly agents are distributed across those types.
+
+    The index is based on two complementary components:
+
+    1. **Task allocation entropy**: How unevenly agents are distributed
+       across task types. If all agents concentrate in one cluster, entropy
+       is low (poor DOL). If evenly distributed, entropy is high (good DOL,
+       all roles filled).
+
+    2. **Individual specialization**: How focused each agent is on a single
+       task type (via distance to cluster centroids). Agents close to one
+       centroid and far from others are more specialized.
+
+    Final DOL = mean of the two components, bounded in [0, 1].
+    0 = no specialization (all agents identical), 1 = perfect division.
+
+    Args:
+        behavior_features: Array of shape ``(num_agents, num_features)``.
+        n_clusters: Fixed number of task types. If None, automatically
+            determined via ``find_optimal_clusters``.
+        max_k: Maximum clusters to try when ``n_clusters`` is None.
+        random_state: Random seed for clustering reproducibility.
+
+    Returns:
+        Dict with keys:
+
+        - ``'dol_index'``: Float in [0, 1]. 0 = no division, 1 = perfect.
+        - ``'task_allocation'``: Float in [0, 1]. How evenly agents fill
+          the K roles (1 = perfectly balanced across all roles).
+        - ``'individual_specialization'``: Float in [0, 1]. How focused
+          each agent is on a single task (1 = each agent does only one task).
+        - ``'n_task_types'``: Number of task types (clusters) used.
+        - ``'task_counts'``: Array of shape ``(n_task_types,)`` with the
+          number of agents assigned to each task type.
+        - ``'agent_task_probs'``: Array of shape ``(num_agents, n_task_types)``
+          with soft task-type membership probabilities per agent.
+    """
+    features = np.asarray(behavior_features, dtype=np.float64)
+    n_agents = features.shape[0]
+
+    # Edge cases
+    if n_agents < 2:
+        return {
+            "dol_index": 0.0,
+            "task_allocation": 0.0,
+            "individual_specialization": 0.0,
+            "n_task_types": 1,
+            "task_counts": np.array([n_agents]),
+            "agent_task_probs": np.ones((n_agents, 1)),
+        }
+
+    # --- Cluster into task types ---
+    if n_clusters is not None:
+        clustering = cluster_agents(features, n_clusters=n_clusters, random_state=random_state)
+        k = clustering["n_clusters"]
+    else:
+        clustering = find_optimal_clusters(features, max_k=max_k, random_state=random_state)
+        k = clustering["optimal_k"]
+
+    labels = clustering["labels"]
+    centroids = clustering["centroids"]
+
+    if k < 2:
+        return {
+            "dol_index": 0.0,
+            "task_allocation": 0.0,
+            "individual_specialization": 0.0,
+            "n_task_types": 1,
+            "task_counts": np.array([n_agents]),
+            "agent_task_probs": np.ones((n_agents, 1)),
+        }
+
+    # --- Standardize features (same as clustering does internally) ---
+    scaler = StandardScaler()
+    scaled = scaler.fit_transform(features)
+
+    # --- Soft task-type membership via distance to centroids ---
+    # Compute distance from each agent to each centroid in standardized space
+    distances = cdist(scaled, centroids, metric="euclidean")  # (n_agents, k)
+
+    # Convert distances to soft probabilities via softmin (inverse distance softmax)
+    # Use negative distances so closer = higher probability
+    # Add small epsilon to avoid division by zero
+    neg_distances = -distances
+    # Shift for numerical stability
+    neg_distances -= np.max(neg_distances, axis=1, keepdims=True)
+    exp_neg = np.exp(neg_distances)
+    agent_task_probs = exp_neg / np.sum(exp_neg, axis=1, keepdims=True)
+
+    # --- Component 1: Task allocation (how evenly roles are filled) ---
+    task_counts = np.bincount(labels, minlength=k).astype(float)
+    task_proportions = task_counts / n_agents  # p_i for each task type
+
+    # Normalized entropy of task distribution
+    # max entropy = log(k), achieved when all tasks equally represented
+    alloc_entropy = float(scipy_entropy(task_proportions))
+    max_entropy = np.log(k)
+    if max_entropy > 0:
+        task_allocation = alloc_entropy / max_entropy
+    else:
+        task_allocation = 0.0
+
+    # --- Component 2: Individual specialization ---
+    # For each agent, how concentrated is their task membership?
+    # Use 1 - normalized_entropy(task_probs) per agent
+    agent_specializations = np.zeros(n_agents)
+    for i in range(n_agents):
+        probs = agent_task_probs[i]
+        agent_ent = float(scipy_entropy(probs))
+        if max_entropy > 0:
+            agent_specializations[i] = 1.0 - (agent_ent / max_entropy)
+        else:
+            agent_specializations[i] = 0.0
+
+    individual_specialization = float(np.mean(agent_specializations))
+
+    # --- Final DOL index ---
+    # Both components needed: roles must exist AND agents must specialize
+    dol_index = float(np.clip(task_allocation * individual_specialization, 0.0, 1.0))
+
+    return {
+        "dol_index": dol_index,
+        "task_allocation": float(np.clip(task_allocation, 0.0, 1.0)),
+        "individual_specialization": float(np.clip(individual_specialization, 0.0, 1.0)),
+        "n_task_types": k,
+        "task_counts": task_counts.astype(int),
+        "agent_task_probs": agent_task_probs,
+    }
+
+
 @dataclass
 class SpecializationEvent:
     """A detected specialization event (sudden divergence increase)."""
