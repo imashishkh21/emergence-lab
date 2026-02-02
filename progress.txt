@@ -773,3 +773,22 @@ Goals:
 
 ---
 
+### US-004: Periodic Checkpoint Saves ✓
+**What:** Modified the training loop in `train.py` to save checkpoints periodically using `config.log.save_interval` and the new `save_checkpoint()` function from `checkpointing.py`. Final checkpoint also uses the full-state `save_checkpoint()` instead of raw pickle.
+**Decisions:**
+- Periodic saves triggered when `total_env_steps % save_interval < steps_per_iter` — same pattern used by log_interval, emergence_check_interval, etc.
+- Save interval check includes `save_interval > 0` guard to allow disabling periodic saves
+- Each checkpoint includes full state: params, opt_state, agent_params, prng_key, step, config, and tracker_state (emergence + specialization)
+- Checkpoint files named `step_{total_env_steps}.pkl` in the configured checkpoint_dir
+- Checkpoint rotation (keep last 5) handled automatically by `save_checkpoint(max_checkpoints=5)`
+- `latest.pkl` symlink maintained automatically by `save_checkpoint()`
+- Prints `"Checkpoint saved: step {N} → {path}"` on each save (both periodic and final)
+- Final checkpoint at training completion replaced: old raw pickle code → new `save_checkpoint()` with full state (params, opt_state, agent_params, prng_key, step, config, tracker_state)
+- Training banner now shows save_interval and checkpoint_dir when save_interval > 0
+- Imported `save_checkpoint` from `src.training.checkpointing`
+**Files changed:**
+- `src/training/train.py` — imported `save_checkpoint`, added periodic checkpoint save block in training loop, replaced final checkpoint save with full-state `save_checkpoint()`, added save_interval to training banner
+**Validation:** mypy clean (39 source files, 0 errors), 717/720 tests pass (0 new; 3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4)
+
+---
+

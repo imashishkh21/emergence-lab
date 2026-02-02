@@ -94,7 +94,7 @@ pytest tests/test_checkpointing.py -v
 
 ---
 
-### US-004: Periodic Checkpoint Saves [ ]
+### US-004: Periodic Checkpoint Saves [x]
 
 **Task:** Modify training loop to save checkpoints periodically.
 

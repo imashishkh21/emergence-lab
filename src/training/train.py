@@ -3,6 +3,7 @@
 import os
 import pickle
 import sys
+import threading
 import time
 from typing import Any
 
@@ -19,6 +20,7 @@ from src.analysis.specialization import SpecializationTracker
 from src.configs import Config, TrainingMode
 from src.environment.obs import get_observations, obs_dim
 from src.environment.vec_env import VecEnv
+from src.training.checkpointing import save_checkpoint
 from src.training.gae import compute_gae
 from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
@@ -545,6 +547,11 @@ def train(config: Config) -> RunnerState:
               f"niche_pressure={config.specialization.niche_pressure}")
         if config.specialization.layer_mutation_rates:
             print(f"  Layer mutation rates: {config.specialization.layer_mutation_rates}")
+    if config.log.server:
+        print(f"Dashboard server: port {config.log.server_port}")
+    if config.log.save_interval > 0:
+        print(f"Checkpoint save interval: every {config.log.save_interval} steps")
+        print(f"Checkpoint dir: {config.log.checkpoint_dir}")
     print(f"Field channels: {config.field.num_channels}")
     print(f"Num envs: {config.train.num_envs}")
     print(f"Total steps: {config.train.total_steps}")
@@ -571,6 +578,30 @@ def train(config: Config) -> RunnerState:
         print("Initializing W&B...")
         init_wandb(config)
         print("W&B initialized.")
+
+    # Initialize dashboard server if enabled
+    bridge = None
+    if config.log.server:
+        from src.server.main import create_app, set_bridge
+        from src.server.streaming import TrainingBridge
+
+        bridge = TrainingBridge(target_fps=30.0)
+        set_bridge(bridge)
+        app = create_app(bridge)
+
+        def _run_server() -> None:
+            import uvicorn
+            uvicorn.run(
+                app,
+                host="0.0.0.0",
+                port=config.log.server_port,
+                log_level="warning",
+            )
+
+        server_thread = threading.Thread(target=_run_server, daemon=True)
+        server_thread.start()
+        print(f"Dashboard server started on http://localhost:{config.log.server_port}")
+        print("Connect the dashboard at http://localhost:5173")
 
     # Initialize training state
     print("Initializing training state...")
@@ -806,6 +837,66 @@ def train(config: Config) -> RunnerState:
                 spec_metrics = specialization_tracker.get_metrics()
                 log_metrics(spec_metrics, step=total_env_steps)
 
+        # Periodic checkpoint saves
+        if (
+            config.log.save_interval > 0
+            and total_env_steps % config.log.save_interval < steps_per_iter
+        ):
+            ckpt_path = os.path.join(
+                config.log.checkpoint_dir,
+                f"step_{total_env_steps}.pkl",
+            )
+            tracker_state: dict[str, Any] = {
+                "emergence": emergence_tracker.to_dict(),
+            }
+            if config.evolution.enabled:
+                tracker_state["specialization"] = specialization_tracker.to_dict()
+
+            ckpt_state: dict[str, Any] = {
+                "params": runner_state.params,
+                "opt_state": runner_state.opt_state,
+                "agent_params": (
+                    runner_state.env_state.agent_params
+                    if runner_state.env_state.agent_params is not None
+                    else None
+                ),
+                "prng_key": runner_state.key,
+                "step": total_env_steps,
+                "config": config,
+                "tracker_state": tracker_state,
+            }
+            saved_path = save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=5)
+            tqdm.write(
+                f"Checkpoint saved: step {total_env_steps} → {saved_path}"
+            )
+
+        # Publish frame to dashboard server (rate-limited by bridge)
+        if bridge is not None:
+            # Determine training mode string for the frame
+            if bridge.paused:
+                frame_mode = "paused"
+            elif current_phase == TrainingMode.EVOLVE:
+                frame_mode = "evolve"
+            else:
+                frame_mode = "gradient"
+            bridge.training_mode = frame_mode
+
+            frame = bridge.create_frame_from_state(
+                env_state=runner_state.env_state,
+                metrics=metrics,
+                step=total_env_steps,
+            )
+            frame.training_mode = frame_mode
+            bridge.publish_frame(frame)
+
+            # Process dashboard commands
+            for cmd in bridge.pop_commands():
+                cmd_type = cmd.get("type")
+                if cmd_type == "pause":
+                    bridge.paused = True
+                elif cmd_type == "resume":
+                    bridge.paused = False
+
     pbar.close()
 
     # Print emergence summary
@@ -855,29 +946,34 @@ def train(config: Config) -> RunnerState:
         print(f"  {k}: {float(v):.6f}")
     print("=" * 60)
 
-    # Save checkpoint
-    checkpoint_dir = config.log.checkpoint_dir
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    checkpoint_path = os.path.join(checkpoint_dir, "params.pkl")
-    if (
-        config.evolution.enabled
-        and runner_state.env_state.agent_params is not None
-    ):
-        # Structured checkpoint with per-agent data
-        save_data: dict = {
-            "params": runner_state.params,
-            "agent_params": jax.tree_util.tree_map(
-                lambda x: x[0], runner_state.env_state.agent_params
-            ),
-            "alive_mask": runner_state.env_state.agent_alive[0],
-        }
-        with open(checkpoint_path, "wb") as fw:
-            pickle.dump(save_data, fw)
-    else:
-        # Raw Flax variables dict (backward compatible)
-        with open(checkpoint_path, "wb") as fw:
-            pickle.dump(runner_state.params, fw)
-    print(f"Checkpoint saved to {checkpoint_path}")
+    # Save final checkpoint
+    final_tracker_state: dict[str, Any] = {
+        "emergence": emergence_tracker.to_dict(),
+    }
+    if config.evolution.enabled:
+        final_tracker_state["specialization"] = specialization_tracker.to_dict()
+
+    final_ckpt_path = os.path.join(
+        config.log.checkpoint_dir,
+        f"step_{total_env_steps}.pkl",
+    )
+    final_ckpt_state: dict[str, Any] = {
+        "params": runner_state.params,
+        "opt_state": runner_state.opt_state,
+        "agent_params": (
+            runner_state.env_state.agent_params
+            if runner_state.env_state.agent_params is not None
+            else None
+        ),
+        "prng_key": runner_state.key,
+        "step": total_env_steps,
+        "config": config,
+        "tracker_state": final_tracker_state,
+    }
+    saved_final_path = save_checkpoint(
+        final_ckpt_path, final_ckpt_state, max_checkpoints=5
+    )
+    print(f"Checkpoint saved: step {total_env_steps} → {saved_final_path}")
 
     # Finish W&B run
     if config.log.wandb:

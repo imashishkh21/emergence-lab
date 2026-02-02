@@ -109,6 +109,12 @@ class LogConfig:
     video_interval: int = 50000
     save_interval: int = 100000
     checkpoint_dir: str = "checkpoints"
+    server: bool = False
+    """Start WebSocket server for live dashboard visualization.
+    When True, the training loop publishes frames to a local server
+    at localhost:8765 that the Svelte dashboard can connect to."""
+    server_port: int = 8765
+    """Port for the WebSocket dashboard server."""
 
 
 @dataclass
