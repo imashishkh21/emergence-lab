@@ -56,6 +56,15 @@ dev = [
     "mypy>=1.5.0",
     "types-PyYAML>=6.0",
 ]
+phase5 = [
+    "dit>=1.5",
+    "hoi>=0.0.7",
+    "rliable>=1.0.8",
+]
+# jaxmarl is excluded from phase5 deps because it pins jax<=0.4.38
+# and scipy<=1.12, which conflict with our jax>=0.9 and scipy>=1.17.
+# We write custom MAPPO (~200 lines) instead of wrapping JaxMARL.
+# Install separately if needed for reference: pip install jaxmarl
 
 [project.scripts]
 train = "src.training.train:main"
