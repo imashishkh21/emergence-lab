@@ -439,3 +439,25 @@ Goals:
 - `dashboard/static/glossary.json` (new) — Glossary terms for help system
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (no new Python tests — this is a frontend task). `npm run build` succeeds. `npm run dev` starts and serves the dashboard at http://localhost:5173. Dashboard displays "Waiting for server connection..." overlay when server is not running.
 
+---
+
+### US-007: Pixi.js Agent Renderer ✓
+**What:** Replaced the Canvas 2D renderer with a Pixi.js v8 WebGPU/WebGL renderer. Created `dashboard/src/lib/renderer.js` as a standalone rendering engine, and rewrote `AgentCanvas.svelte` to use it. Added smooth position interpolation, optional trail effects, and a glow effect for agents.
+**Decisions:**
+- **Pixi.js v8 async init:** Used `new Application()` + `await app.init({ preference: "webgpu" })` pattern as required by v8. Falls back to WebGL automatically if WebGPU is unavailable.
+- **Scene graph layers:** 6 layers in render order: fieldLayer (heatmap), trailLayer (movement trails), gridLayer (grid lines), foodLayer (food dots), agentLayer (agent circles), overlayLayer (disconnected state). Each layer is a separate `Container` for clean separation.
+- **Pre-allocated sprite pool:** 64 `Graphics` objects pre-created in agentLayer (MAX_POOL_SIZE=64). Objects are shown/hidden via `.visible` — no dynamic creation/destruction during rendering.
+- **Position interpolation:** Lerp factor 0.3 — each frame, agents move 30% of the remaining distance to their target position. `interpX`/`interpY` Float32Arrays track interpolated positions. First-frame or respawned agents snap immediately (no lerp).
+- **Food rendering:** Uses `GraphicsContext` (shared geometry) for food dots — one circle template, multiple `Graphics` instances. Pool expands on demand via `ensureFoodPool()`.
+- **Field heatmap:** Per-cell `Graphics` objects that are cleared and redrawn each frame. Sums across all field channels, normalizes to 0-1 intensity, renders as blue rectangles with alpha = intensity * 0.6.
+- **Agent glow effect:** Two concentric circles per agent — outer circle at 1.5x radius with 0.15 alpha (glow), inner circle at full opacity. Color determined by cluster ID.
+- **Trail effect:** Optional toggle (button in canvas-controls). Stores trail points as `{ x, y, color, age }` array. Points age out after 60 frames. Max 2000 trail points. Alpha fades linearly with age.
+- **Overlay:** Moved from Pixi overlay to CSS overlay with `pointer-events: none` — simpler and avoids Pixi Text rendering overhead.
+- **Renderer API:** `createRenderer()` returns `{ update, resize, destroy, setShowTrails, canvas, showTrails }` — fully decoupled from Svelte component.
+- **Cleanup:** `$effect` cleanup function calls `renderer.destroy()` which runs `app.destroy(true, { children: true, texture: true })` to free all GPU resources.
+**Files changed:**
+- `dashboard/package.json` — added `pixi.js: ^8.15.0` to dependencies
+- `dashboard/src/lib/renderer.js` (new) — Pixi.js v8 rendering engine with field heatmap, food dots, agent sprites with lerp interpolation, trail effect, and glow
+- `dashboard/src/lib/AgentCanvas.svelte` — rewrote to use renderer.js, added trail toggle button, moved disconnected overlay to CSS
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (no new Python tests — frontend task). `npm run build` succeeds (852 modules, 1.37s). Pixi.js v8 tree-shakes to ~294KB gzipped main bundle + ~37KB WebGPU renderer chunk + ~63KB WebGL renderer chunk.
+

@@ -243,7 +243,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-007: Pixi.js Agent Renderer
-[ ] **Task:** Render agents as colored circles with smooth interpolation.
+[x] **Task:** Render agents as colored circles with smooth interpolation.
 
 **Why (ELI5):** Show the little creatures moving around on screen as colored dots. Each color = different team/role.
 

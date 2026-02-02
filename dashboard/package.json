@@ -9,7 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "msgpack-lite": "^0.1.26"
+    "msgpack-lite": "^0.1.26",
+    "pixi.js": "^8.15.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
