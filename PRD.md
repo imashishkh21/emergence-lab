@@ -114,7 +114,7 @@ ls checkpoints/  # Should show 5 checkpoints
 
 ---
 
-### US-005: Proper Resume Logic [ ]
+### US-005: Proper Resume Logic [x]
 
 **Task:** Fix resume to restore full training state.
 

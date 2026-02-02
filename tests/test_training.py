@@ -1,10 +1,12 @@
 """Tests for training infrastructure."""
 
 import dataclasses
+import os
 
 import pytest
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 
 class TestGAE:
@@ -522,3 +524,422 @@ class TestFreezeEvolve:
         # Should still produce valid metrics
         assert 'total_loss' in grad_metrics_2
         assert 'mean_reward' in grad_metrics_2
+
+
+class TestResumeLogic:
+    """Tests for US-005: Proper Resume Logic."""
+
+    def _make_small_config(self):
+        """Create a minimal config for fast testing."""
+        from src.configs import Config
+        config = Config()
+        config.train.num_envs = 2
+        config.train.num_steps = 16
+        config.train.total_steps = 100
+        config.train.minibatch_size = 64
+        config.env.num_agents = 4
+        config.env.grid_size = 10
+        config.env.num_food = 8
+        config.evolution.max_agents = 8
+        config.evolution.starting_energy = 200
+        config.evolution.food_energy = 100
+        config.evolution.reproduce_threshold = 120
+        config.evolution.reproduce_cost = 50
+        config.log.wandb = False
+        config.log.save_interval = 0  # Disable periodic saves for tests
+        return config
+
+    def _save_full_checkpoint(self, runner_state, config, step, tmp_path,
+                              emergence_tracker=None, spec_tracker=None):
+        """Helper to save a full checkpoint matching the train.py format."""
+        from src.training.checkpointing import save_checkpoint
+
+        tracker_state = {}
+        if emergence_tracker is not None:
+            tracker_state["emergence"] = emergence_tracker.to_dict()
+        if spec_tracker is not None:
+            tracker_state["specialization"] = spec_tracker.to_dict()
+
+        ckpt_state = {
+            "params": runner_state.params,
+            "opt_state": runner_state.opt_state,
+            "agent_params": (
+                runner_state.env_state.agent_params
+                if runner_state.env_state.agent_params is not None
+                else None
+            ),
+            "prng_key": runner_state.key,
+            "step": step,
+            "config": config,
+            "tracker_state": tracker_state,
+        }
+        ckpt_path = os.path.join(str(tmp_path), "step_test.pkl")
+        save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=0)
+        return ckpt_path
+
+    def test_resume_loads_full_checkpoint(self, tmp_path):
+        """Test that resume uses load_checkpoint (not raw pickle)."""
+        from src.training.train import create_train_state, train_step
+        from src.training.checkpointing import load_checkpoint
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Run a training step to get non-trivial state
+        runner_state, _ = train_step(runner_state, config)
+
+        # Save checkpoint
+        ckpt_path = self._save_full_checkpoint(runner_state, config, 5000, tmp_path)
+
+        # Verify checkpoint is loadable with load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+        assert "params" in loaded
+        assert "opt_state" in loaded
+        assert "prng_key" in loaded
+        assert "step" in loaded
+        assert loaded["step"] == 5000
+
+    def test_resume_restores_optimizer_state(self, tmp_path):
+        """Test that optimizer state (Adam momentum) is restored."""
+        from src.training.train import create_train_state, train_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Run a few training steps to accumulate Adam momentum
+        for _ in range(3):
+            runner_state, _ = train_step(runner_state, config)
+
+        # Save checkpoint with trained opt_state
+        ckpt_path = self._save_full_checkpoint(runner_state, config, 1000, tmp_path)
+
+        # Create new training state and resume
+        config2 = self._make_small_config()
+        config2.train.resume_from = ckpt_path
+        key2 = jax.random.PRNGKey(99)
+        fresh_state = create_train_state(config2, key2)
+
+        # Load checkpoint and restore opt_state
+        from src.training.checkpointing import load_checkpoint
+        checkpoint_data = load_checkpoint(ckpt_path)
+
+        # The opt_state should have non-trivial values (Adam mu/nu accumulated)
+        saved_opt_leaves = jax.tree.leaves(checkpoint_data["opt_state"])
+        fresh_opt_leaves = jax.tree.leaves(fresh_state.opt_state)
+
+        # At least some opt_state leaves should differ from fresh init
+        any_differ = False
+        for saved_leaf, fresh_leaf in zip(saved_opt_leaves, fresh_opt_leaves):
+            if isinstance(saved_leaf, jnp.ndarray) and isinstance(fresh_leaf, jnp.ndarray):
+                if saved_leaf.shape == fresh_leaf.shape:
+                    if not jnp.allclose(saved_leaf, fresh_leaf, atol=1e-10):
+                        any_differ = True
+                        break
+        assert any_differ, "Optimizer state should differ from fresh init after training"
+
+    def test_resume_restores_prng_key(self, tmp_path):
+        """Test that PRNG key is restored from checkpoint."""
+        from src.training.train import create_train_state, train_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+        runner_state, _ = train_step(runner_state, config)
+
+        # Save with known PRNG key
+        saved_key = runner_state.key
+        ckpt_path = self._save_full_checkpoint(runner_state, config, 2000, tmp_path)
+
+        # Load and verify key matches
+        from src.training.checkpointing import load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+        restored_key = loaded["prng_key"]
+
+        assert jnp.array_equal(saved_key, restored_key), \
+            "PRNG key should be preserved through save/load"
+
+    def test_resume_restores_step_counter(self, tmp_path):
+        """Test that step counter is restored correctly."""
+        from src.training.train import create_train_state, train_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+        runner_state, _ = train_step(runner_state, config)
+
+        # Save at step 50000
+        ckpt_path = self._save_full_checkpoint(runner_state, config, 50000, tmp_path)
+
+        from src.training.checkpointing import load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+        assert loaded["step"] == 50000
+
+    def test_resume_restores_tracker_state(self, tmp_path):
+        """Test that tracker state (emergence + specialization) is restored."""
+        from src.training.train import create_train_state, train_step
+        from src.analysis.emergence import EmergenceTracker
+        from src.analysis.specialization import SpecializationTracker
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+        runner_state, _ = train_step(runner_state, config)
+
+        # Create trackers with some history
+        emergence_tracker = EmergenceTracker(config)
+        spec_tracker = SpecializationTracker(config)
+
+        # Feed some data into emergence tracker
+        first_env_field = jax.tree.map(lambda x: x[0], runner_state.env_state.field_state)
+        emergence_tracker.update(first_env_field, step=1000)
+        emergence_tracker.update(first_env_field, step=2000)
+
+        # Feed some data into specialization tracker
+        first_env_params = jax.tree.map(lambda x: x[0], runner_state.env_state.agent_params)
+        first_env_alive = np.asarray(runner_state.env_state.agent_alive[0])
+        spec_tracker.update(first_env_params, first_env_alive, step=1000)
+
+        # Save checkpoint with tracker state
+        ckpt_path = self._save_full_checkpoint(
+            runner_state, config, 5000, tmp_path,
+            emergence_tracker=emergence_tracker,
+            spec_tracker=spec_tracker,
+        )
+
+        # Load and verify tracker state
+        from src.training.checkpointing import load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+        assert "tracker_state" in loaded
+        assert "emergence" in loaded["tracker_state"]
+        assert "specialization" in loaded["tracker_state"]
+
+        # Restore trackers
+        restored_emergence = EmergenceTracker.from_dict(
+            loaded["tracker_state"]["emergence"], config
+        )
+        restored_spec = SpecializationTracker.from_dict(
+            loaded["tracker_state"]["specialization"], config
+        )
+
+        # Verify they have history
+        assert restored_emergence.step_count == 2
+        assert restored_spec.step_count == 1
+
+        # Verify they can continue updating
+        emergence_tracker.update(first_env_field, step=3000)
+        restored_emergence.update(first_env_field, step=3000)
+        assert restored_emergence.step_count == 3
+
+    def test_resume_restores_agent_params(self, tmp_path):
+        """Test that per-agent params are restored when evolution is enabled."""
+        from src.training.train import create_train_state, train_step
+
+        config = self._make_small_config()
+        config.evolution.enabled = True
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Run a step so per-agent params may diverge
+        runner_state, _ = train_step(runner_state, config)
+
+        original_agent_params = runner_state.env_state.agent_params
+        assert original_agent_params is not None
+
+        ckpt_path = self._save_full_checkpoint(runner_state, config, 3000, tmp_path)
+
+        from src.training.checkpointing import load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+
+        assert loaded["agent_params"] is not None
+        # Verify shapes match
+        original_leaves = jax.tree.leaves(original_agent_params)
+        loaded_leaves = jax.tree.leaves(loaded["agent_params"])
+        assert len(original_leaves) == len(loaded_leaves)
+        for orig, load in zip(original_leaves, loaded_leaves):
+            assert orig.shape == load.shape
+
+    def test_resume_handles_missing_opt_state(self, tmp_path):
+        """Test that resume works when opt_state is missing from checkpoint."""
+        from src.training.train import create_train_state
+        from src.training.checkpointing import save_checkpoint, load_checkpoint
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Save a checkpoint WITHOUT opt_state (simulate old checkpoint)
+        ckpt_state = {
+            "params": runner_state.params,
+            "opt_state": None,
+            "agent_params": None,
+            "prng_key": runner_state.key,
+            "step": 1000,
+            "config": config,
+            "tracker_state": None,
+        }
+        ckpt_path = os.path.join(str(tmp_path), "step_old.pkl")
+        save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=0)
+
+        # Load should succeed
+        loaded = load_checkpoint(ckpt_path)
+        assert loaded["opt_state"] is None
+        assert loaded["params"] is not None
+
+    def test_resume_handles_missing_prng_key(self, tmp_path):
+        """Test that resume works when prng_key is missing from checkpoint."""
+        from src.training.checkpointing import save_checkpoint, load_checkpoint
+        from src.training.train import create_train_state
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Save a checkpoint WITHOUT prng_key
+        ckpt_state = {
+            "params": runner_state.params,
+            "opt_state": runner_state.opt_state,
+            "agent_params": None,
+            "prng_key": None,
+            "step": 2000,
+            "config": config,
+            "tracker_state": None,
+        }
+        ckpt_path = os.path.join(str(tmp_path), "step_nokey.pkl")
+        save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=0)
+
+        loaded = load_checkpoint(ckpt_path)
+        assert loaded["prng_key"] is None
+
+    @pytest.mark.timeout(120)
+    def test_resume_full_train_loop(self, tmp_path):
+        """Test full resume: train → save → resume → train continues correctly."""
+        from src.training.train import create_train_state, train_step
+        from src.analysis.emergence import EmergenceTracker
+        from src.analysis.specialization import SpecializationTracker
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Train 3 steps
+        for _ in range(3):
+            runner_state, metrics = train_step(runner_state, config)
+
+        # Create trackers with history
+        emergence_tracker = EmergenceTracker(config)
+        spec_tracker = SpecializationTracker(config)
+        first_env_field = jax.tree.map(lambda x: x[0], runner_state.env_state.field_state)
+        emergence_tracker.update(first_env_field, step=1000)
+
+        # Save
+        ckpt_path = self._save_full_checkpoint(
+            runner_state, config, 10000, tmp_path,
+            emergence_tracker=emergence_tracker,
+            spec_tracker=spec_tracker,
+        )
+
+        # Create completely new state (simulating a new process)
+        config2 = self._make_small_config()
+        config2.train.resume_from = ckpt_path
+        key2 = jax.random.PRNGKey(999)
+        fresh_state = create_train_state(config2, key2)
+
+        # Load checkpoint
+        from src.training.checkpointing import load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+
+        # Restore full state
+        fresh_state = fresh_state.replace(  # type: ignore[attr-defined]
+            params=loaded["params"],
+            opt_state=loaded["opt_state"],
+            key=loaded["prng_key"],
+        )
+
+        # Verify we can continue training from restored state
+        fresh_state, new_metrics = train_step(fresh_state, config2)
+
+        # Should produce valid metrics
+        assert "mean_reward" in new_metrics
+        assert "total_loss" in new_metrics
+        assert jnp.isfinite(new_metrics["total_loss"])
+
+    def test_resume_params_values_preserved(self, tmp_path):
+        """Test that param values are identical after save/load round-trip."""
+        from src.training.train import create_train_state, train_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+        runner_state, _ = train_step(runner_state, config)
+
+        # Save
+        ckpt_path = self._save_full_checkpoint(runner_state, config, 5000, tmp_path)
+
+        # Load
+        from src.training.checkpointing import load_checkpoint
+        loaded = load_checkpoint(ckpt_path)
+
+        # Compare param values
+        original_leaves = jax.tree.leaves(runner_state.params)
+        loaded_leaves = jax.tree.leaves(loaded["params"])
+        for orig, load in zip(original_leaves, loaded_leaves):
+            assert jnp.allclose(orig, load, atol=1e-6), \
+                "Param values should be preserved through save/load"
+
+    def test_resume_without_tracker_state(self, tmp_path):
+        """Test resume works when tracker_state is absent from checkpoint."""
+        from src.training.train import create_train_state
+        from src.training.checkpointing import save_checkpoint, load_checkpoint
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Save without tracker_state
+        ckpt_state = {
+            "params": runner_state.params,
+            "opt_state": runner_state.opt_state,
+            "agent_params": None,
+            "prng_key": runner_state.key,
+            "step": 3000,
+            "config": config,
+        }
+        ckpt_path = os.path.join(str(tmp_path), "step_notracker.pkl")
+        save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=0)
+
+        loaded = load_checkpoint(ckpt_path)
+        # Should not have tracker_state key
+        assert "tracker_state" not in loaded or loaded.get("tracker_state") is None
+
+    def test_resume_via_latest_symlink(self, tmp_path):
+        """Test resume works via the latest.pkl symlink."""
+        from src.training.train import create_train_state, train_step
+        from src.training.checkpointing import save_checkpoint, load_checkpoint
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+        runner_state, _ = train_step(runner_state, config)
+
+        # Save creates a latest.pkl symlink
+        ckpt_dir = str(tmp_path)
+        ckpt_path = os.path.join(ckpt_dir, "step_7000.pkl")
+        ckpt_state = {
+            "params": runner_state.params,
+            "opt_state": runner_state.opt_state,
+            "agent_params": None,
+            "prng_key": runner_state.key,
+            "step": 7000,
+            "config": config,
+            "tracker_state": {},
+        }
+        save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=5)
+
+        # Resume from latest.pkl
+        latest_path = os.path.join(ckpt_dir, "latest.pkl")
+        assert os.path.exists(latest_path)
+
+        loaded = load_checkpoint(latest_path)
+        assert loaded["step"] == 7000

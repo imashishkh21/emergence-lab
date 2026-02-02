@@ -1,7 +1,6 @@
 """Training step and loop for PPO with shared field dynamics."""
 
 import os
-import pickle
 import sys
 import threading
 import time
@@ -20,7 +19,7 @@ from src.analysis.specialization import SpecializationTracker
 from src.configs import Config, TrainingMode
 from src.environment.obs import get_observations, obs_dim
 from src.environment.vec_env import VecEnv
-from src.training.checkpointing import save_checkpoint
+from src.training.checkpointing import load_checkpoint, save_checkpoint
 from src.training.gae import compute_gae
 from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
@@ -609,27 +608,63 @@ def train(config: Config) -> RunnerState:
     print("Training state initialized.")
 
     # Resume from checkpoint if specified
+    resumed_step = 0
+    resumed_tracker_state: dict[str, Any] | None = None
     if config.train.resume_from is not None:
         print(f"Loading checkpoint from {config.train.resume_from}...")
-        with open(config.train.resume_from, "rb") as f:
-            checkpoint_data = pickle.load(f)
+        checkpoint_data = load_checkpoint(config.train.resume_from)
 
-        if isinstance(checkpoint_data, dict) and "agent_params" in checkpoint_data:
-            loaded_params = checkpoint_data["params"]
+        # Restore shared params
+        loaded_params = checkpoint_data["params"]
+
+        # Restore optimizer state if available, otherwise reinitialize
+        if "opt_state" in checkpoint_data and checkpoint_data["opt_state"] is not None:
+            loaded_opt_state = checkpoint_data["opt_state"]
+            print("  Optimizer state restored (Adam momentum continues)")
         else:
-            loaded_params = checkpoint_data
-
-        # Replace shared params and reinitialize optimizer
-        runner_state = runner_state.replace(  # type: ignore[attr-defined]
-            params=loaded_params,
-            opt_state=optax.chain(
+            loaded_opt_state = optax.chain(
                 optax.clip_by_global_norm(config.train.max_grad_norm),
                 optax.adam(config.train.learning_rate, eps=1e-5),
-            ).init(loaded_params),
+            ).init(loaded_params)
+            print("  Optimizer state reinitialized (not found in checkpoint)")
+
+        # Restore PRNG key if available
+        if "prng_key" in checkpoint_data and checkpoint_data["prng_key"] is not None:
+            loaded_key = checkpoint_data["prng_key"]
+            print("  PRNG key restored")
+        else:
+            loaded_key = runner_state.key
+            print("  PRNG key not found in checkpoint, using fresh key")
+
+        # Restore step counter
+        if "step" in checkpoint_data and checkpoint_data["step"] is not None:
+            resumed_step = int(checkpoint_data["step"])
+            print(f"  Step counter restored: {resumed_step}")
+        else:
+            print("  Step counter not found in checkpoint, starting from 0")
+
+        # Replace params, opt_state, and key in runner state
+        runner_state = runner_state.replace(  # type: ignore[attr-defined]
+            params=loaded_params,
+            opt_state=loaded_opt_state,
+            key=loaded_key,
         )
 
-        # If evolution is enabled, replicate loaded params to per-agent params
-        if config.evolution.enabled:
+        # Restore per-agent params if available
+        if (
+            config.evolution.enabled
+            and "agent_params" in checkpoint_data
+            and checkpoint_data["agent_params"] is not None
+        ):
+            env_state = runner_state.env_state.replace(  # type: ignore[attr-defined]
+                agent_params=checkpoint_data["agent_params"],
+            )
+            runner_state = runner_state.replace(  # type: ignore[attr-defined]
+                env_state=env_state,
+            )
+            print("  Per-agent params restored")
+        elif config.evolution.enabled:
+            # No per-agent params in checkpoint — replicate shared params
             max_agents = config.evolution.max_agents
             num_envs = config.train.num_envs
             per_agent_params = jax.tree.map(
@@ -644,8 +679,14 @@ def train(config: Config) -> RunnerState:
             runner_state = runner_state.replace(  # type: ignore[attr-defined]
                 env_state=env_state,
             )
+            print("  Per-agent params replicated from shared (not found in checkpoint)")
 
-        # Recompute observations with new params
+        # Restore tracker state (used after tracker initialization below)
+        if "tracker_state" in checkpoint_data and checkpoint_data["tracker_state"] is not None:
+            resumed_tracker_state = checkpoint_data["tracker_state"]
+            print("  Tracker state found in checkpoint")
+
+        # Recompute observations with restored params
         last_obs = jax.vmap(lambda s: get_observations(s, config))(
             runner_state.env_state
         )
@@ -654,11 +695,26 @@ def train(config: Config) -> RunnerState:
         )
         print("Checkpoint loaded.")
 
-    # Initialize emergence tracker
-    emergence_tracker = EmergenceTracker(config)
+    # Initialize trackers (or restore from checkpoint)
+    if resumed_tracker_state is not None and "emergence" in resumed_tracker_state:
+        emergence_tracker = EmergenceTracker.from_dict(
+            resumed_tracker_state["emergence"], config
+        )
+        print("  Emergence tracker restored from checkpoint")
+    else:
+        emergence_tracker = EmergenceTracker(config)
 
-    # Initialize specialization tracker
-    specialization_tracker = SpecializationTracker(config)
+    if (
+        resumed_tracker_state is not None
+        and "specialization" in resumed_tracker_state
+        and config.evolution.enabled
+    ):
+        specialization_tracker = SpecializationTracker.from_dict(
+            resumed_tracker_state["specialization"], config
+        )
+        print("  Specialization tracker restored from checkpoint")
+    else:
+        specialization_tracker = SpecializationTracker(config)
 
     # JIT-compile train_step and evolve_step with config captured in closure
     training_mode = config.train.training_mode
@@ -705,7 +761,7 @@ def train(config: Config) -> RunnerState:
     print(f"JIT compilation done ({jit_time:.1f}s)")
     print()
 
-    total_env_steps = steps_per_iter  # Already did one iteration
+    total_env_steps = resumed_step + steps_per_iter  # Account for resumed step + warmup iteration
 
     # Freeze-evolve phase tracking
     if training_mode == TrainingMode.FREEZE_EVOLVE:

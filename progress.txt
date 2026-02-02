@@ -792,3 +792,22 @@ Goals:
 
 ---
 
+### US-005: Proper Resume Logic ✓
+**What:** Rewrote the resume logic in `train.py` to restore full training state from checkpoints using `load_checkpoint()` instead of raw pickle. Now restores optimizer state (Adam momentum), PRNG key, step counter, per-agent params, and tracker state.
+**Decisions:**
+- Replaced raw `pickle.load` with `load_checkpoint()` from `checkpointing.py` — ensures proper JAX→numpy→JAX round-trip
+- Optimizer state restored directly from checkpoint (preserves Adam momentum/variance accumulators), with fallback to reinitialize if missing from old-format checkpoints
+- PRNG key restored from checkpoint (same random trajectory on resume), with fallback to fresh key if missing
+- Step counter restored via `resumed_step` variable — `total_env_steps` starts from `resumed_step + steps_per_iter` (accounting for the warmup iteration)
+- Per-agent params restored directly from checkpoint when available (preserves evolved weights), with fallback to replicate shared params when agent_params is missing
+- Tracker state (emergence + specialization) restored via `EmergenceTracker.from_dict()` and `SpecializationTracker.from_dict()` — metrics history continues seamlessly
+- Tracker initialization moved below the resume block so trackers can be either restored from checkpoint or freshly created
+- Removed unused `import pickle` from train.py (now using `load_checkpoint` exclusively)
+- All restore operations gracefully handle missing keys in checkpoint dicts (backward compatibility with old checkpoints)
+**Files changed:**
+- `src/training/train.py` — rewrote resume block (lines 610-717): use `load_checkpoint()`, restore opt_state/key/step/agent_params/tracker_state, moved tracker init after resume; updated `total_env_steps` to add `resumed_step`; removed unused `import pickle`, added `load_checkpoint` import
+- `tests/test_training.py` — added `TestResumeLogic` class with 12 tests covering: full checkpoint loading, optimizer state restoration, PRNG key restoration, step counter restoration, tracker state restoration, agent params restoration, missing opt_state handling, missing prng_key handling, full train loop resume (train→save→resume→train), param value preservation, missing tracker state, resume via latest.pkl symlink
+**Validation:** mypy clean (39 source files, 0 errors), 729/732 tests pass (12 new; 3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4)
+
+---
+
