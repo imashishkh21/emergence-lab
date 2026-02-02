@@ -709,3 +709,14 @@ Goals:
 ---
 
 COMPLETE: All Phase 4 tasks finished.
+
+=================================================================================
+PHASE 4B: Kaggle Infrastructure
+=================================================================================
+Started: Mon Feb  2 22:52:34 IST 2026
+
+Goals:
+- Wire training to dashboard (real data, not mock)
+- Fix checkpointing (save full state: optimizer, PRNG, step, trackers)
+- Kaggle CLI automation (Titan can run training 24/7)
+
