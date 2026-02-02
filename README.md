@@ -122,20 +122,43 @@ cd dashboard && npm run dev
 | `freeze_evolve.evolve_steps` | 1000 | Steps of pure evolution per cycle |
 | `freeze_evolve.evolve_mutation_boost` | 5.0 | Mutation multiplier during evolve phases |
 
-## Kaggle Training
+## Phase 4B: Kaggle Infrastructure
+
+Phase 4B adds **reliable checkpointing** and **Kaggle automation** for autonomous 24/7 training:
+
+### Checkpointing
+
+Full training state is saved periodically and on interruption:
+
+- **Periodic saves** every `save_interval` steps (default 100k) — last 5 checkpoints kept, older rotated out
+- **Emergency saves** on SIGTERM/SIGINT/atexit — named `emergency_step_{N}.pkl`, never trigger rotation
+- **Atomic writes** — writes to `.tmp` then renames to prevent corruption on crash
+- **Cross-platform** — all JAX arrays converted to numpy before pickling (GPU checkpoints load on CPU)
+- **Full state** — params, optimizer state (Adam momentum), PRNG key, step counter, per-agent weights, tracker history
+
+### Resume
+
+Resume continues training with identical state:
+
+```bash
+# Resume from specific checkpoint
+python -m src.training.train --train.resume-from checkpoints/step_500000.pkl
+
+# Resume from latest (symlink)
+python -m src.training.train --train.resume-from checkpoints/latest.pkl
+
+# Train with periodic checkpoints
+python -m src.training.train --train.total-steps 1000000 --log.save-interval 100000
+```
+
+### Kaggle Training
 
 Run autonomous 24/7 training on Kaggle GPUs with automatic checkpointing and resume.
-
-### Setup
 
 ```bash
 # One-time setup: install Kaggle CLI and create kernel metadata
 ./scripts/kaggle_setup.sh --username YOUR_KAGGLE_USERNAME
-```
 
-### Workflow
-
-```bash
 # Push notebook to Kaggle
 ./scripts/kaggle_push.sh
 
@@ -152,12 +175,13 @@ Run autonomous 24/7 training on Kaggle GPUs with automatic checkpointing and res
 python -m src.training.train --train.resume-from kaggle_output/checkpoints/latest.pkl
 ```
 
-### How It Works
+The Kaggle notebook (`notebooks/kaggle_training.ipynb`) handles:
+1. JAX+CUDA installation and GPU verification
+2. Repo clone and dependency setup
+3. Auto-resume from latest checkpoint if one exists
+4. Graceful shutdown with emergency checkpoint on session timeout
 
-1. The Kaggle notebook (`notebooks/kaggle_training.ipynb`) installs JAX with CUDA, clones the repo, and runs training
-2. Checkpoints are saved every 100k steps (last 5 kept) with full state: optimizer, PRNG, step counter, tracker history
-3. Signal handlers save emergency checkpoints on SIGTERM/SIGINT (Kaggle session timeouts)
-4. Re-running the notebook auto-detects the latest checkpoint and resumes seamlessly
+See [docs/kaggle-workflow.md](docs/kaggle-workflow.md) for the full step-by-step guide.
 
 ### Kaggle Budget
 
@@ -246,6 +270,7 @@ emergence-lab/
 │   │   └── reproduction.py     # Weight mutation (uniform + per-layer rates)
 │   ├── training/
 │   │   ├── train.py            # Training loop + train_step + evolve_step (freeze-evolve)
+│   │   ├── checkpointing.py    # Full-state save/load with rotation and atomic writes
 │   │   ├── rollout.py          # Trajectory collection via lax.scan
 │   │   ├── gae.py              # Generalized Advantage Estimation
 │   │   └── ppo.py              # PPO clipped surrogate loss
@@ -301,7 +326,11 @@ emergence-lab/
 │   ├── kaggle_run.sh           # Start Kaggle execution
 │   ├── kaggle_status.sh        # Check kernel status
 │   └── kaggle_download.sh      # Download results/checkpoints
-└── tests/                      # 656+ tests across all modules
+├── notebooks/
+│   └── kaggle_training.ipynb   # Ready-to-use Kaggle training notebook
+├── docs/
+│   └── kaggle-workflow.md      # Step-by-step Kaggle training guide
+└── tests/                      # 730+ tests across all modules
 ```
 
 ## Expected Results

@@ -867,3 +867,19 @@ Goals:
 
 ---
 
+### US-009: Documentation and Final Review ✓
+**What:** Created comprehensive Kaggle workflow documentation, verified full integration of all Phase 4B components (checkpointing, resume, signal handlers, trackers), and updated README with Phase 4B section.
+**Decisions:**
+- Created `docs/kaggle-workflow.md` with step-by-step guide covering: prerequisites, quick start, detailed setup (API credentials, kernel metadata, training params), running training (first run, resuming, downloading), checkpointing system details (periodic saves, emergency saves, what's saved, resume guarantees), Kaggle resource budget, troubleshooting, and script reference
+- Ran full integration verification: create_train_state → train_step → save_checkpoint → load_checkpoint → restore trackers → continue training. All checks pass — params, optimizer state, PRNG key, step counter, and tracker history survive round-trip
+- Updated README.md with Phase 4B section: checkpointing overview, resume commands, Kaggle training workflow, link to docs/kaggle-workflow.md, updated project structure (added checkpointing.py, notebooks/, docs/), updated test count (730+)
+- All 9 PRD stories marked [x]
+**Files changed:**
+- `docs/kaggle-workflow.md` (new) — comprehensive step-by-step Kaggle training guide
+- `README.md` — replaced "Kaggle Training" section with expanded "Phase 4B: Kaggle Infrastructure" section; added checkpointing.py to project structure; added notebooks/ and docs/ to structure; updated test count
+- `PRD.md` — marked US-009 as complete [x]
+**Validation:** mypy clean (39 source files, 0 errors), 729/732 tests pass (3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4)
+
+---
+
+COMPLETE: All Phase 4B tasks finished.
