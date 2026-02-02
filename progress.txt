@@ -344,3 +344,26 @@ Goals:
 - `tests/test_agent.py` — added `TestAgentEmbedding` class with 10 tests covering: output shapes with embedding, embedding param creation, no embedding when disabled, different agents produce different outputs, backward compat without embedding, agent-specific with embedding, JIT compatibility, vmap over agents, gradient flow through embedding table, config field
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 28/28 test_agent.py tests pass (10 new)
 
+---
+
+### US-003: Freeze-Evolve Training Mode ✓
+**What:** Implemented alternating freeze-gradient and evolve-only training phases. Added `TrainingMode` enum (GRADIENT, EVOLVE, FREEZE_EVOLVE), `FreezeEvolveConfig` dataclass, and `evolve_step()` function to the training pipeline.
+**Decisions:**
+- Added `TrainingMode` enum with three modes: GRADIENT (default PPO), EVOLVE (pure evolution, no gradient updates), and FREEZE_EVOLVE (alternating cycles)
+- `FreezeEvolveConfig` has three parameters: `gradient_steps` (default 10000), `evolve_steps` (default 1000), `evolve_mutation_boost` (default 5.0x multiplier on mutation_std during evolve phases)
+- `evolve_step()` collects a rollout (agents still act using frozen shared policy) but skips all gradient computation — GAE, PPO loss, optimizer updates, and param syncing are all skipped
+- During evolve phases, per-agent params diverge freely via reproduction + mutation in `env.step()`, with no shared-param sync overwriting them
+- Mutation boost during evolve: a separate `evolve_config` is created using `dataclasses.replace()` with boosted `evolution.mutation_std`, and JIT-compiled separately. This keeps both configs static at JIT time (no traced values)
+- Phase switching tracked in Python loop (not inside JIT): `phase_step_counter` tracks steps in current phase, switches when threshold exceeded
+- Phase transitions logged to tqdm output and recorded for summary
+- `evolve_step` returns zero placeholders for gradient metrics (total_loss, policy_loss, entropy, clip_fraction) so logging code doesn't break
+- NaN/Inf check only runs during gradient phases (evolve always has zero loss)
+- W&B logging includes `freeze_evolve/phase` metric (1.0=gradient, 0.0=evolve) for visualizing phase cycles
+- `training_mode` field added to `TrainConfig` with default GRADIENT for full backward compatibility
+- `freeze_evolve` field added to master `Config` with `from_yaml()` support
+**Files changed:**
+- `src/configs.py` — added `TrainingMode` enum, `FreezeEvolveConfig` dataclass, `training_mode` field to `TrainConfig`, `freeze_evolve` field to `Config`, updated `from_yaml()`
+- `src/training/train.py` — added `evolve_step()` function, imported `TrainingMode`, updated training banner, modified JIT compilation to handle evolve step with boosted mutation config, added phase switching logic in training loop, added phase-aware logging and NaN checking, added freeze-evolve summary printing
+- `tests/test_training.py` — added `TestFreezeEvolve` class with 13 tests covering: TrainingMode enum values, FreezeEvolveConfig defaults, Config integration, training mode configurability, evolve_step execution and metric keys, evolve_step no shared param change, evolve_step JIT compatibility, gradient mode train_step, mutation boost calculation, modified config creation, phase switching logic simulation, population metrics from evolve_step, full gradient→evolve→gradient cycle
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 357/357 tests pass (13 new)
+

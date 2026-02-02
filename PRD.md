@@ -151,7 +151,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-003: Freeze-Evolve Training Mode
-[ ] **Task:** Implement alternating freeze-gradient and evolve-only phases.
+[x] **Task:** Implement alternating freeze-gradient and evolve-only phases.
 
 **Why (ELI5):** Sometimes we practice (training), sometimes we just play games and see who wins (evolution). Alternating helps agents develop their own styles instead of all copying the same strategy.
 

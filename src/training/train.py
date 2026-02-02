@@ -16,7 +16,7 @@ from src.agents.network import ActorCritic
 from src.agents.policy import sample_actions
 from src.analysis.emergence import EmergenceTracker
 from src.analysis.specialization import SpecializationTracker
-from src.configs import Config
+from src.configs import Config, TrainingMode
 from src.environment.obs import get_observations, obs_dim
 from src.environment.vec_env import VecEnv
 from src.training.gae import compute_gae
@@ -440,6 +440,80 @@ def train_step(
     return new_runner_state, metrics
 
 
+def evolve_step(
+    runner_state: RunnerState,
+    config: Config,
+) -> tuple[RunnerState, dict[str, Any]]:
+    """Execute one evolution-only iteration (no gradient updates).
+
+    Collects a rollout (agents act using frozen policy, environment
+    handles reproduction/mutation/death), but does NOT compute losses
+    or update shared parameters. Only per-agent params change via
+    reproduction and mutation in the environment step.
+
+    Args:
+        runner_state: Current training state.
+        config: Master configuration.
+
+    Returns:
+        (new_runner_state, metrics) with rollout-level metrics only.
+    """
+    vec_env = VecEnv(config)
+    num_actions = 6
+    network = ActorCritic(
+        hidden_dims=tuple(config.agent.hidden_dims),
+        num_actions=num_actions,
+    )
+
+    # Collect rollout (agents act, environment evolves)
+    runner_state, batch = collect_rollout(runner_state, network, vec_env, config)
+
+    # Compute rollout-level metrics (no loss/gradient metrics)
+    alive_mask = batch['alive_mask']
+    alive_f = alive_mask.astype(jnp.float32)
+    alive_count = jnp.maximum(jnp.sum(alive_f), 1.0)
+
+    metrics: dict[str, Any] = {}
+    metrics['mean_reward'] = jnp.sum(batch['rewards'] * alive_f) / alive_count
+    metrics['mean_value'] = jnp.sum(batch['values'] * alive_f) / alive_count
+
+    # Population metrics
+    pop_per_step = jnp.sum(alive_f, axis=-1)
+    metrics['population_size'] = jnp.mean(pop_per_step)
+    metrics['births_this_step'] = jnp.sum(batch['births_this_step'])
+    metrics['deaths_this_step'] = jnp.sum(batch['deaths_this_step'])
+
+    # Energy stats
+    final_env = runner_state.env_state
+    final_alive = final_env.agent_alive
+    final_alive_f = final_alive.astype(jnp.float32)
+    final_energy = final_env.agent_energy
+    final_alive_count = jnp.maximum(jnp.sum(final_alive_f), 1.0)
+    metrics['mean_energy'] = jnp.sum(final_energy * final_alive_f) / final_alive_count
+    metrics['max_energy'] = jnp.max(jnp.where(final_alive, final_energy, -jnp.inf))
+    metrics['min_energy'] = jnp.min(jnp.where(final_alive, final_energy, jnp.inf))
+
+    # Oldest agent age
+    final_step = final_env.step
+    final_birth = final_env.agent_birth_step
+    agent_ages = jnp.where(
+        final_alive,
+        final_step[:, None] - final_birth,
+        jnp.int32(0),
+    )
+    metrics['oldest_agent_age'] = jnp.max(agent_ages)
+
+    # Set zero placeholders for gradient metrics (so logging doesn't break)
+    metrics['total_loss'] = jnp.float32(0.0)
+    metrics['policy_loss'] = jnp.float32(0.0)
+    metrics['value_loss'] = jnp.float32(0.0)
+    metrics['entropy'] = jnp.float32(0.0)
+    metrics['clip_fraction'] = jnp.float32(0.0)
+
+    # No param sync during evolve — per-agent params diverge freely
+    return runner_state, metrics
+
+
 def train(config: Config) -> RunnerState:
     """Main training entry point.
 
@@ -455,12 +529,17 @@ def train(config: Config) -> RunnerState:
     key = jax.random.PRNGKey(config.train.seed)
 
     print("=" * 60)
-    print("Emergence Lab — Phase 2: Evolutionary Pressure")
+    print("Emergence Lab — Phase 4: Research Microscope")
     print("=" * 60)
     print(f"Grid: {config.env.grid_size}x{config.env.grid_size}")
     print(f"Agents: {config.env.num_agents} (max: {config.evolution.max_agents})")
     print(f"Food: {config.env.num_food}")
     print(f"Evolution: {'enabled' if config.evolution.enabled else 'disabled'}")
+    print(f"Training mode: {config.train.training_mode.value}")
+    if config.train.training_mode == TrainingMode.FREEZE_EVOLVE:
+        print(f"  Gradient steps: {config.freeze_evolve.gradient_steps}")
+        print(f"  Evolve steps: {config.freeze_evolve.evolve_steps}")
+        print(f"  Evolve mutation boost: {config.freeze_evolve.evolve_mutation_boost}x")
     if config.specialization.diversity_bonus != 0.0 or config.specialization.niche_pressure != 0.0:
         print(f"Specialization: diversity_bonus={config.specialization.diversity_bonus}, "
               f"niche_pressure={config.specialization.niche_pressure}")
@@ -550,23 +629,65 @@ def train(config: Config) -> RunnerState:
     # Initialize specialization tracker
     specialization_tracker = SpecializationTracker(config)
 
-    # JIT-compile train_step with config captured in closure
+    # JIT-compile train_step and evolve_step with config captured in closure
+    training_mode = config.train.training_mode
+    use_evolve = training_mode in (TrainingMode.EVOLVE, TrainingMode.FREEZE_EVOLVE)
+
     print("JIT compiling train_step...")
 
     @jax.jit
     def jit_train_step(rs: RunnerState) -> tuple[RunnerState, dict[str, Any]]:
         return train_step(rs, config)
 
+    if use_evolve:
+        import dataclasses as _dc
+
+        # Create config with boosted mutation for evolve phases
+        boosted_mutation_std = (
+            config.evolution.mutation_std * config.freeze_evolve.evolve_mutation_boost
+        )
+        evolve_config = _dc.replace(
+            config,
+            evolution=_dc.replace(
+                config.evolution,
+                mutation_std=boosted_mutation_std,
+            ),
+        )
+
+        print(
+            f"JIT compiling evolve_step "
+            f"(mutation_std={boosted_mutation_std:.4f})..."
+        )
+
+        @jax.jit
+        def jit_evolve_step(rs: RunnerState) -> tuple[RunnerState, dict[str, Any]]:
+            return evolve_step(rs, evolve_config)
+
     # Warm up JIT with first iteration
     t0 = time.time()
-    runner_state, metrics = jit_train_step(runner_state)
-    # Block until computation completes
+    if training_mode == TrainingMode.EVOLVE:
+        runner_state, metrics = jit_evolve_step(runner_state)
+    else:
+        runner_state, metrics = jit_train_step(runner_state)
     jax.block_until_ready(metrics)
     jit_time = time.time() - t0
     print(f"JIT compilation done ({jit_time:.1f}s)")
     print()
 
     total_env_steps = steps_per_iter  # Already did one iteration
+
+    # Freeze-evolve phase tracking
+    if training_mode == TrainingMode.FREEZE_EVOLVE:
+        fe_cfg = config.freeze_evolve
+        # Cycle length in env steps
+        cycle_length = fe_cfg.gradient_steps + fe_cfg.evolve_steps
+        current_phase = TrainingMode.GRADIENT  # Start with gradient phase
+        phase_step_counter = steps_per_iter  # Steps in current phase
+        phase_transitions: list[tuple[int, str]] = []  # (step, phase_name)
+        print(f"Freeze-Evolve: starting GRADIENT phase "
+              f"(cycle: {fe_cfg.gradient_steps}G + {fe_cfg.evolve_steps}E)")
+    else:
+        current_phase = training_mode
 
     # Training loop
     pbar = tqdm(
@@ -577,8 +698,38 @@ def train(config: Config) -> RunnerState:
     )
 
     for iteration in pbar:
-        runner_state, metrics = jit_train_step(runner_state)
+        # Determine which step function to use
+        if training_mode == TrainingMode.EVOLVE:
+            runner_state, metrics = jit_evolve_step(runner_state)
+        elif training_mode == TrainingMode.FREEZE_EVOLVE:
+            if current_phase == TrainingMode.GRADIENT:
+                runner_state, metrics = jit_train_step(runner_state)
+            else:
+                runner_state, metrics = jit_evolve_step(runner_state)
+        else:
+            runner_state, metrics = jit_train_step(runner_state)
+
         total_env_steps += steps_per_iter
+
+        # Freeze-evolve phase switching
+        if training_mode == TrainingMode.FREEZE_EVOLVE:
+            phase_step_counter += steps_per_iter
+            if current_phase == TrainingMode.GRADIENT:
+                if phase_step_counter >= fe_cfg.gradient_steps:
+                    current_phase = TrainingMode.EVOLVE
+                    phase_step_counter = 0
+                    phase_transitions.append((total_env_steps, "EVOLVE"))
+                    tqdm.write(
+                        f"FREEZE-EVOLVE: Switching to EVOLVE phase at step {total_env_steps}"
+                    )
+            else:
+                if phase_step_counter >= fe_cfg.evolve_steps:
+                    current_phase = TrainingMode.GRADIENT
+                    phase_step_counter = 0
+                    phase_transitions.append((total_env_steps, "GRADIENT"))
+                    tqdm.write(
+                        f"FREEZE-EVOLVE: Switching to GRADIENT phase at step {total_env_steps}"
+                    )
 
         # Log metrics at intervals
         if total_env_steps % config.log.log_interval < steps_per_iter:
@@ -588,20 +739,33 @@ def train(config: Config) -> RunnerState:
             entropy = float(metrics["entropy"])
             pop = float(metrics["population_size"])
 
-            pbar.set_postfix(
-                reward=f"{reward:.4f}",
-                loss=f"{loss:.4f}",
-                entropy=f"{entropy:.4f}",
-                pop=f"{pop:.1f}",
-                steps=total_env_steps,
-            )
+            postfix: dict[str, Any] = {
+                "reward": f"{reward:.4f}",
+                "loss": f"{loss:.4f}",
+                "entropy": f"{entropy:.4f}",
+                "pop": f"{pop:.1f}",
+                "steps": total_env_steps,
+            }
+            if training_mode == TrainingMode.FREEZE_EVOLVE:
+                phase_label = "G" if current_phase == TrainingMode.GRADIENT else "E"
+                postfix["phase"] = phase_label
+            pbar.set_postfix(**postfix)
 
             # Log to W&B
             if config.log.wandb:
+                if training_mode == TrainingMode.FREEZE_EVOLVE:
+                    metrics["freeze_evolve/phase"] = jnp.float32(
+                        1.0 if current_phase == TrainingMode.GRADIENT else 0.0
+                    )
                 log_metrics(metrics, step=total_env_steps)
 
-            # Check for NaN/Inf
-            if jnp.isnan(loss) or jnp.isinf(loss):
+            # Check for NaN/Inf (only in gradient mode — evolve has zero loss)
+            is_gradient = (
+                training_mode == TrainingMode.GRADIENT
+                or (training_mode == TrainingMode.FREEZE_EVOLVE
+                    and current_phase == TrainingMode.GRADIENT)
+            )
+            if is_gradient and (jnp.isnan(loss) or jnp.isinf(loss)):
                 print(f"\nWARNING: NaN/Inf detected at step {total_env_steps}!")
                 break
 
@@ -673,10 +837,19 @@ def train(config: Config) -> RunnerState:
                 for event_str in spec_summary["events"]:
                     print(f"    {event_str}")
 
+    # Print freeze-evolve phase transition summary
+    if training_mode == TrainingMode.FREEZE_EVOLVE and phase_transitions:
+        print()
+        print("Freeze-Evolve Phase Transitions:")
+        for step_num, phase_name in phase_transitions:
+            print(f"  Step {step_num}: → {phase_name}")
+        print(f"  Total transitions: {len(phase_transitions)}")
+
     print()
     print("=" * 60)
     print("Training complete!")
     print(f"Total env steps: {total_env_steps}")
+    print(f"Training mode: {config.train.training_mode.value}")
     print("Final metrics:")
     for k, v in sorted(metrics.items()):
         print(f"  {k}: {float(v):.6f}")

@@ -2,9 +2,22 @@
 
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from enum import Enum
 from typing import Literal
 
 import yaml
+
+
+class TrainingMode(Enum):
+    """Training mode for the training loop.
+
+    - GRADIENT: Standard PPO gradient training (default).
+    - EVOLVE: Pure evolution — no gradient updates, only reproduction + mutation.
+    - FREEZE_EVOLVE: Alternate between GRADIENT and EVOLVE phases.
+    """
+    GRADIENT = "gradient"
+    EVOLVE = "evolve"
+    FREEZE_EVOLVE = "freeze_evolve"
 
 
 @dataclass
@@ -53,6 +66,11 @@ class TrainConfig:
     num_steps: int = 128
     num_epochs: int = 4
     minibatch_size: int = 256
+
+    # Training mode
+    training_mode: TrainingMode = TrainingMode.GRADIENT
+    """Training mode: GRADIENT (default PPO), EVOLVE (pure evolution),
+    or FREEZE_EVOLVE (alternate between gradient and evolve phases)."""
 
     # Checkpoint resume
     resume_from: str | None = None
@@ -106,6 +124,27 @@ class SpecializationConfig:
 
 
 @dataclass
+class FreezeEvolveConfig:
+    """Configuration for freeze-evolve training cycles.
+
+    During FREEZE_EVOLVE mode, training alternates between:
+    - GRADIENT phase: Normal PPO training for `gradient_steps` steps.
+    - EVOLVE phase: No gradient updates for `evolve_steps` steps;
+      agents still act (using frozen policy), but only reproduction
+      and mutation drive weight changes. Mutation is amplified by
+      `evolve_mutation_boost` during this phase.
+    """
+    gradient_steps: int = 10000
+    """Number of environment steps in each gradient training phase."""
+    evolve_steps: int = 1000
+    """Number of environment steps in each pure evolution phase."""
+    evolve_mutation_boost: float = 5.0
+    """Multiplier applied to evolution.mutation_std during evolve phases.
+    Higher = more aggressive mutation when gradients are frozen.
+    Default 5.0 means if mutation_std=0.01, evolve phase uses 0.05."""
+
+
+@dataclass
 class EvolutionConfig:
     """Evolution and reproduction configuration."""
     enabled: bool = True
@@ -131,6 +170,7 @@ class Config:
     analysis: AnalysisConfig = dataclass_field(default_factory=AnalysisConfig)
     evolution: EvolutionConfig = dataclass_field(default_factory=EvolutionConfig)
     specialization: SpecializationConfig = dataclass_field(default_factory=SpecializationConfig)
+    freeze_evolve: FreezeEvolveConfig = dataclass_field(default_factory=FreezeEvolveConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -151,6 +191,7 @@ class Config:
             analysis=AnalysisConfig(**data.get("analysis", {})),
             evolution=EvolutionConfig(**data.get("evolution", {})),
             specialization=SpecializationConfig(**data.get("specialization", {})),
+            freeze_evolve=FreezeEvolveConfig(**data.get("freeze_evolve", {})),
         )
 
     def to_yaml(self, path: str) -> None:

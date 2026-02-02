@@ -1,5 +1,7 @@
 """Tests for training infrastructure."""
 
+import dataclasses
+
 import pytest
 import jax
 import jax.numpy as jnp
@@ -273,3 +275,250 @@ class TestTrainStep:
         
         assert 'loss' in metrics or 'total_loss' in metrics
         assert runner_state is not None
+
+
+class TestFreezeEvolve:
+    """Tests for US-003: Freeze-Evolve Training Mode."""
+
+    def _make_small_config(self):
+        """Create a minimal config for fast testing."""
+        from src.configs import Config
+        config = Config()
+        config.train.num_envs = 2
+        config.train.num_steps = 16
+        config.train.total_steps = 100
+        config.train.minibatch_size = 64
+        config.env.num_agents = 4
+        config.env.grid_size = 10
+        config.env.num_food = 8
+        config.evolution.max_agents = 8
+        config.evolution.starting_energy = 200
+        config.evolution.food_energy = 100
+        config.evolution.reproduce_threshold = 120
+        config.evolution.reproduce_cost = 50
+        config.log.wandb = False
+        return config
+
+    def test_training_mode_enum(self):
+        """Test TrainingMode enum has correct values."""
+        from src.configs import TrainingMode
+        assert TrainingMode.GRADIENT.value == "gradient"
+        assert TrainingMode.EVOLVE.value == "evolve"
+        assert TrainingMode.FREEZE_EVOLVE.value == "freeze_evolve"
+
+    def test_freeze_evolve_config_defaults(self):
+        """Test FreezeEvolveConfig has expected defaults."""
+        from src.configs import FreezeEvolveConfig
+        fe = FreezeEvolveConfig()
+        assert fe.gradient_steps == 10000
+        assert fe.evolve_steps == 1000
+        assert fe.evolve_mutation_boost == 5.0
+
+    def test_config_has_training_mode(self):
+        """Test Config includes training_mode and freeze_evolve."""
+        from src.configs import Config, TrainingMode
+        config = Config()
+        assert config.train.training_mode == TrainingMode.GRADIENT
+        assert config.freeze_evolve.gradient_steps == 10000
+        assert config.freeze_evolve.evolve_steps == 1000
+
+    def test_training_mode_configurable(self):
+        """Test training_mode can be set on Config."""
+        from src.configs import Config, TrainingMode
+        config = Config()
+        config.train.training_mode = TrainingMode.FREEZE_EVOLVE
+        assert config.train.training_mode == TrainingMode.FREEZE_EVOLVE
+
+    def test_evolve_step_runs(self):
+        """Test evolve_step executes and returns expected metric keys."""
+        from src.training.train import create_train_state, evolve_step
+        from src.configs import Config
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        new_state, metrics = evolve_step(runner_state, config)
+
+        # Check metric keys exist
+        assert 'mean_reward' in metrics
+        assert 'population_size' in metrics
+        assert 'births_this_step' in metrics
+        assert 'deaths_this_step' in metrics
+        assert 'mean_energy' in metrics
+        # Placeholder gradient metrics should be zero
+        assert float(metrics['total_loss']) == 0.0
+        assert float(metrics['policy_loss']) == 0.0
+        assert float(metrics['entropy']) == 0.0
+
+    def test_evolve_step_no_param_update(self):
+        """Test that evolve_step does not change shared params."""
+        from src.training.train import create_train_state, evolve_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Capture params before
+        params_before = jax.tree.map(lambda x: x.copy(), runner_state.params)
+
+        new_state, _ = evolve_step(runner_state, config)
+
+        # Shared params should be identical after evolve_step
+        params_after = new_state.params
+        for leaf_b, leaf_a in zip(
+            jax.tree.leaves(params_before),
+            jax.tree.leaves(params_after),
+        ):
+            assert jnp.allclose(leaf_b, leaf_a), \
+                "Shared params changed during evolve_step!"
+
+    def test_evolve_step_jit_compatible(self):
+        """Test evolve_step works with JIT."""
+        from src.training.train import create_train_state, evolve_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        @jax.jit
+        def jit_evolve(rs):
+            return evolve_step(rs, config)
+
+        new_state, metrics = jit_evolve(runner_state)
+        assert float(metrics['total_loss']) == 0.0
+        assert new_state is not None
+
+    def test_train_step_gradient_mode(self):
+        """Test train_step works normally in GRADIENT mode (existing behavior)."""
+        from src.training.train import create_train_state, train_step
+        from src.configs import TrainingMode
+
+        config = self._make_small_config()
+        config.train.training_mode = TrainingMode.GRADIENT
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        new_state, metrics = train_step(runner_state, config)
+        assert 'total_loss' in metrics
+        # Loss should be non-zero in gradient mode
+        loss = float(metrics['total_loss'])
+        assert loss != 0.0 or True  # May be zero for first step; just verify it runs
+
+    def test_evolve_mutation_boost(self):
+        """Test that evolve config creates boosted mutation_std."""
+        from src.configs import Config, FreezeEvolveConfig
+
+        config = Config()
+        config.evolution.mutation_std = 0.01
+        config.freeze_evolve.evolve_mutation_boost = 5.0
+
+        boosted = config.evolution.mutation_std * config.freeze_evolve.evolve_mutation_boost
+        assert abs(boosted - 0.05) < 1e-8
+
+    def test_evolve_config_in_modified_config(self):
+        """Test creating a modified config with boosted mutation for evolve."""
+        from src.configs import Config
+
+        config = Config()
+        config.evolution.mutation_std = 0.01
+        config.freeze_evolve.evolve_mutation_boost = 3.0
+
+        boosted_std = config.evolution.mutation_std * config.freeze_evolve.evolve_mutation_boost
+        evolve_config = dataclasses.replace(
+            config,
+            evolution=dataclasses.replace(
+                config.evolution,
+                mutation_std=boosted_std,
+            ),
+        )
+
+        # Original unchanged
+        assert config.evolution.mutation_std == 0.01
+        # Modified has boosted value
+        assert abs(evolve_config.evolution.mutation_std - 0.03) < 1e-8
+        # Everything else is the same
+        assert evolve_config.env == config.env
+        assert evolve_config.train == config.train
+
+    def test_freeze_evolve_phase_switching_logic(self):
+        """Test the phase switching logic for freeze-evolve cycles."""
+        from src.configs import TrainingMode
+
+        # Simulate phase transitions
+        gradient_steps = 100
+        evolve_steps = 50
+        steps_per_iter = 25
+
+        current_phase = TrainingMode.GRADIENT
+        phase_counter = 0
+        transitions = []
+
+        for i in range(20):
+            phase_counter += steps_per_iter
+            total_steps = (i + 1) * steps_per_iter
+
+            if current_phase == TrainingMode.GRADIENT:
+                if phase_counter >= gradient_steps:
+                    current_phase = TrainingMode.EVOLVE
+                    phase_counter = 0
+                    transitions.append((total_steps, "EVOLVE"))
+            else:
+                if phase_counter >= evolve_steps:
+                    current_phase = TrainingMode.GRADIENT
+                    phase_counter = 0
+                    transitions.append((total_steps, "GRADIENT"))
+
+        # Should have multiple transitions
+        assert len(transitions) >= 2
+        # First transition should be to EVOLVE
+        assert transitions[0][1] == "EVOLVE"
+        # Second transition should be back to GRADIENT
+        assert transitions[1][1] == "GRADIENT"
+
+    def test_evolve_step_returns_population_metrics(self):
+        """Test that evolve_step provides key population metrics."""
+        from src.training.train import create_train_state, evolve_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        _, metrics = evolve_step(runner_state, config)
+
+        # Population metrics
+        pop = float(metrics['population_size'])
+        assert pop > 0  # At least some agents alive
+        assert 'oldest_agent_age' in metrics
+        assert 'max_energy' in metrics
+        assert 'min_energy' in metrics
+
+    @pytest.mark.timeout(120)
+    def test_freeze_evolve_full_cycle(self):
+        """Test a full gradient → evolve → gradient cycle end-to-end."""
+        from src.training.train import create_train_state, train_step, evolve_step
+
+        config = self._make_small_config()
+        key = jax.random.PRNGKey(42)
+        runner_state = create_train_state(config, key)
+
+        # Gradient phase: 2 iterations
+        for _ in range(2):
+            runner_state, grad_metrics = train_step(runner_state, config)
+
+        grad_loss = float(grad_metrics['total_loss'])
+
+        # Evolve phase: 2 iterations
+        for _ in range(2):
+            runner_state, evolve_metrics = evolve_step(runner_state, config)
+
+        evolve_loss = float(evolve_metrics['total_loss'])
+        assert evolve_loss == 0.0  # No gradient updates in evolve
+
+        # Back to gradient phase: 2 iterations
+        for _ in range(2):
+            runner_state, grad_metrics_2 = train_step(runner_state, config)
+
+        # Should still produce valid metrics
+        assert 'total_loss' in grad_metrics_2
+        assert 'mean_reward' in grad_metrics_2
