@@ -304,4 +304,24 @@ Goals:
 - Implement emergence metrics (Transfer Entropy, DOL, Phase Detection)
 - Make it understandable to non-technical users (tooltips, glossary)
 
+---
+
+## Task Log
+
+### US-001: Agent-Specific Policy Heads ✓
+**What:** Implemented `AgentSpecificActorCritic` class in `src/agents/network.py` — a shared encoder + per-agent output heads architecture. Added `agent_architecture` config option to `AgentConfig`.
+**Decisions:**
+- Architecture: shared MLP encoder (same Dense + LayerNorm + tanh layers) processes observations into features, then N separate actor heads (Dense → num_actions logits) and N separate critic heads (Dense → scalar value) produce per-agent outputs
+- All heads are evaluated in the forward pass (all Dense layers run), then the correct head's output is selected via `jnp.stack` + array indexing by `agent_id`. This is JIT-compatible and avoids `jax.lax.switch` + Flax module tracer leak issues
+- `agent_id` parameter is optional — when `None`, defaults to head 0 for backward compatibility with `ActorCritic` API
+- Out-of-range `agent_id` values are safely clamped to `[0, n_agents-1]`
+- Gradients only flow through the selected head's parameters (confirmed by test), while shared encoder receives gradients from all agents
+- Named layers: `actor_head_{i}` and `critic_head_{i}` for clear parameter tree inspection
+- Added `agent_architecture: Literal["shared", "agent_heads"]` to `AgentConfig` (default: "shared" for backward compatibility)
+- Initial approach using `jax.lax.switch` with `_AgentHead` submodules failed due to Flax nn.Module creating parameters inside `switch` branches causing `UnexpectedTracerError`. Switched to stacked-output-then-index approach.
+**Files changed:**
+- `src/agents/network.py` — added `AgentSpecificActorCritic` class (import `jax` added)
+- `src/configs.py` — added `agent_architecture` field to `AgentConfig`
+- `tests/test_agent.py` — added `TestAgentSpecificHeads` class with 10 tests covering: output shapes, different agents different outputs, shared encoder structure, agent_id=None backward compat, out-of-range clamping, JIT compatibility, vmap over agents, gradient flow isolation, config field, different hidden dims
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 334/334 tests pass (10 new)
 

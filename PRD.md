@@ -118,7 +118,7 @@ Every technical term used in this project, explained simply:
 ## 📝 User Stories
 
 ### US-001: Agent-Specific Policy Heads
-[ ] **Task:** Replace shared policy with shared backbone + per-agent output heads.
+[x] **Task:** Replace shared policy with shared backbone + per-agent output heads.
 
 **Why (ELI5):** Right now all agents share the exact same brain. We want them to share the "seeing" part but have their own "deciding" part — like siblings with same eyes but different personalities.
 

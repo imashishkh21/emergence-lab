@@ -33,6 +33,11 @@ class AgentConfig:
     hidden_dims: tuple[int, ...] = (64, 64)
     activation: Literal["relu", "tanh", "gelu"] = "tanh"
     layer_norm: bool = True
+    agent_architecture: Literal["shared", "agent_heads"] = "shared"
+    """Network architecture type:
+    - "shared": All agents share the same weights (ActorCritic)
+    - "agent_heads": Shared encoder + per-agent output heads (AgentSpecificActorCritic)
+    """
 
 
 @dataclass

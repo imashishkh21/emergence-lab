@@ -1,9 +1,9 @@
 """Tests for agent neural networks."""
 
-import pytest
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 
 class TestNetwork:
@@ -199,5 +199,291 @@ class TestActionSampling:
         
         obs = jax.random.normal(key, (4, 2, obs_dim))
         actions, log_probs, values, entropy = jit_sample(obs, key)
-        
+
         assert actions.shape == (4, 2)
+
+
+class TestAgentSpecificHeads:
+    """Tests for Phase 4 US-001: Agent-Specific Policy Heads."""
+
+    def test_agent_specific_heads(self):
+        """Test that AgentSpecificActorCritic produces correct output shapes."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(64, 64), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 64
+        dummy_obs = jnp.zeros((obs_dim,))
+        agent_id = jnp.int32(0)
+
+        params = network.init(key, dummy_obs, agent_id)
+
+        # Forward pass with agent_id
+        logits, value = network.apply(params, dummy_obs, agent_id)
+
+        assert logits.shape == (6,), f"Expected (6,), got {logits.shape}"
+        assert value.shape == (), f"Expected scalar, got {value.shape}"
+
+    def test_different_agents_different_outputs(self):
+        """Test that different agent_ids produce different outputs."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.ones((obs_dim,))  # Non-zero input for differentiation
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        # Get outputs for each agent
+        outputs = []
+        for i in range(n_agents):
+            logits, value = network.apply(params, dummy_obs, jnp.int32(i))
+            outputs.append((np.array(logits), float(value)))
+
+        # At least some agents should produce different outputs
+        # (different heads have different random initializations)
+        logits_arrays = [o[0] for o in outputs]
+        any_different = False
+        for i in range(len(logits_arrays)):
+            for j in range(i + 1, len(logits_arrays)):
+                if not np.allclose(logits_arrays[i], logits_arrays[j], atol=1e-6):
+                    any_different = True
+                    break
+        assert any_different, "All agent heads produced identical outputs"
+
+    def test_shared_encoder_weights(self):
+        """Test that encoder weights are shared across agents."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        params = network.init(key, jnp.zeros((obs_dim,)), jnp.int32(0))
+
+        # Verify param structure via top-level keys
+        param_dict = params["params"]
+        param_names = list(param_dict.keys())
+
+        # There should be encoder Dense layers (shared)
+        encoder_names = [n for n in param_names if n.startswith("Dense_")]
+        assert len(encoder_names) >= 2, "Expected at least 2 shared encoder layers"
+
+        # There should be per-agent head params (actor_head_N and critic_head_N)
+        actor_head_names = [n for n in param_names if n.startswith("actor_head_")]
+        critic_head_names = [n for n in param_names if n.startswith("critic_head_")]
+        assert len(actor_head_names) == n_agents, (
+            f"Expected {n_agents} actor heads, found {len(actor_head_names)}"
+        )
+        assert len(critic_head_names) == n_agents, (
+            f"Expected {n_agents} critic heads, found {len(critic_head_names)}"
+        )
+
+    def test_agent_id_none_uses_head_0(self):
+        """Test backward compatibility: agent_id=None uses head 0."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.ones((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        # Call without agent_id
+        logits_none, value_none = network.apply(params, dummy_obs)
+        # Call with agent_id=0
+        logits_0, value_0 = network.apply(params, dummy_obs, jnp.int32(0))
+
+        np.testing.assert_allclose(
+            np.array(logits_none), np.array(logits_0), atol=1e-6
+        )
+        np.testing.assert_allclose(float(value_none), float(value_0), atol=1e-6)
+
+    def test_agent_id_out_of_range_clamped(self):
+        """Test that out-of-range agent_ids are safely clamped."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.zeros((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        # agent_id beyond n_agents should be clamped to last head
+        logits_big, value_big = network.apply(
+            params, dummy_obs, jnp.int32(100)
+        )
+        logits_last, value_last = network.apply(
+            params, dummy_obs, jnp.int32(n_agents - 1)
+        )
+
+        np.testing.assert_allclose(
+            np.array(logits_big), np.array(logits_last), atol=1e-6
+        )
+
+    def test_jit_compatible(self):
+        """Test that agent-specific heads work with JIT compilation."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 8
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.zeros((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        @jax.jit
+        def forward(obs, agent_id):
+            return network.apply(params, obs, agent_id)
+
+        obs = jax.random.normal(key, (obs_dim,))
+        for i in range(n_agents):
+            logits, value = forward(obs, jnp.int32(i))
+            assert logits.shape == (6,)
+            assert value.shape == ()
+
+    def test_vmap_over_agents(self):
+        """Test that we can vmap the forward pass over agent_ids."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.zeros((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        # Create batch of observations and agent_ids
+        batch_obs = jax.random.normal(key, (n_agents, obs_dim))
+        agent_ids = jnp.arange(n_agents, dtype=jnp.int32)
+
+        # vmap over both obs and agent_id
+        batched_apply = jax.vmap(
+            lambda obs, aid: network.apply(params, obs, aid),
+            in_axes=(0, 0),
+        )
+        logits, values = batched_apply(batch_obs, agent_ids)
+
+        assert logits.shape == (n_agents, 6)
+        assert values.shape == (n_agents,)
+
+    def test_gradients_flow_through_correct_head(self):
+        """Test that gradients only flow through the selected agent's head."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        n_agents = 4
+        network = AgentSpecificActorCritic(
+            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+        )
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 32
+        dummy_obs = jnp.ones((obs_dim,))
+        params = network.init(key, dummy_obs, jnp.int32(0))
+
+        # Compute gradient w.r.t. params for agent 0
+        def loss_fn(p, agent_id):
+            logits, value = network.apply(p, dummy_obs, agent_id)
+            return jnp.sum(logits) + value
+
+        grads_agent0 = jax.grad(loss_fn)(params, jnp.int32(0))
+        grads_agent1 = jax.grad(loss_fn)(params, jnp.int32(1))
+
+        # actor_head_0 should have non-zero grads for agent 0, zero for agent 1
+        head_0_actor_grad_for_agent0 = jax.tree_util.tree_leaves(
+            grads_agent0["params"]["actor_head_0"]
+        )
+        head_0_actor_grad_for_agent1 = jax.tree_util.tree_leaves(
+            grads_agent1["params"]["actor_head_0"]
+        )
+
+        # Agent 0's gradient should have non-zero values in actor_head_0
+        has_nonzero_0 = any(
+            float(jnp.abs(g).sum()) > 1e-8 for g in head_0_actor_grad_for_agent0
+        )
+        assert has_nonzero_0, "Agent 0 should have gradients in actor_head_0"
+
+        # Agent 1's gradient should have zero values in actor_head_0
+        all_zero_1 = all(
+            float(jnp.abs(g).sum()) < 1e-8 for g in head_0_actor_grad_for_agent1
+        )
+        assert all_zero_1, "Agent 1 should NOT have gradients in actor_head_0"
+
+        # Shared encoder should have non-zero grads for both agents
+        encoder_grad_0 = jax.tree_util.tree_leaves(
+            grads_agent0["params"]["Dense_0"]
+        )
+        encoder_grad_1 = jax.tree_util.tree_leaves(
+            grads_agent1["params"]["Dense_0"]
+        )
+        has_encoder_grad_0 = any(
+            float(jnp.abs(g).sum()) > 1e-8 for g in encoder_grad_0
+        )
+        has_encoder_grad_1 = any(
+            float(jnp.abs(g).sum()) > 1e-8 for g in encoder_grad_1
+        )
+        assert has_encoder_grad_0, "Agent 0 should have encoder gradients"
+        assert has_encoder_grad_1, "Agent 1 should have encoder gradients"
+
+    def test_config_agent_architecture(self):
+        """Test that config has agent_architecture field."""
+        from src.configs import Config
+
+        config = Config()
+        assert config.agent.agent_architecture == "shared"
+
+        # Test agent_heads option
+        config.agent.agent_architecture = "agent_heads"
+        assert config.agent.agent_architecture == "agent_heads"
+
+    def test_different_hidden_dims(self):
+        """Test AgentSpecificActorCritic with various hidden dim configurations."""
+        from src.agents.network import AgentSpecificActorCritic
+
+        key = jax.random.PRNGKey(42)
+        obs_dim = 48
+        n_agents = 4
+
+        configs = [
+            (32, 32),
+            (64, 64),
+            (64, 64, 64),  # 3 layers
+        ]
+
+        for hidden_dims in configs:
+            network = AgentSpecificActorCritic(
+                hidden_dims=hidden_dims, num_actions=6, n_agents=n_agents
+            )
+            params = network.init(key, jnp.zeros((obs_dim,)), jnp.int32(0))
+
+            for agent_id in range(n_agents):
+                logits, value = network.apply(
+                    params, jnp.zeros((obs_dim,)), jnp.int32(agent_id)
+                )
+                assert logits.shape == (6,)
+                assert value.shape == ()
