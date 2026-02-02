@@ -43,6 +43,11 @@ class Frame:
     metrics: dict[str, float]
     training_mode: str = "gradient"  # "gradient" | "evolve" | "paused"
     timestamp: float = 0.0
+    # Lineage data (optional)
+    agent_ids: np.ndarray | None = None  # (max_agents,) int32
+    parent_ids: np.ndarray | None = None  # (max_agents,) int32
+    birth_steps: np.ndarray | None = None  # (max_agents,) int32
+    lineage_data: dict[str, Any] | None = None  # dominant lineages, max depth, etc.
 
     def __post_init__(self) -> None:
         if self.timestamp == 0.0:
@@ -72,6 +77,14 @@ def pack_frame(frame: Frame) -> bytes:
     }
     if frame.cluster_labels is not None:
         data["clusters"] = _pack_array(frame.cluster_labels.astype(np.int8))
+    if frame.agent_ids is not None:
+        data["agent_ids"] = _pack_array(frame.agent_ids.astype(np.int32))
+    if frame.parent_ids is not None:
+        data["parent_ids"] = _pack_array(frame.parent_ids.astype(np.int32))
+    if frame.birth_steps is not None:
+        data["birth_steps"] = _pack_array(frame.birth_steps.astype(np.int32))
+    if frame.lineage_data is not None:
+        data["lineage_data"] = frame.lineage_data
     result: bytes = msgpack.packb(data, use_bin_type=True)
     return result
 
@@ -216,6 +229,7 @@ class TrainingBridge:
         metrics: dict[str, Any],
         step: int,
         cluster_labels: np.ndarray | None = None,
+        lineage_data: dict[str, Any] | None = None,
     ) -> Frame:
         """Create a Frame from a JAX EnvState and metrics dict.
 
@@ -227,6 +241,7 @@ class TrainingBridge:
             metrics: Dict of scalar metrics from train_step.
             step: Current training step count.
             cluster_labels: Optional cluster labels for agents.
+            lineage_data: Optional lineage summary (dominant lineages, etc.).
 
         Returns:
             A Frame ready for publishing.
@@ -238,6 +253,17 @@ class TrainingBridge:
         food_pos = np.asarray(env_state.food_positions[0]).astype(np.float32)
         food_col = np.asarray(env_state.food_collected[0]).astype(bool)
         field_vals = np.asarray(env_state.field_state.values[0]).astype(np.float32)
+
+        # Extract lineage arrays from first env if available
+        agent_ids: np.ndarray | None = None
+        parent_ids: np.ndarray | None = None
+        birth_steps: np.ndarray | None = None
+        if hasattr(env_state, "agent_ids"):
+            agent_ids = np.asarray(env_state.agent_ids[0]).astype(np.int32)
+        if hasattr(env_state, "agent_parent_ids"):
+            parent_ids = np.asarray(env_state.agent_parent_ids[0]).astype(np.int32)
+        if hasattr(env_state, "agent_birth_step"):
+            birth_steps = np.asarray(env_state.agent_birth_step[0]).astype(np.int32)
 
         # Convert metrics to plain floats
         float_metrics: dict[str, float] = {}
@@ -257,4 +283,8 @@ class TrainingBridge:
             field_values=field_vals,
             cluster_labels=cluster_labels,
             metrics=float_metrics,
+            agent_ids=agent_ids,
+            parent_ids=parent_ids,
+            birth_steps=birth_steps,
+            lineage_data=lineage_data,
         )

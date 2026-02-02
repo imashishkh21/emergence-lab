@@ -605,3 +605,32 @@ Goals:
 - `tests/test_dashboard_integration.py` (new) — 27 tests across 8 classes: `TestTrainingToServer` (3), `TestServerEndpoints` (3), `TestControlsAffectTraining` (5), `TestMockDataPipeline` (4), `TestFrameSerialization` (2), `TestHelpSystemData` (3), `TestBackgroundTrainingIntegration` (3), `TestDashboardBuildArtifacts` (4)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 570/570 tests pass (27 new).
 
+---
+
+### US-015: Agent Lineage Visualization ✓
+**What:** Added lineage visualization to the dashboard. Extended the streaming protocol with agent IDs, parent IDs, birth steps, and lineage summary data. Created a LineagePanel component showing a tree/graph visualization of agent parent-child relationships, dominant lineage rankings, and agent detail tooltips.
+**Decisions:**
+- **Streaming protocol extension:** Added 4 optional fields to `Frame`: `agent_ids` (int32), `parent_ids` (int32), `birth_steps` (int32), and `lineage_data` (dict with dominant_lineages, max_depth, total_births). All fields are optional and backward-compatible (None by default, omitted from MessagePack when None).
+- **`create_frame_from_state` updated:** Automatically extracts `agent_ids`, `agent_parent_ids`, and `agent_birth_step` from `EnvState` when those attributes exist. Accepts optional `lineage_data` dict parameter.
+- **Int32 dtype support:** Added `<i4` / `int32` dtype handling in the dashboard's `unpackArray()` function for proper Int32Array reconstruction from MessagePack.
+- **Mock lineage data:** Mock frames now generate realistic lineage data: first 8 agents are originals (parent_id=-1), remaining agents have parents from the original 8, with computed dominant lineage rankings.
+- **Tree layout algorithm:** BFS-based depth computation from roots, agents grouped by generation depth, positioned in rows with even horizontal spacing. Only alive agents are shown in the tree to avoid clutter.
+- **LineagePanel features:**
+  - Tree/graph SVG visualization with nodes (agents) and edges (parent-child lines)
+  - Color by cluster (behavioral group) or fitness (energy-based gradient)
+  - Dominant lineages bar chart showing top 3 lineages by descendant count
+  - Click agent to select (highlight with white ring), click again to deselect
+  - Hover shows detailed tooltip: agent ID, parent, age, energy, cluster group
+  - Stats footer: generational depth, total births, alive count
+  - Deaths shown as faded/dashed edges
+- **Store integration:** Added `agentIds`, `parentIds`, `birthSteps`, `lineageData`, `selectedAgentIndex` state variables and `selectAgent(index)` method to the training store.
+- **Layout placement:** LineagePanel sits between MetricsPanel and ControlPanel in the sidebar, matching the PRD file structure.
+**Files changed:**
+- `src/server/streaming.py` — added `agent_ids`, `parent_ids`, `birth_steps`, `lineage_data` fields to `Frame`; updated `pack_frame()` to include lineage arrays; updated `create_frame_from_state()` to extract lineage data from EnvState
+- `src/server/main.py` — updated `_generate_mock_frame()` to generate mock lineage data (agent IDs, parent-child relationships, birth steps, dominant lineages)
+- `dashboard/src/stores/training.svelte.js` — added Int32Array dtype support in `unpackArray()`; added lineage state variables and `selectAgent()` method; added lineage data decoding in `processFrame()`
+- `dashboard/src/lib/LineagePanel.svelte` (new) — Tree/graph visualization with SVG, dominant lineage bars, agent click/hover, color modes, stats footer
+- `dashboard/src/App.svelte` — imported and integrated LineagePanel in sidebar
+- `tests/test_server.py` — added `TestLineageData` class with 14 tests covering: Frame lineage fields default/set, pack without/with lineage, mock frame lineage shapes/ids/originals/children/structure/fields, create_frame_from_state with/without lineage, packed lineage WebSocket round-trip
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 584/584 tests pass (14 new). `npm run build` succeeds (863 modules).
+

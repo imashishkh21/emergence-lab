@@ -188,6 +188,37 @@ def _generate_mock_frame(
     cluster_labels[: max_agents // 2] = 0
     cluster_labels[max_agents // 2 :] = 1
 
+    # Generate mock lineage data
+    agent_ids = np.arange(max_agents, dtype=np.int32)
+    # Simulate parent-child relationships: first 8 are originals (-1),
+    # rest have parents from the first 8
+    parent_ids = np.full(max_agents, -1, dtype=np.int32)
+    for i in range(8, max_agents):
+        parent_ids[i] = rng.randint(0, 8)
+    # Birth steps: originals born at step 0, children born at various steps
+    birth_steps = np.zeros(max_agents, dtype=np.int32)
+    for i in range(8, max_agents):
+        birth_steps[i] = rng.randint(0, max(1, step))
+
+    # Compute dominant lineages from parent structure
+    lineage_counts: dict[int, int] = {}
+    for i in range(max_agents):
+        if parent_ids[i] == -1:
+            lineage_counts[i] = 0
+    for i in range(max_agents):
+        if parent_ids[i] >= 0 and parent_ids[i] in lineage_counts:
+            lineage_counts[parent_ids[i]] += 1
+
+    dominant = sorted(lineage_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    lineage_data = {
+        "dominant_lineages": [
+            {"ancestor_id": int(aid), "descendants": int(cnt)}
+            for aid, cnt in dominant
+        ],
+        "max_depth": 1 + int(rng.randint(0, 3)),
+        "total_births": int(max_agents - 8),
+    }
+
     # Simulate gradually improving metrics over time
     progress = min(step / 500.0, 1.0)  # 0→1 over 500 steps
     metrics = {
@@ -227,6 +258,10 @@ def _generate_mock_frame(
         cluster_labels=cluster_labels,
         metrics=metrics,
         training_mode=training_mode,
+        agent_ids=agent_ids,
+        parent_ids=parent_ids,
+        birth_steps=birth_steps,
+        lineage_data=lineage_data,
     )
 
 

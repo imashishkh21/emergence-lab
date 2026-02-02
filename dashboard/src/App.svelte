@@ -4,6 +4,7 @@
   import AgentCanvas from "./lib/AgentCanvas.svelte";
   import MetricsPanel from "./lib/MetricsPanel.svelte";
   import ControlPanel from "./lib/ControlPanel.svelte";
+  import LineagePanel from "./lib/LineagePanel.svelte";
   import HelpSystem from "./lib/HelpSystem.svelte";
   import GlossaryPanel from "./lib/GlossaryPanel.svelte";
 
@@ -28,6 +29,7 @@
     <div class="sidebar">
       <HelpSystem {store} showGlossary={() => glossaryOpen = true} />
       <MetricsPanel {store} />
+      <LineagePanel {store} />
       <ControlPanel {store} />
     </div>
   </main>

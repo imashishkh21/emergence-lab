@@ -725,3 +725,266 @@ class TestTrainingControls:
                 c.get("type") == "set_param" and c.get("key") == "mutation_std"
                 for c in cmds
             )
+
+
+# ---------------------------------------------------------------------------
+# Lineage data tests (US-015)
+# ---------------------------------------------------------------------------
+
+
+class TestLineageData:
+    """Tests for lineage data in frames and streaming."""
+
+    def test_frame_lineage_fields_default_none(self) -> None:
+        frame = Frame(
+            step=0,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.zeros(4, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+        )
+        assert frame.agent_ids is None
+        assert frame.parent_ids is None
+        assert frame.birth_steps is None
+        assert frame.lineage_data is None
+
+    def test_frame_with_lineage_fields(self) -> None:
+        agent_ids = np.arange(8, dtype=np.int32)
+        parent_ids = np.array([-1, -1, 0, 0, 1, 1, 2, 3], dtype=np.int32)
+        birth_steps = np.array([0, 0, 10, 20, 30, 40, 50, 60], dtype=np.int32)
+        lineage_data = {
+            "dominant_lineages": [
+                {"ancestor_id": 0, "descendants": 4},
+                {"ancestor_id": 1, "descendants": 2},
+            ],
+            "max_depth": 2,
+            "total_births": 6,
+        }
+        frame = Frame(
+            step=100,
+            positions=np.zeros((8, 2), dtype=np.float32),
+            alive=np.ones(8, dtype=bool),
+            energy=np.zeros(8, dtype=np.float32),
+            food_positions=np.zeros((5, 2), dtype=np.float32),
+            food_collected=np.zeros(5, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+            agent_ids=agent_ids,
+            parent_ids=parent_ids,
+            birth_steps=birth_steps,
+            lineage_data=lineage_data,
+        )
+        assert frame.agent_ids is not None
+        np.testing.assert_array_equal(frame.agent_ids, agent_ids)
+        np.testing.assert_array_equal(frame.parent_ids, parent_ids)
+        np.testing.assert_array_equal(frame.birth_steps, birth_steps)
+        assert frame.lineage_data["max_depth"] == 2
+        assert len(frame.lineage_data["dominant_lineages"]) == 2
+
+    def test_pack_frame_without_lineage(self) -> None:
+        frame = Frame(
+            step=0,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.zeros(4, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+        )
+        packed = pack_frame(frame)
+        data = msgpack.unpackb(packed, raw=False)
+        assert "agent_ids" not in data
+        assert "parent_ids" not in data
+        assert "birth_steps" not in data
+        assert "lineage_data" not in data
+
+    def test_pack_frame_with_lineage(self) -> None:
+        agent_ids = np.arange(4, dtype=np.int32)
+        parent_ids = np.array([-1, -1, 0, 1], dtype=np.int32)
+        birth_steps = np.array([0, 0, 100, 200], dtype=np.int32)
+        lineage_data = {
+            "dominant_lineages": [{"ancestor_id": 0, "descendants": 1}],
+            "max_depth": 1,
+            "total_births": 2,
+        }
+        frame = Frame(
+            step=300,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.zeros(4, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+            agent_ids=agent_ids,
+            parent_ids=parent_ids,
+            birth_steps=birth_steps,
+            lineage_data=lineage_data,
+        )
+        packed = pack_frame(frame)
+        data = msgpack.unpackb(packed, raw=False)
+        assert "agent_ids" in data
+        assert "parent_ids" in data
+        assert "birth_steps" in data
+        assert "lineage_data" in data
+
+        # Verify arrays can be reconstructed
+        ids_arr = np.frombuffer(data["agent_ids"]["data"], dtype="<i4").reshape(
+            data["agent_ids"]["shape"]
+        )
+        np.testing.assert_array_equal(ids_arr, agent_ids)
+
+        parents_arr = np.frombuffer(data["parent_ids"]["data"], dtype="<i4").reshape(
+            data["parent_ids"]["shape"]
+        )
+        np.testing.assert_array_equal(parents_arr, parent_ids)
+
+        births_arr = np.frombuffer(data["birth_steps"]["data"], dtype="<i4").reshape(
+            data["birth_steps"]["shape"]
+        )
+        np.testing.assert_array_equal(births_arr, birth_steps)
+
+        assert data["lineage_data"]["max_depth"] == 1
+        assert data["lineage_data"]["total_births"] == 2
+
+    def test_mock_frame_has_lineage(self) -> None:
+        frame = _generate_mock_frame(step=100)
+        assert frame.agent_ids is not None
+        assert frame.parent_ids is not None
+        assert frame.birth_steps is not None
+        assert frame.lineage_data is not None
+
+    def test_mock_frame_lineage_shapes(self) -> None:
+        frame = _generate_mock_frame(step=50, max_agents=16)
+        assert frame.agent_ids.shape == (16,)
+        assert frame.parent_ids.shape == (16,)
+        assert frame.birth_steps.shape == (16,)
+
+    def test_mock_frame_lineage_ids_sequential(self) -> None:
+        frame = _generate_mock_frame(step=10)
+        np.testing.assert_array_equal(frame.agent_ids, np.arange(32, dtype=np.int32))
+
+    def test_mock_frame_lineage_originals(self) -> None:
+        frame = _generate_mock_frame(step=10)
+        # First 8 agents should be originals (parent_id == -1)
+        assert all(frame.parent_ids[i] == -1 for i in range(8))
+
+    def test_mock_frame_lineage_children_have_parents(self) -> None:
+        frame = _generate_mock_frame(step=100)
+        # Agents 8+ should have parents from range 0-7
+        for i in range(8, 32):
+            assert 0 <= frame.parent_ids[i] < 8
+
+    def test_mock_frame_lineage_data_structure(self) -> None:
+        frame = _generate_mock_frame(step=100)
+        assert "dominant_lineages" in frame.lineage_data
+        assert "max_depth" in frame.lineage_data
+        assert "total_births" in frame.lineage_data
+        assert len(frame.lineage_data["dominant_lineages"]) <= 5
+
+    def test_mock_frame_dominant_lineage_fields(self) -> None:
+        frame = _generate_mock_frame(step=100)
+        for lin in frame.lineage_data["dominant_lineages"]:
+            assert "ancestor_id" in lin
+            assert "descendants" in lin
+
+    def test_create_frame_from_state_with_lineage(self) -> None:
+        class MockFieldState:
+            def __init__(self) -> None:
+                self.values = np.zeros((1, 5, 5, 1), dtype=np.float32)
+
+        class MockState:
+            def __init__(self) -> None:
+                self.agent_positions = np.zeros((1, 4, 2), dtype=np.int32)
+                self.agent_alive = np.ones((1, 4), dtype=bool)
+                self.agent_energy = np.zeros((1, 4), dtype=np.float32)
+                self.food_positions = np.zeros((1, 2, 2), dtype=np.int32)
+                self.food_collected = np.zeros((1, 2), dtype=bool)
+                self.field_state = MockFieldState()
+                self.agent_ids = np.array([[0, 1, 2, 3]], dtype=np.int32)
+                self.agent_parent_ids = np.array([[-1, -1, 0, 1]], dtype=np.int32)
+                self.agent_birth_step = np.array([[0, 0, 50, 100]], dtype=np.int32)
+
+        bridge = TrainingBridge()
+        lineage_data = {"max_depth": 1, "total_births": 2, "dominant_lineages": []}
+        frame = bridge.create_frame_from_state(
+            MockState(), {"x": 1.0}, step=200, lineage_data=lineage_data
+        )
+        assert frame.agent_ids is not None
+        np.testing.assert_array_equal(frame.agent_ids, [0, 1, 2, 3])
+        np.testing.assert_array_equal(frame.parent_ids, [-1, -1, 0, 1])
+        np.testing.assert_array_equal(frame.birth_steps, [0, 0, 50, 100])
+        assert frame.lineage_data["max_depth"] == 1
+
+    def test_create_frame_from_state_without_lineage(self) -> None:
+        class MockFieldState:
+            def __init__(self) -> None:
+                self.values = np.zeros((1, 5, 5, 1), dtype=np.float32)
+
+        class MockState:
+            def __init__(self) -> None:
+                self.agent_positions = np.zeros((1, 4, 2), dtype=np.int32)
+                self.agent_alive = np.ones((1, 4), dtype=bool)
+                self.agent_energy = np.zeros((1, 4), dtype=np.float32)
+                self.food_positions = np.zeros((1, 2, 2), dtype=np.int32)
+                self.food_collected = np.zeros((1, 2), dtype=bool)
+                self.field_state = MockFieldState()
+
+        bridge = TrainingBridge()
+        frame = bridge.create_frame_from_state(MockState(), {"x": 1.0}, step=10)
+        assert frame.agent_ids is None
+        assert frame.parent_ids is None
+        assert frame.birth_steps is None
+        assert frame.lineage_data is None
+
+    def test_packed_lineage_websocket_round_trip(self) -> None:
+        """Verify lineage data survives pack → WebSocket → unpack."""
+        agent_ids = np.array([10, 11, 12, 13], dtype=np.int32)
+        parent_ids = np.array([-1, 10, 10, 11], dtype=np.int32)
+        birth_steps = np.array([0, 100, 200, 300], dtype=np.int32)
+        lineage_data = {
+            "dominant_lineages": [{"ancestor_id": 10, "descendants": 3}],
+            "max_depth": 2,
+            "total_births": 3,
+        }
+        frame = Frame(
+            step=400,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.full(4, 100.0, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={"mean_reward": 2.0},
+            agent_ids=agent_ids,
+            parent_ids=parent_ids,
+            birth_steps=birth_steps,
+            lineage_data=lineage_data,
+        )
+        bridge = TrainingBridge(target_fps=1000)
+        app = create_app(bridge)
+        bridge.publish_frame(frame)
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws/training") as ws:
+            data_bytes = ws.receive_bytes()
+            decoded = msgpack.unpackb(data_bytes, raw=False)
+            assert "agent_ids" in decoded
+            assert "parent_ids" in decoded
+            assert "birth_steps" in decoded
+            assert "lineage_data" in decoded
+            assert decoded["lineage_data"]["max_depth"] == 2
+
+            ids_arr = np.frombuffer(
+                decoded["agent_ids"]["data"], dtype="<i4"
+            ).reshape(decoded["agent_ids"]["shape"])
+            np.testing.assert_array_equal(ids_arr, agent_ids)

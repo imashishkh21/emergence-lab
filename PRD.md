@@ -412,7 +412,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-015: Agent Lineage Visualization
-[ ] **Task:** Show parent-child relationships in dashboard.
+[x] **Task:** Show parent-child relationships in dashboard.
 
 **Why (ELI5):** Show the family tree — who is whose parent, which families are thriving.
 

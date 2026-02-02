@@ -29,6 +29,8 @@ function unpackArray(packed) {
   let data;
   if (dtype === "<f4" || dtype === "float32") {
     data = new Float32Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
+  } else if (dtype === "<i4" || dtype === "int32") {
+    data = new Int32Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
   } else if (dtype === "<i1" || dtype === "int8") {
     data = new Int8Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
   } else if (dtype === "|u1" || dtype === "uint8" || dtype === "<u1") {
@@ -64,6 +66,13 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
   let clusters = $state(null); // Int8Array (max_agents)
   let metrics = $state({});
   let timestamp = $state(0);
+
+  // Lineage data
+  let agentIds = $state(null); // Int32Array (max_agents)
+  let parentIds = $state(null); // Int32Array (max_agents)
+  let birthSteps = $state(null); // Int32Array (max_agents)
+  let lineageData = $state(null); // { dominant_lineages, max_depth, total_births }
+  let selectedAgentIndex = $state(-1); // Index of agent selected in canvas/lineage panel
 
   // Shapes for interpreting flat arrays
   let positionsShape = $state([0, 2]);
@@ -128,6 +137,22 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
 
     if (frame.clusters) {
       clusters = unpackArray(frame.clusters).data;
+    }
+
+    if (frame.agent_ids) {
+      agentIds = unpackArray(frame.agent_ids).data;
+    }
+
+    if (frame.parent_ids) {
+      parentIds = unpackArray(frame.parent_ids).data;
+    }
+
+    if (frame.birth_steps) {
+      birthSteps = unpackArray(frame.birth_steps).data;
+    }
+
+    if (frame.lineage_data) {
+      lineageData = frame.lineage_data;
     }
 
     if (frame.metrics) {
@@ -289,6 +314,11 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     get metrics() { return metrics; },
     get timestamp() { return timestamp; },
     get metricsHistory() { return metricsHistory; },
+    get agentIds() { return agentIds; },
+    get parentIds() { return parentIds; },
+    get birthSteps() { return birthSteps; },
+    get lineageData() { return lineageData; },
+    get selectedAgentIndex() { return selectedAgentIndex; },
 
     // Derived values
     get aliveCount() { return aliveCount; },
@@ -307,5 +337,6 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     resume,
     setSpeed,
     setParam,
+    selectAgent(index) { selectedAgentIndex = index; },
   };
 }
