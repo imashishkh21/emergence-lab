@@ -225,7 +225,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-006: Svelte Dashboard Scaffold
-[ ] **Task:** Create basic Svelte 5 dashboard with WebSocket client.
+[x] **Task:** Create basic Svelte 5 dashboard with WebSocket client.
 
 **Why (ELI5):** Build the main screen where you'll watch everything happen.
 

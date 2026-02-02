@@ -410,3 +410,32 @@ Goals:
 - `tests/test_server.py` (new) — 38 tests across 8 classes: TestFrame (3), TestPackFrame (8), TestTrainingBridge (7), TestCommandQueue (7), TestFastAPIApp (3), TestWebSocket (2), TestMockData (5), TestCreateFrameFromState (3)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (38 new). Server starts, accepts WebSocket connections, and streams mock data at 30fps.
 
+---
+
+### US-006: Svelte Dashboard Scaffold ✓
+**What:** Created a Svelte 5 dashboard application with WebSocket client, MessagePack decoding, reactive state store, and basic layout (header, canvas area, metrics panel, controls). The dashboard connects to the FastAPI server and displays live training data.
+**Decisions:**
+- **Svelte 5 with runes:** Used `$state`, `$derived`, `$effect`, and `$props` runes for reactive state management. Store file uses `.svelte.js` extension to enable rune syntax outside components.
+- **WebSocket client with auto-reconnect:** Exponential backoff reconnection (1s initial, 1.5x multiplier, 10s max). Binary `arraybuffer` mode for MessagePack frames. JSON text commands for pause/resume/set_param.
+- **MessagePack decoding:** `unpackArray()` reconstructs typed arrays (Float32Array, Int8Array, Uint8Array) from the server's `{shape, dtype, data}` format. Handles `<f4`, `<i1`, `|u1`/`<u1` dtype strings.
+- **Reactive state store:** `createTrainingStore()` returns a reactive object with getters for all frame data, derived values (aliveCount, maxAgents), rolling metrics history (1000-point window), and methods for connection/control.
+- **Canvas 2D renderer:** Temporary Canvas 2D implementation for agent visualization (will be upgraded to Pixi.js in US-007). Renders field heatmap, grid lines, food dots, and agents colored by cluster with energy-based sizing and glow effects.
+- **Layout:** Dark theme (matches research tool aesthetic). Header with step counter and connection status. Main area split between canvas (flexible) and sidebar (340px fixed). Sidebar contains metrics panel and control panel.
+- **Package versions:** Svelte 5, `@sveltejs/vite-plugin-svelte@^5.0.0` (requires vite ^6), `vite@^6.0.0`, `msgpack-lite` for MessagePack decoding.
+- **Glossary data:** Created `static/glossary.json` with all terms from the PRD glossary section for the future help system (US-013).
+**Files changed:**
+- `dashboard/package.json` (new) — project config with svelte 5, vite 6, msgpack-lite dependencies
+- `dashboard/vite.config.js` (new) — Vite config with Svelte plugin
+- `dashboard/svelte.config.js` (new) — Svelte preprocessor config
+- `dashboard/index.html` (new) — HTML entry point
+- `dashboard/public/favicon.svg` (new) — SVG favicon with agent dots
+- `dashboard/src/main.js` (new) — Svelte mount entry point
+- `dashboard/src/App.svelte` (new) — Root component with layout, auto-connect
+- `dashboard/src/stores/training.svelte.js` (new) — Reactive store: WebSocket client, MessagePack decoder, frame state, metrics history, control methods
+- `dashboard/src/lib/Header.svelte` (new) — Header with title, step counter, connection status indicator
+- `dashboard/src/lib/AgentCanvas.svelte` (new) — Canvas 2D renderer: field heatmap, food, agents with cluster colors, energy sizing, disconnected overlay
+- `dashboard/src/lib/MetricsPanel.svelte` (new) — Metrics display with tooltips: reward, loss, entropy, population, energy, alive/max/fps summary
+- `dashboard/src/lib/ControlPanel.svelte` (new) — Pause/resume button with status hints
+- `dashboard/static/glossary.json` (new) — Glossary terms for help system
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (no new Python tests — this is a frontend task). `npm run build` succeeds. `npm run dev` starts and serves the dashboard at http://localhost:5173. Dashboard displays "Waiting for server connection..." overlay when server is not running.
+
