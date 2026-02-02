@@ -55,7 +55,7 @@ python -m src.training.train --server --train.total-steps 100
 
 ---
 
-### US-002: Tracker Serialization [ ]
+### US-002: Tracker Serialization [x]
 
 **Task:** Add serialize/deserialize methods to EmergenceTracker and SpecializationTracker.
 

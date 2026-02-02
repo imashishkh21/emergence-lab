@@ -1258,3 +1258,59 @@ class SpecializationTracker:
                 summary[f"{name}_mean"] = float(np.mean(hist))
                 summary[f"{name}_std"] = float(np.std(hist))
         return summary
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize tracker state to a plain dict.
+
+        Returns:
+            Dict containing all tracker state, suitable for pickling
+            or JSON serialization.
+        """
+        return {
+            "window_size": self.window_size,
+            "z_threshold": self.z_threshold,
+            "history": {name: list(vals) for name, vals in self.history.items()},
+            "steps": list(self.steps),
+            "events": [
+                {
+                    "step": e.step,
+                    "metric_name": e.metric_name,
+                    "old_value": e.old_value,
+                    "new_value": e.new_value,
+                    "z_score": e.z_score,
+                }
+                for e in self.events
+            ],
+            "step_count": self.step_count,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any], config: Config) -> "SpecializationTracker":
+        """Restore tracker state from a serialized dict.
+
+        Args:
+            d: Dict produced by ``to_dict()``.
+            config: Master configuration (required for construction).
+
+        Returns:
+            Restored SpecializationTracker with full history and events.
+        """
+        tracker = cls(
+            config=config,
+            window_size=d["window_size"],
+            z_threshold=d["z_threshold"],
+        )
+        tracker.history = {name: list(vals) for name, vals in d["history"].items()}
+        tracker.steps = list(d["steps"])
+        tracker.events = [
+            SpecializationEvent(
+                step=e["step"],
+                metric_name=e["metric_name"],
+                old_value=e["old_value"],
+                new_value=e["new_value"],
+                z_score=e["z_score"],
+            )
+            for e in d["events"]
+        ]
+        tracker.step_count = d["step_count"]
+        return tracker

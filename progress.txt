@@ -735,3 +735,21 @@ Goals:
 
 ---
 
+### US-002: Tracker Serialization ✓
+**What:** Added `to_dict()` and `from_dict()` serialization methods to both `EmergenceTracker` and `SpecializationTracker`, enabling full state round-trip preservation for checkpointing.
+**Decisions:**
+- `EmergenceTracker.to_dict()` serializes: `window_size`, `z_threshold`, full `MetricHistory` (values + steps) for each metric, all `EmergenceEvent` instances, and `step_count`
+- `EmergenceTracker.from_dict(d, config)` is a classmethod that reconstructs the tracker from the dict + a Config object (Config is required for construction but not serialized — it's provided by the checkpoint loader)
+- `SpecializationTracker.to_dict()` serializes: `window_size`, `z_threshold`, `history` (plain float lists), `steps`, all `SpecializationEvent` instances, and `step_count`
+- `SpecializationTracker.from_dict(d, config)` follows the same pattern
+- All serialized dicts are JSON-serializable (no numpy arrays, no JAX types) — tested via `json.dumps()` round-trip
+- Restored trackers can continue `update()` calls seamlessly — history appends normally
+- Events are serialized as plain dicts with all 5 fields (step, metric_name, old_value, new_value, z_score) and reconstructed as dataclass instances
+**Files changed:**
+- `src/analysis/emergence.py` — added `to_dict()` and `from_dict()` methods to `EmergenceTracker`
+- `src/analysis/specialization.py` — added `to_dict()` and `from_dict()` methods to `SpecializationTracker`
+- `tests/test_tracker_serialization.py` (new) — 23 tests across 3 classes: `TestEmergenceTrackerSerialization` (10 tests: dict type/keys, empty round-trip, history preservation, event preservation, metrics match, summary match, JSON serializable, continue updating, custom params), `TestSpecializationTrackerSerialization` (11 tests: dict type/keys, empty round-trip, history preservation, event preservation, metrics match, summary match, JSON serializable, continue updating, custom params, JAX alive mask), `TestCrossTrackerSerialization` (2 tests: combined dict, pickle round-trip)
+**Validation:** mypy clean (38 source files, 0 errors), 676/679 tests pass (23 new; 3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4)
+
+---
+

@@ -196,6 +196,67 @@ class EmergenceTracker:
                 summary[f"{name}_std"] = float(np.std(hist.values))
         return summary
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize tracker state to a plain dict.
+
+        Returns:
+            Dict containing all tracker state, suitable for pickling
+            or JSON serialization.
+        """
+        return {
+            "window_size": self.window_size,
+            "z_threshold": self.z_threshold,
+            "history": {
+                name: {"values": list(hist.values), "steps": list(hist.steps)}
+                for name, hist in self.history.items()
+            },
+            "events": [
+                {
+                    "step": e.step,
+                    "metric_name": e.metric_name,
+                    "old_value": e.old_value,
+                    "new_value": e.new_value,
+                    "z_score": e.z_score,
+                }
+                for e in self.events
+            ],
+            "step_count": self.step_count,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any], config: Config) -> "EmergenceTracker":
+        """Restore tracker state from a serialized dict.
+
+        Args:
+            d: Dict produced by ``to_dict()``.
+            config: Master configuration (required for construction).
+
+        Returns:
+            Restored EmergenceTracker with full history and events.
+        """
+        tracker = cls(
+            config=config,
+            window_size=d["window_size"],
+            z_threshold=d["z_threshold"],
+        )
+        for name, hist_data in d["history"].items():
+            hist = MetricHistory()
+            hist.values = list(hist_data["values"])
+            hist.steps = list(hist_data["steps"])
+            tracker.history[name] = hist
+        tracker.events = [
+            EmergenceEvent(
+                step=e["step"],
+                metric_name=e["metric_name"],
+                old_value=e["old_value"],
+                new_value=e["new_value"],
+                z_score=e["z_score"],
+            )
+            for e in d["events"]
+        ]
+        tracker.step_count = d["step_count"]
+        return tracker
+
 
 def _autocorrelation_time(values: list[float], window: int) -> float:
     """Estimate autocorrelation time from a time series.
