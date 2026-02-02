@@ -11,66 +11,117 @@ Unlike typical multi-agent RL (agents coordinate), we add a **learnable field** 
 
 The hypothesis: The field could develop structures that encode collective knowledge.
 
+## Phase 4: Research Microscope
+
+We're building a **live visualization dashboard** to:
+1. Watch agents in real-time (Pixi.js)
+2. Fix gradient homogenization (agent-specific heads)
+3. Measure emergence (transfer entropy, division of labor)
+
 ## Tech Stack
 
+### Training (Python)
 - **JAX/Flax** — ML framework
 - **Optax** — Optimizers
-- **Python 3.10+** — Runtime
+- **FastAPI** — WebSocket server
+- **msgpack** — Binary serialization
+
+### Dashboard (Web)
+- **Svelte 5** — Reactive UI framework
+- **Pixi.js v8** — WebGL/WebGPU rendering
+- **Plotly.js** — Charts
+- **msgpack-lite** — Decode binary frames
 
 ## Build Commands
 
 ```bash
-# Setup
+# Setup Python
 ./scripts/setup.sh
-
-# Activate
 source .venv/bin/activate
 
 # Run tests
 pytest tests/ -v
 
 # Type check
-python -m mypy src/
+python -m mypy src/ --ignore-missing-imports
 
-# Train
-python -m src.training.train --config configs/default.yaml
+# Start training with visualization server
+python -m src.server.main
+
+# Setup Dashboard (one-time)
+cd dashboard
+npm install
+
+# Run Dashboard
+cd dashboard
+npm run dev
+# Opens http://localhost:5173
 ```
 
 ## Architecture
 
 ```
 src/
-├── configs.py       # Dataclass configs
-├── environment/     # Grid world + food
-├── field/           # Shared medium (THE KEY INNOVATION)
-├── agents/          # Neural network policies
-├── training/        # PPO implementation
-└── analysis/        # Emergence detection
+├── configs.py           # Dataclass configs
+├── environment/         # Grid world + food
+├── field/               # Shared medium (THE KEY INNOVATION)
+├── agents/
+│   └── network.py       # Neural networks (ADD agent-specific heads)
+├── training/
+│   └── train.py         # PPO + freeze-evolve (MODIFY)
+├── analysis/
+│   ├── specialization.py  # Clustering, metrics (ADD DOL)
+│   ├── information.py     # NEW: transfer entropy
+│   └── archive.py         # NEW: MAP-Elites
+└── server/                # NEW: WebSocket streaming
+    ├── main.py            # FastAPI app
+    └── streaming.py       # Training bridge
+
+dashboard/                 # NEW: Svelte web app
+├── src/
+│   ├── App.svelte
+│   └── lib/
+│       ├── AgentCanvas.svelte   # Pixi.js renderer
+│       ├── MetricsPanel.svelte  # Plotly charts
+│       ├── ControlPanel.svelte  # Play/pause, sliders
+│       ├── GlossaryPanel.svelte # Help for laypeople
+│       └── ...
+└── package.json
 ```
 
-## JAX Patterns Required
+## Key Patterns
 
+### JAX Patterns
 1. **Pure functions** — no side effects
 2. **Explicit PRNG** — split keys before use
-3. **vmap over agents** — shared weights
+3. **vmap over agents** — batched operations
 4. **JIT everything** — wrap training step
-5. **Flax struct.dataclass** — for pytree states
 
-## The Field
+### Dashboard Patterns
+1. **Reactive stores** — Svelte runes ($state, $derived)
+2. **Binary streaming** — MessagePack for efficiency
+3. **Object pooling** — Pre-allocate Pixi sprites
+4. **Tooltips everywhere** — Help for laypeople
 
-The field is a 2D array (H, W, C) where C = num_channels.
+## The Gradient Homogenization Problem
 
-Each timestep:
-1. Field diffuses (3x3 blur)
-2. Field decays (multiply by 1-rate)
-3. Agents read local values (observation)
-4. Agents write local values (action effect)
+**Problem:** PPO shared gradients push all agent weights together.
 
-This is what makes us different from OpenAI's hide-and-seek.
+**Solution 1: Agent-Specific Heads**
+```python
+class AgentSpecificNetwork(nn.Module):
+    shared_encoder: nn.Module  # Same for all agents
+    agent_heads: List[nn.Module]  # Different for each agent
+    
+    def __call__(self, obs, agent_id):
+        features = self.shared_encoder(obs)
+        return self.agent_heads[agent_id](features)
+```
 
-## Current PRD Task
-
-Check `PRD.md` for the current story. Check `progress.txt` for status.
+**Solution 2: Freeze-Evolve Cycles**
+- GRADIENT phase: Normal PPO training
+- EVOLVE phase: Freeze gradients, only evolution (reproduction + mutation)
+- Alternate every N steps
 
 ## Testing
 
@@ -78,3 +129,16 @@ Every story must pass its acceptance test. Run:
 ```bash
 pytest tests/test_<module>.py::test_<name> -v
 ```
+
+For dashboard tests (requires Playwright):
+```bash
+npx playwright test
+```
+
+## Glossary Reference
+
+See PRD.md for the full glossary. Key terms:
+- **Emergence** — Complex behavior from simple rules
+- **Specialization** — Agents developing different roles
+- **Transfer Entropy** — Information flow between agents
+- **Division of Labor** — How well tasks are split among agents
