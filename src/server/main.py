@@ -211,6 +211,9 @@ def _generate_mock_frame(
         "division_of_labor": float(
             max(0, min(1.0, rng.uniform(-0.03, 0.03) + progress * 0.65))
         ),
+        "phase_transition": float(
+            1.0 if (step > 0 and step % 250 == 0) else 0.0
+        ),
     }
 
     return Frame(

@@ -543,3 +543,21 @@ Goals:
 - `tests/test_specialization.py` — added `TestDivisionOfLabor` class with 14 tests covering: required keys, index range [0,1], identical agents (low DOL), well-separated groups (high DOL), single agent, fixed n_clusters, task counts sum, probs shape, probs sum to 1, probs non-negative, three groups > uniform, two agents, full pipeline (features→DOL), reproducibility
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 509/509 tests pass (14 new).
 
+---
+
+### US-012: Phase Transition Detection ✓
+**What:** Implemented `PhaseTransitionDetector` class and `PhaseTransitionEvent` dataclass in `src/analysis/emergence.py`. Detects phase transitions using the classical statistical mechanics approach: susceptibility spikes (variance of order parameter) combined with critical slowing down (increasing autocorrelation time). Added `phase_transition` mock metric to the server.
+**Decisions:**
+- **Susceptibility as variance:** Susceptibility is computed as the variance of the order parameter over a rolling window. Near a phase transition, fluctuations diverge, causing a spike in variance.
+- **Autocorrelation time via lag-1 autocorrelation:** Estimated from the lag-1 autocorrelation coefficient r using tau = -1/ln(|r|). Higher tau means the system "remembers" longer — a hallmark of critical slowing down near phase transitions.
+- **Dual condition for detection:** Both susceptibility spike (z > threshold relative to susceptibility history) AND increasing autocorrelation time must hold simultaneously. This avoids false positives from random variance spikes alone.
+- **`_autocorrelation_time()` helper:** Extracted as a module-level function for testability. Handles edge cases: short series, constant series, and near-zero autocorrelation all gracefully return 0.0.
+- **Decoupled from specific metrics:** `PhaseTransitionDetector` takes any scalar "order parameter" — not hardcoded to specialization score. Can be used to detect transitions in any metric (specialization, field entropy, DOL, etc.).
+- **Follows existing tracker pattern:** `get_metrics()` returns `phase_transition/`-prefixed dict for W&B logging. `get_summary()` returns overall statistics. Events stored as `PhaseTransitionEvent` dataclass with str() formatting including ⚡ emoji.
+- **Mock server:** Added `phase_transition` metric to mock frames (fires at step multiples of 250) for dashboard development.
+**Files changed:**
+- `src/analysis/emergence.py` — added `PhaseTransitionEvent` dataclass, `_autocorrelation_time()` helper, `PhaseTransitionDetector` class with `update()`, `get_metrics()`, `get_summary()`
+- `src/server/main.py` — added `phase_transition` to mock frame metrics
+- `tests/test_emergence.py` (new) — 34 tests across 7 classes: `TestAutocorrelationTime` (6 tests: short/constant series, positive autocorrelation, noisy series, window limiting, non-negativity), `TestPhaseTransitionEvent` (2 tests: str representation, fields), `TestPhaseTransitionDetectorInit` (2 tests: default/custom params), `TestPhaseTransitionDetectorUpdate` (6 tests: recording, multiple updates, susceptibility timing, returns, step recording), `TestPhaseTransitionDetection` (5 tests: sudden jump detection, gradual change no detection, event fields, steady-then-variable, dual condition requirement), `TestPhaseTransitionDetectorMetrics` (8 tests: empty/after-updates metrics, finiteness, empty/after-updates summary, event strings, latest value, correct statistics), `TestPhaseTransitionDetectorEdgeCases` (5 tests: negative values, large values, constant values, alternating no false positive, single update)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 543/543 tests pass (34 new).
+

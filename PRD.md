@@ -347,7 +347,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-012: Phase Transition Detection
-[ ] **Task:** Detect emergence events via susceptibility spikes.
+[x] **Task:** Detect emergence events via susceptibility spikes.
 
 **Why (ELI5):** Catch the moment when chaos turns into order — like water freezing. One second it's liquid, next second it's ice. We want to detect that "aha!" moment when organization suddenly appears.
 
