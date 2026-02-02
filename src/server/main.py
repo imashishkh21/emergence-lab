@@ -10,7 +10,12 @@ Usage:
 The server exposes:
     - GET  /           — Health check
     - GET  /config     — Current training config
+    - GET  /sessions   — List recorded sessions
+    - POST /record/start — Start recording
+    - POST /record/stop  — Stop recording and save
+    - POST /record/bookmark — Add a bookmark
     - WS   /ws/training — Binary MessagePack stream of training state at 30Hz
+    - WS   /ws/replay   — Replay a recorded session at variable speed
 """
 
 from __future__ import annotations
@@ -18,20 +23,29 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any
 
+import msgpack
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 
+from src.server.replay import SessionPlayer, SessionRecorder, list_sessions
 from src.server.streaming import Frame, TrainingBridge, pack_frame
 
 logger = logging.getLogger(__name__)
 
+# Default recordings directory
+DEFAULT_RECORDINGS_DIR = "recordings"
+
 # Global bridge instance — set by the training loop or by start_server()
 _bridge: TrainingBridge | None = None
+
+# Global recorder instance — managed via /record endpoints
+_recorder: SessionRecorder | None = None
 
 
 def get_bridge() -> TrainingBridge:
@@ -138,7 +152,219 @@ def create_app(bridge: TrainingBridge | None = None) -> FastAPI:
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.close(code=1011)
 
+    # ------------------------------------------------------------------
+    # Recording endpoints
+    # ------------------------------------------------------------------
+
+    @app.get("/sessions")
+    async def get_sessions() -> list[dict[str, Any]]:
+        """List all recorded sessions."""
+        return list_sessions(DEFAULT_RECORDINGS_DIR)
+
+    @app.post("/record/start")
+    async def start_recording(
+        name: str = "session",
+        sample_rate: int = 1,
+        max_frames: int = 0,
+    ) -> dict[str, Any]:
+        """Start recording training frames.
+
+        Args:
+            name: Session name (used as directory name).
+            sample_rate: Record every Nth frame.
+            max_frames: Maximum frames (0 = unlimited).
+        """
+        global _recorder
+        if _recorder is not None and _recorder.recording:
+            return {"status": "error", "message": "Already recording"}
+
+        import time as _time
+
+        session_name = f"{name}_{int(_time.time())}"
+        output_dir = os.path.join(DEFAULT_RECORDINGS_DIR, session_name)
+        _recorder = SessionRecorder(
+            output_dir=output_dir,
+            sample_rate=sample_rate,
+            max_frames=max_frames,
+        )
+        _recorder.start()
+
+        # Hook into the bridge to record frames
+        b = get_bridge()
+        b._recorder = _recorder  # type: ignore[attr-defined]
+
+        logger.info("Started recording to %s", output_dir)
+        return {
+            "status": "ok",
+            "session_name": session_name,
+            "output_dir": output_dir,
+        }
+
+    @app.post("/record/stop")
+    async def stop_recording() -> dict[str, Any]:
+        """Stop recording and save to disk."""
+        global _recorder
+        if _recorder is None or not _recorder.recording:
+            return {"status": "error", "message": "Not recording"}
+
+        _recorder.stop()
+        output_path = _recorder.save()
+
+        b = get_bridge()
+        if hasattr(b, "_recorder"):
+            del b._recorder  # type: ignore[attr-defined]
+
+        frame_count = _recorder.frame_count
+        _recorder = None
+
+        logger.info("Saved recording to %s (%d frames)", output_path, frame_count)
+        return {
+            "status": "ok",
+            "path": str(output_path),
+            "frame_count": frame_count,
+        }
+
+    @app.post("/record/bookmark")
+    async def add_bookmark(label: str, step: int | None = None) -> dict[str, Any]:
+        """Add a bookmark to the current recording.
+
+        Args:
+            label: Human-readable label for this moment.
+            step: Step to bookmark (defaults to latest frame's step).
+        """
+        global _recorder
+        if _recorder is None or not _recorder.recording:
+            return {"status": "error", "message": "Not recording"}
+
+        bookmark = _recorder.add_bookmark(label=label, step=step)
+        return {
+            "status": "ok",
+            "bookmark": bookmark.to_dict(),
+        }
+
+    # ------------------------------------------------------------------
+    # Replay WebSocket endpoint
+    # ------------------------------------------------------------------
+
+    @app.websocket("/ws/replay")
+    async def replay_stream(websocket: WebSocket) -> None:
+        """Replay a recorded session to a dashboard client.
+
+        Protocol:
+            - Client sends initial JSON: {"session": "<session_path>"}
+            - Server streams binary MessagePack frames at target speed.
+            - Client can send JSON commands:
+              {"type": "play"}, {"type": "pause"},
+              {"type": "seek", "position": <frame_index>},
+              {"type": "seek_step", "step": <training_step>},
+              {"type": "seek_bookmark", "index": <bookmark_index>},
+              {"type": "set_speed", "value": <multiplier>}
+            - Server sends JSON status updates:
+              {"type": "status", "position": int, "total": int,
+               "step": int, "playing": bool, "speed": float,
+               "bookmarks": [...]}
+        """
+        await websocket.accept()
+        logger.info("Replay client connected")
+
+        player: SessionPlayer | None = None
+        target_fps = 30.0
+
+        try:
+            while True:
+                # Wait for commands
+                interval = 1.0 / target_fps
+                try:
+                    text = await asyncio.wait_for(
+                        websocket.receive_text(), timeout=interval
+                    )
+                    try:
+                        command = json.loads(text)
+                    except json.JSONDecodeError:
+                        continue
+
+                    cmd_type = command.get("type", "")
+
+                    if cmd_type == "load":
+                        session_path = command.get("session", "")
+                        if not session_path:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": "No session path provided",
+                            }))
+                            continue
+                        player = SessionPlayer(session_path)
+                        try:
+                            player.load()
+                        except (FileNotFoundError, ValueError) as e:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": str(e),
+                            }))
+                            player = None
+                            continue
+                        await _send_replay_status(websocket, player)
+
+                    elif cmd_type == "play" and player is not None:
+                        player.play()
+                    elif cmd_type == "pause" and player is not None:
+                        player.pause()
+                    elif cmd_type == "seek" and player is not None:
+                        player.seek(command.get("position", 0))
+                        await _send_replay_status(websocket, player)
+                    elif cmd_type == "seek_step" and player is not None:
+                        player.seek_to_step(command.get("step", 0))
+                        await _send_replay_status(websocket, player)
+                    elif cmd_type == "seek_bookmark" and player is not None:
+                        player.seek_to_bookmark(command.get("index", 0))
+                        await _send_replay_status(websocket, player)
+                    elif cmd_type == "set_speed" and player is not None:
+                        player.speed = float(command.get("value", 1.0))
+                        await _send_replay_status(websocket, player)
+
+                except asyncio.TimeoutError:
+                    pass
+
+                # Stream frames if playing
+                if player is not None and player.playing:
+                    frame_data = player.current_frame()
+                    if frame_data is not None:
+                        packed: bytes = msgpack.packb(
+                            frame_data, use_bin_type=True
+                        )
+                        if websocket.client_state == WebSocketState.CONNECTED:
+                            await websocket.send_bytes(packed)
+
+                    if not player.advance():
+                        # End of recording
+                        await _send_replay_status(websocket, player)
+
+        except WebSocketDisconnect:
+            logger.info("Replay client disconnected")
+        except Exception as e:
+            logger.error("Replay WebSocket error: %s", e)
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1011)
+
     return app
+
+
+async def _send_replay_status(
+    websocket: WebSocket, player: SessionPlayer
+) -> None:
+    """Send a replay status update to the client."""
+    status = {
+        "type": "status",
+        "position": player.position,
+        "total": player.frame_count,
+        "step": player.current_step(),
+        "playing": player.playing,
+        "speed": player.speed,
+        "progress": player.progress,
+        "bookmarks": [b.to_dict() for b in player.bookmarks],
+        "metadata": player.metadata,
+    }
+    await websocket.send_text(json.dumps(status))
 
 
 def _handle_command(bridge: TrainingBridge, command: dict[str, Any]) -> None:
@@ -282,6 +508,10 @@ async def _mock_training_loop(bridge: TrainingBridge) -> None:
 
             frame = _generate_mock_frame(step, training_mode=mode)
             bridge.publish_frame(frame)
+            # Record frame if a recorder is attached
+            recorder = getattr(bridge, "_recorder", None)
+            if recorder is not None and recorder.recording:
+                recorder.record(frame)
             step += max(1, int(bridge.speed_multiplier))
         else:
             bridge.training_mode = "paused"

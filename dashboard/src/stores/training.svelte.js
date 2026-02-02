@@ -286,7 +286,94 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     sendCommand({ type: "set_param", key, value });
   }
 
+  // ---------------------------------------------------------------
+  // Replay WebSocket (separate connection for /ws/replay)
+  // ---------------------------------------------------------------
+
+  let replayWs = null;
+  let replayConnected = $state(false);
+  let replayStatus = $state(null); // { position, total, step, playing, speed, progress, bookmarks, metadata }
+
+  const replayUrl = serverUrl.replace("/ws/training", "/ws/replay");
+
+  /**
+   * Connect to the replay WebSocket.
+   */
+  function connectReplay() {
+    if (replayWs && (replayWs.readyState === WebSocket.OPEN || replayWs.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    try {
+      replayWs = new WebSocket(replayUrl);
+      replayWs.binaryType = "arraybuffer";
+
+      replayWs.onopen = () => {
+        replayConnected = true;
+        console.log("[Dashboard] Replay connected");
+      };
+
+      replayWs.onmessage = (event) => {
+        try {
+          if (typeof event.data === "string") {
+            // JSON status message
+            const msg = JSON.parse(event.data);
+            if (msg.type === "status") {
+              replayStatus = msg;
+            } else if (msg.type === "error") {
+              console.error("[Dashboard] Replay error:", msg.message);
+            }
+          } else {
+            // Binary MessagePack frame — process like a live frame
+            const packed = new Uint8Array(event.data);
+            const frame = msgpack.decode(packed);
+            processFrame(frame);
+          }
+        } catch (err) {
+          console.error("[Dashboard] Replay frame decode error:", err);
+        }
+      };
+
+      replayWs.onclose = () => {
+        replayConnected = false;
+        replayWs = null;
+        replayStatus = null;
+      };
+
+      replayWs.onerror = () => {
+        console.error("[Dashboard] Replay WebSocket error");
+      };
+    } catch (err) {
+      console.error("[Dashboard] Replay connection failed:", err);
+    }
+  }
+
+  /**
+   * Disconnect the replay WebSocket.
+   */
+  function disconnectReplay() {
+    if (replayWs) {
+      replayWs.close(1000, "Replay closed");
+      replayWs = null;
+    }
+    replayConnected = false;
+    replayStatus = null;
+  }
+
+  /**
+   * Send a command to the replay WebSocket.
+   * @param {Object} command - JSON command, e.g. { type: "play" }, { type: "seek", position: 100 }
+   */
+  function sendReplayCommand(command) {
+    if (replayWs && replayWs.readyState === WebSocket.OPEN) {
+      replayWs.send(JSON.stringify(command));
+    }
+  }
+
+  // ---------------------------------------------------------------
   // Derived values
+  // ---------------------------------------------------------------
+
   let aliveCount = $derived(
     alive ? Array.from(alive).filter((v) => v > 0).length : 0
   );
@@ -329,6 +416,10 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     get speedMultiplier() { return speedMultiplier; },
     get trainingMode() { return trainingMode; },
 
+    // Replay state
+    get replayConnected() { return replayConnected; },
+    get replayStatus() { return replayStatus; },
+
     // Methods
     connect,
     disconnect,
@@ -338,5 +429,10 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     setSpeed,
     setParam,
     selectAgent(index) { selectedAgentIndex = index; },
+
+    // Replay methods
+    connectReplay,
+    disconnectReplay,
+    sendReplayCommand,
   };
 }

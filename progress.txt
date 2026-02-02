@@ -634,3 +634,27 @@ Goals:
 - `tests/test_server.py` — added `TestLineageData` class with 14 tests covering: Frame lineage fields default/set, pack without/with lineage, mock frame lineage shapes/ids/originals/children/structure/fields, create_frame_from_state with/without lineage, packed lineage WebSocket round-trip
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 584/584 tests pass (14 new). `npm run build` succeeds (863 modules).
 
+---
+
+### US-016: Export and Replay ✓
+**What:** Implemented a recording and replay system for training sessions. Created `src/server/replay.py` with `SessionRecorder` and `SessionPlayer` classes, added recording control endpoints and a `/ws/replay` WebSocket endpoint to the server, and built a `ReplayControls.svelte` dashboard component with timeline scrubber, speed controls, and bookmark navigation.
+**Decisions:**
+- **Recording format:** Sessions stored as directories containing `metadata.json`, `frames.msgpack.gz` (gzip-compressed MessagePack), and `bookmarks.json`. Gzip compression reduces storage significantly for the large per-frame numpy arrays.
+- **`SessionRecorder`:** Accumulates serialized frames in memory, flushes to disk on `save()`. Supports `sample_rate` (record every Nth frame) and `max_frames` limits to control storage. Context manager support for clean start/stop.
+- **`SessionPlayer`:** Loads a recorded session from disk, supports play/pause, variable speed (0.25x–16x clamped), seek to frame index, seek to training step (finds closest frame), and seek to bookmark index. Progress reported as 0.0–1.0 fraction.
+- **`Bookmark` dataclass:** Stores step, frame_index, label, and timestamp. Round-trip serializable via `to_dict()`/`from_dict()`.
+- **Frame serialization:** `_serialize_frame()` produces the same dict format as `pack_frame()` but returns a dict instead of bytes, so multiple frames can be batched into one MessagePack file. Stored frames can be sent directly to clients via `msgpack.packb()` without re-conversion.
+- **Server endpoints:** `GET /sessions` lists all recorded sessions. `POST /record/start` starts recording (creates a timestamped session directory). `POST /record/stop` stops and saves. `POST /record/bookmark` adds a bookmark during recording. Recording is attached to the bridge via a `_recorder` attribute.
+- **Replay WebSocket (`/ws/replay`):** Separate from `/ws/training`. Client sends JSON `load` command with session path, then receives binary MessagePack frames when playing. Status updates (position, total, step, playing, speed, bookmarks, metadata) sent as JSON text messages after load/seek/speed changes.
+- **Dashboard integration:** `ReplayControls.svelte` in the sidebar below ControlPanel. Shows session list (fetched via `/sessions` API) when no replay is active. After loading, shows timeline scrubber, play/pause + speed buttons, bookmark list, and session metadata. Replay frames feed into the same `processFrame()` pipeline, so the canvas, metrics charts, and lineage panel all update from replay data.
+- **Store extension:** Added `replayWs`, `replayConnected`, `replayStatus` state, plus `connectReplay()`, `disconnectReplay()`, `sendReplayCommand()` methods. Replay WebSocket URL derived from the training WebSocket URL by replacing `/ws/training` with `/ws/replay`.
+- **Mock training loop:** Updated to record frames when a recorder is attached to the bridge, so recording works in mock mode for development/testing.
+**Files changed:**
+- `src/server/replay.py` (new) — `Bookmark` dataclass, `_serialize_frame()`, `SessionRecorder` class (start/stop/record/add_bookmark/save/context_manager), `SessionPlayer` class (load/play/pause/seek/seek_to_step/seek_to_bookmark/advance/current_frame/current_step/progress), `list_sessions()` utility
+- `src/server/main.py` — added `import msgpack`, `import os`, replay imports; added `DEFAULT_RECORDINGS_DIR` and `_recorder` global; added `/sessions`, `/record/start`, `/record/stop`, `/record/bookmark` endpoints; added `/ws/replay` WebSocket with `_send_replay_status()` helper; updated mock training loop to record frames; updated module docstring
+- `dashboard/src/lib/ReplayControls.svelte` (new) — Session selector, timeline scrubber, play/pause + speed controls, bookmark navigation, session info, close button
+- `dashboard/src/stores/training.svelte.js` — added replay WebSocket state (`replayWs`, `replayConnected`, `replayStatus`), `connectReplay()`, `disconnectReplay()`, `sendReplayCommand()` methods, and replay state getters in return object
+- `dashboard/src/App.svelte` — imported and integrated ReplayControls in sidebar
+- `tests/test_replay.py` (new) — 72 tests across 9 classes: `TestBookmark` (5 tests), `TestFrameSerialization` (7 tests), `TestSessionRecorder` (14 tests), `TestSessionPlayer` (24 tests), `TestListSessions` (5 tests), `TestServerRecording` (6 tests), `TestReplayWebSocket` (9 tests), `TestRecordReplayRoundTrip` (2 tests)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 656/656 tests pass (72 new). `npm run build` succeeds (865 modules). Can replay saved session at variable speed.
+

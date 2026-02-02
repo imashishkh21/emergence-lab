@@ -433,7 +433,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-016: Export and Replay
-[ ] **Task:** Save training snapshots for later replay.
+[x] **Task:** Save training snapshots for later replay.
 
 **Why (ELI5):** Record what happened so you can rewatch later, show others, or analyze interesting moments.
 
