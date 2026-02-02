@@ -179,3 +179,21 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (31 files), 291/291 tests pass, script produces comparison output
 
 ---
+
+### US-010: Specialization Visualization ✓
+**What:** Implemented 4 plotting functions in `src/analysis/visualization.py` that produce PNG files from existing analysis data structures.
+**Decisions:**
+- `matplotlib.use("Agg")` set before any pyplot import for headless support
+- `_save_and_close(fig, output_path)` helper: creates parent dirs, saves at dpi=150, always closes figure to prevent memory leaks, returns figure for test inspection
+- `plot_behavior_clusters()`: PCA (default) or t-SNE to reduce 7D features to 2D scatter plot; PCA labels include explained variance %; t-SNE uses `perplexity=min(30, n_samples-1)`; edge case for `n_samples < 2` plots raw first 2 features
+- `plot_weight_divergence_over_time()`: solid line for mean divergence with fill_between, dashed line for optional max divergence; grid enabled
+- `plot_field_usage_by_cluster()`: grouped bar chart with 5 metrics (write_frequency, mean_field_value, movement_rate, spatial_spread, field_action_correlation) × N clusters; legend labels include cluster role (writer/reader/balanced)
+- `plot_specialization_score_over_time()`: thick red line for composite score, dashed lines for optional components (silhouette/divergence/variance); y-axis fixed [0, 1.05]; gray dotted midpoint at 0.5
+- Constants: `BEHAVIOR_FEATURE_NAMES` (7 names matching `extract_behavior_features` output order), `CLUSTER_COLORS` (tab10 palette)
+- `__init__.py` left unchanged (project convention: import from submodules directly)
+**Files changed:**
+- `src/analysis/visualization.py` (new) — `_save_and_close`, `plot_behavior_clusters`, `plot_weight_divergence_over_time`, `plot_field_usage_by_cluster`, `plot_specialization_score_over_time`; constants `BEHAVIOR_FEATURE_NAMES`, `CLUSTER_COLORS`
+- `tests/test_visualization.py` (new) — 18 tests across 4 classes: `TestPlotBehaviorClusters` (5 tests: figure type, PNG output, PCA axis labels, t-SNE method, single cluster), `TestPlotWeightDivergenceOverTime` (4 tests: figure type, PNG output, with/without max divergence), `TestPlotFieldUsageByCluster` (4 tests: figure type, PNG output, multiple clusters, roles in legend), `TestPlotSpecializationScoreOverTime` (5 tests: figure type, PNG output, y-axis bounds, with/without components)
+**Validation:** ruff clean, mypy clean, black formatted, 309/309 tests pass
+
+---

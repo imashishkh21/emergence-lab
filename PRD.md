@@ -133,7 +133,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Report: collective food collected, survival rate, population stability
 **Verification:** `python scripts/run_specialization_ablation.py` produces comparison
 
-### US-010: Specialization Visualization [ ]
+### US-010: Specialization Visualization [x]
 **Task:** Visualize agent clusters and their behaviors.
 **Files:** `src/analysis/visualization.py` (new)
 **Changes:**
