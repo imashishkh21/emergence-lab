@@ -284,7 +284,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-009: Training Controls
-[ ] **Task:** Add pause/resume and hyperparameter controls.
+[x] **Task:** Add pause/resume and hyperparameter controls.
 
 **Why (ELI5):** Let users pause, play, and adjust settings while watching — like a video player with extra knobs.
 

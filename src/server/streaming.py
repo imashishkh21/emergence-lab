@@ -41,6 +41,7 @@ class Frame:
     field_values: np.ndarray  # (H, W, C) float32
     cluster_labels: np.ndarray | None  # (max_agents,) int8 or None
     metrics: dict[str, float]
+    training_mode: str = "gradient"  # "gradient" | "evolve" | "paused"
     timestamp: float = 0.0
 
     def __post_init__(self) -> None:
@@ -67,6 +68,7 @@ def pack_frame(frame: Frame) -> bytes:
         "food_collected": _pack_array(frame.food_collected.astype(np.uint8)),
         "field": _pack_array(frame.field_values.astype(np.float32)),
         "metrics": frame.metrics,
+        "training_mode": frame.training_mode,
     }
     if frame.cluster_labels is not None:
         data["clusters"] = _pack_array(frame.cluster_labels.astype(np.int8))
@@ -103,6 +105,8 @@ class TrainingBridge:
         self._last_publish_time: float = 0.0
         self._paused: bool = False
         self._commands: list[dict[str, Any]] = []
+        self._speed_multiplier: float = 1.0
+        self._training_mode: str = "gradient"
 
     @property
     def frame_count(self) -> int:
@@ -122,6 +126,24 @@ class TrainingBridge:
     @paused.setter
     def paused(self, value: bool) -> None:
         self._paused = value
+
+    @property
+    def speed_multiplier(self) -> float:
+        """Current speed multiplier (1x, 2x, 4x, etc.)."""
+        return self._speed_multiplier
+
+    @speed_multiplier.setter
+    def speed_multiplier(self, value: float) -> None:
+        self._speed_multiplier = max(0.25, min(16.0, value))
+
+    @property
+    def training_mode(self) -> str:
+        """Current training mode: 'gradient', 'evolve', or 'paused'."""
+        return self._training_mode
+
+    @training_mode.setter
+    def training_mode(self, value: str) -> None:
+        self._training_mode = value
 
     def publish_frame(self, frame: Frame) -> bool:
         """Publish a new frame from the training loop.

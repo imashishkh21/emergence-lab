@@ -480,3 +480,25 @@ Goals:
 - `src/server/main.py` — added `weight_divergence` and `specialization_score` to mock frame metrics with gradual improvement simulation
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (no regressions). `npm run build` succeeds (855 modules). Plotly.js chunk is ~1.4MB gzipped (dynamically loaded, does not block initial render).
 
+---
+
+### US-009: Training Controls ✓
+**What:** Added pause/resume, speed control, mutation rate slider, diversity bonus slider, and training mode indicator to the dashboard control panel. Extended the server's command protocol with `set_speed` command and added `training_mode` to the frame streaming protocol.
+**Decisions:**
+- **Speed control via button group:** 5 speed options (0.5x, 1x, 2x, 4x, 8x) as toggle buttons rather than a slider — discrete options are clearer for users and avoid ambiguous intermediate values. Speed multiplier clamped to [0.25, 16.0] on the bridge.
+- **Training mode indicator:** Colored badge showing current phase — teal for "Learning" (gradient), gold for "Evolving" (evolve), gray for "Paused". Uses emoji icons (brain, DNA, pause) per PRD spec. Mode is streamed in every frame from server.
+- **Parameter sliders:** Mutation rate (0.001–0.1, step 0.001) and diversity bonus (0–1.0, step 0.01) with human-readable labels ("Stable" to "Chaotic", "None" to "Strong"). Each slider has an info icon (i) with tooltip explaining the parameter in plain English.
+- **Frame protocol extension:** Added `training_mode` string field to `Frame` dataclass (default "gradient"), included in MessagePack serialization via `pack_frame()`. This allows the dashboard to display the current training phase without polling.
+- **Bridge state extension:** Added `speed_multiplier` (float, default 1.0) and `training_mode` (string, default "gradient") properties to `TrainingBridge`. Speed setter clamps to [0.25, 16.0].
+- **`set_speed` command:** New command type handled by `_handle_command()` in server. Sets `bridge.speed_multiplier` directly. Forwarded to training loop via command queue.
+- **Mock server enhancement:** Mock training loop now simulates freeze-evolve cycles (200 gradient steps, 50 evolve steps) and responds to speed multiplier by advancing steps proportionally. Training mode is updated on the bridge and included in mock frames.
+- **Store updates:** Added `speedMultiplier`, `trainingMode` state variables and `setSpeed()` method to the training store. `processFrame()` extracts `training_mode` from incoming frames.
+- **Config endpoint:** `/config` now returns `speed_multiplier` and `training_mode` in addition to existing fields.
+**Files changed:**
+- `src/server/streaming.py` — added `training_mode` field to `Frame`, added to `pack_frame()`, added `speed_multiplier` and `training_mode` properties to `TrainingBridge`
+- `src/server/main.py` — added `set_speed` command handling, updated `/config` endpoint, updated mock frame generation and mock training loop with mode cycling and speed response
+- `dashboard/src/stores/training.svelte.js` — added `speedMultiplier`, `trainingMode` state, `setSpeed()` method, frame processing for `training_mode`
+- `dashboard/src/lib/ControlPanel.svelte` — full rewrite with mode indicator, play/pause, speed buttons, mutation rate slider, diversity bonus slider, info tooltips
+- `tests/test_server.py` — added `TestTrainingControls` class with 16 tests covering: speed multiplier defaults/setting/clamping, training mode defaults/setting, set_speed command handling, frame training_mode, packed frame includes mode, config endpoint, mock frames, WebSocket speed and set_param commands
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 460/460 tests pass (16 new). `npm run build` succeeds (855 modules).
+

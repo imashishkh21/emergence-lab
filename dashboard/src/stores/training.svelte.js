@@ -76,6 +76,8 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
 
   // Training control state
   let paused = $state(false);
+  let speedMultiplier = $state(1);
+  let trainingMode = $state("gradient"); // "gradient" | "evolve" | "paused"
 
   // Connection internals
   let ws = null;
@@ -89,6 +91,10 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
   function processFrame(frame) {
     step = frame.step || 0;
     timestamp = frame.timestamp || 0;
+
+    if (frame.training_mode) {
+      trainingMode = frame.training_mode;
+    }
 
     if (frame.positions) {
       const unpacked = unpackArray(frame.positions);
@@ -238,6 +244,15 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
   }
 
   /**
+   * Set simulation speed multiplier.
+   * @param {number} value - Speed multiplier (0.25 to 16)
+   */
+  function setSpeed(value) {
+    speedMultiplier = value;
+    sendCommand({ type: "set_speed", value });
+  }
+
+  /**
    * Set a training parameter.
    * @param {string} key - Parameter name
    * @param {number} value - Parameter value
@@ -281,6 +296,8 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
 
     // Training state
     get paused() { return paused; },
+    get speedMultiplier() { return speedMultiplier; },
+    get trainingMode() { return trainingMode; },
 
     // Methods
     connect,
@@ -288,6 +305,7 @@ export function createTrainingStore(serverUrl = "ws://localhost:8765/ws/training
     sendCommand,
     pause,
     resume,
+    setSpeed,
     setParam,
   };
 }

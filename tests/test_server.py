@@ -552,3 +552,176 @@ class TestCreateFrameFromState:
         frame = bridge.create_frame_from_state(MockState(), metrics, step=0)
         assert "good" in frame.metrics
         assert "bad" not in frame.metrics
+
+
+# ---------------------------------------------------------------------------
+# Training controls tests (US-009)
+# ---------------------------------------------------------------------------
+
+
+class TestTrainingControls:
+    """Tests for training controls: speed, mode, and parameter commands."""
+
+    def test_bridge_speed_multiplier_default(self) -> None:
+        bridge = TrainingBridge()
+        assert bridge.speed_multiplier == 1.0
+
+    def test_bridge_speed_multiplier_set(self) -> None:
+        bridge = TrainingBridge()
+        bridge.speed_multiplier = 4.0
+        assert bridge.speed_multiplier == 4.0
+
+    def test_bridge_speed_multiplier_clamped_low(self) -> None:
+        bridge = TrainingBridge()
+        bridge.speed_multiplier = 0.01
+        assert bridge.speed_multiplier == 0.25
+
+    def test_bridge_speed_multiplier_clamped_high(self) -> None:
+        bridge = TrainingBridge()
+        bridge.speed_multiplier = 100.0
+        assert bridge.speed_multiplier == 16.0
+
+    def test_bridge_training_mode_default(self) -> None:
+        bridge = TrainingBridge()
+        assert bridge.training_mode == "gradient"
+
+    def test_bridge_training_mode_set(self) -> None:
+        bridge = TrainingBridge()
+        bridge.training_mode = "evolve"
+        assert bridge.training_mode == "evolve"
+        bridge.training_mode = "paused"
+        assert bridge.training_mode == "paused"
+
+    def test_handle_set_speed_command(self) -> None:
+        bridge = TrainingBridge()
+        _handle_command(bridge, {"type": "set_speed", "value": 4.0})
+        assert bridge.speed_multiplier == 4.0
+        cmds = bridge.pop_commands()
+        assert len(cmds) == 1
+        assert cmds[0]["type"] == "set_speed"
+
+    def test_handle_set_speed_command_clamped(self) -> None:
+        bridge = TrainingBridge()
+        _handle_command(bridge, {"type": "set_speed", "value": 999})
+        assert bridge.speed_multiplier == 16.0
+
+    def test_frame_training_mode_default(self) -> None:
+        frame = Frame(
+            step=0,
+            positions=np.zeros((2, 2), dtype=np.float32),
+            alive=np.ones(2, dtype=bool),
+            energy=np.zeros(2, dtype=np.float32),
+            food_positions=np.zeros((1, 2), dtype=np.float32),
+            food_collected=np.zeros(1, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+        )
+        assert frame.training_mode == "gradient"
+
+    def test_frame_training_mode_custom(self) -> None:
+        frame = Frame(
+            step=0,
+            positions=np.zeros((2, 2), dtype=np.float32),
+            alive=np.ones(2, dtype=bool),
+            energy=np.zeros(2, dtype=np.float32),
+            food_positions=np.zeros((1, 2), dtype=np.float32),
+            food_collected=np.zeros(1, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+            training_mode="evolve",
+        )
+        assert frame.training_mode == "evolve"
+
+    def test_packed_frame_includes_training_mode(self) -> None:
+        frame = Frame(
+            step=42,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.zeros(4, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+            training_mode="evolve",
+        )
+        packed = pack_frame(frame)
+        data = msgpack.unpackb(packed, raw=False)
+        assert data["training_mode"] == "evolve"
+
+    def test_config_endpoint_includes_speed_and_mode(self) -> None:
+        bridge = TrainingBridge()
+        bridge.speed_multiplier = 2.0
+        bridge.training_mode = "evolve"
+        app = create_app(bridge)
+        client = TestClient(app)
+        response = client.get("/config")
+        data = response.json()
+        assert data["speed_multiplier"] == 2.0
+        assert data["training_mode"] == "evolve"
+
+    def test_mock_frame_has_training_mode(self) -> None:
+        frame = _generate_mock_frame(step=0, training_mode="evolve")
+        assert frame.training_mode == "evolve"
+
+    def test_mock_frame_default_training_mode(self) -> None:
+        frame = _generate_mock_frame(step=0)
+        assert frame.training_mode == "gradient"
+
+    def test_websocket_speed_command(self) -> None:
+        bridge = TrainingBridge(target_fps=1000)
+        app = create_app(bridge)
+        client = TestClient(app)
+
+        frame = Frame(
+            step=1,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.zeros(4, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+        )
+        bridge.publish_frame(frame)
+
+        with client.websocket_connect("/ws/training") as ws:
+            ws.receive_bytes()
+            ws.send_text(json.dumps({"type": "set_speed", "value": 8}))
+            time.sleep(0.1)
+            assert bridge.speed_multiplier == 8.0
+
+    def test_websocket_set_param_command(self) -> None:
+        bridge = TrainingBridge(target_fps=1000)
+        app = create_app(bridge)
+        client = TestClient(app)
+
+        frame = Frame(
+            step=1,
+            positions=np.zeros((4, 2), dtype=np.float32),
+            alive=np.ones(4, dtype=bool),
+            energy=np.zeros(4, dtype=np.float32),
+            food_positions=np.zeros((2, 2), dtype=np.float32),
+            food_collected=np.zeros(2, dtype=bool),
+            field_values=np.zeros((5, 5, 1), dtype=np.float32),
+            cluster_labels=None,
+            metrics={},
+        )
+        bridge.publish_frame(frame)
+
+        with client.websocket_connect("/ws/training") as ws:
+            ws.receive_bytes()
+            ws.send_text(json.dumps({
+                "type": "set_param",
+                "key": "mutation_std",
+                "value": 0.05,
+            }))
+            time.sleep(0.1)
+            cmds = bridge.pop_commands()
+            assert any(
+                c.get("type") == "set_param" and c.get("key") == "mutation_std"
+                for c in cmds
+            )

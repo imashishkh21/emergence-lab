@@ -87,6 +87,8 @@ def create_app(bridge: TrainingBridge | None = None) -> FastAPI:
             "target_fps": b.target_fps,
             "frame_count": b.frame_count,
             "paused": b.paused,
+            "speed_multiplier": b.speed_multiplier,
+            "training_mode": b.training_mode,
         }
 
     @app.websocket("/ws/training")
@@ -150,6 +152,11 @@ def _handle_command(bridge: TrainingBridge, command: dict[str, Any]) -> None:
         bridge.paused = False
         bridge.push_command(command)
         logger.info("Training resumed by dashboard")
+    elif cmd_type == "set_speed":
+        value = command.get("value", 1.0)
+        bridge.speed_multiplier = float(value)
+        bridge.push_command(command)
+        logger.info("Speed multiplier set to %sx", bridge.speed_multiplier)
     elif cmd_type == "set_param":
         bridge.push_command(command)
         logger.info(
@@ -162,7 +169,9 @@ def _handle_command(bridge: TrainingBridge, command: dict[str, Any]) -> None:
         logger.info("Unknown command forwarded: %s", cmd_type)
 
 
-def _generate_mock_frame(step: int, max_agents: int = 32) -> Frame:
+def _generate_mock_frame(
+    step: int, max_agents: int = 32, training_mode: str = "gradient"
+) -> Frame:
     """Generate a mock frame for testing the server without training."""
     rng = np.random.RandomState(step % 1000)
     grid_size = 20
@@ -205,17 +214,30 @@ def _generate_mock_frame(step: int, max_agents: int = 32) -> Frame:
         field_values=field_vals,
         cluster_labels=cluster_labels,
         metrics=metrics,
+        training_mode=training_mode,
     )
 
 
 async def _mock_training_loop(bridge: TrainingBridge) -> None:
     """Simulate a training loop by publishing mock frames."""
     step = 0
+    # Simulate freeze-evolve: cycle between gradient and evolve modes
+    gradient_steps = 200
+    evolve_steps = 50
+    cycle_length = gradient_steps + evolve_steps
+
     while True:
         if not bridge.paused:
-            frame = _generate_mock_frame(step)
+            # Determine mock training mode based on step cycle
+            cycle_pos = step % cycle_length
+            mode = "evolve" if cycle_pos >= gradient_steps else "gradient"
+            bridge.training_mode = mode
+
+            frame = _generate_mock_frame(step, training_mode=mode)
             bridge.publish_frame(frame)
-            step += 1
+            step += max(1, int(bridge.speed_multiplier))
+        else:
+            bridge.training_mode = "paused"
         await asyncio.sleep(1.0 / 30.0)
 
 
