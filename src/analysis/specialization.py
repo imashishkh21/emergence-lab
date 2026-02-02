@@ -796,6 +796,184 @@ def correlate_lineage_strategy(
 
 
 @dataclass
+class Species:
+    """A detected species: a stable, hereditary behavioral cluster.
+
+    Attributes:
+        cluster_id: The cluster label this species corresponds to.
+        num_members: Number of agents currently in this species.
+        agent_indices: Indices of agents belonging to this species.
+        centroid: Centroid of the species in behavioral feature space
+            (standardized). Shape ``(num_features,)``.
+        silhouette: Silhouette score for the overall clustering that
+            produced this species. Higher = better separated.
+        heredity_score: Fraction of parent-child pairs where both
+            belong to the same cluster. 1.0 = perfectly hereditary.
+        mean_features: Mean raw (unstandardized) feature vector of
+            species members. Shape ``(num_features,)``.
+        role: Optional role label ('writer', 'reader', 'balanced')
+            if field usage data was provided.
+    """
+
+    cluster_id: int
+    num_members: int
+    agent_indices: np.ndarray
+    centroid: np.ndarray
+    silhouette: float
+    heredity_score: float
+    mean_features: np.ndarray
+    role: str = "unknown"
+
+
+def detect_species(
+    behavior_features: np.ndarray,
+    lineage_tracker: LineageTracker | None = None,
+    agent_ids: np.ndarray | list[int] | None = None,
+    threshold: float = 0.7,
+    max_clusters: int = 5,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Detect distinct "species" — stable, hereditary behavioral clusters.
+
+    A species is a behavioral cluster that satisfies:
+    1. **Distinct**: clear cluster boundary (silhouette > ``threshold``
+       when evaluated with the overall clustering).
+    2. **Hereditary**: children tend to cluster with parents (>= 70%
+       parent-child pairs in the same cluster).
+
+    When ``lineage_tracker`` is not provided the heredity check is
+    skipped and every qualifying cluster is reported.
+
+    Args:
+        behavior_features: Array of shape ``(num_agents, num_features)``.
+        lineage_tracker: Optional ``LineageTracker`` to evaluate heredity.
+        agent_ids: Agent IDs corresponding to rows in ``behavior_features``.
+            Required when ``lineage_tracker`` is provided.
+        threshold: Minimum overall silhouette score to consider clusters
+            as valid species (default 0.7).
+        max_clusters: Maximum number of clusters to try (passed to
+            ``find_optimal_clusters``).
+        random_state: Random seed for clustering reproducibility.
+
+    Returns:
+        Dict with keys:
+
+        - ``'species'``: List of ``Species`` objects for each qualifying
+          cluster. May be empty if no cluster meets the threshold.
+        - ``'num_species'``: Number of detected species.
+        - ``'silhouette'``: Overall silhouette score from optimal clustering.
+        - ``'optimal_k'``: Number of clusters found by
+          ``find_optimal_clusters``.
+        - ``'all_labels'``: Cluster labels for every agent, shape
+          ``(num_agents,)``.
+        - ``'heredity_score'``: Global heredity score (fraction of
+          parent-child pairs in the same cluster). 0.0 if no lineage
+          data available or no parent-child pairs.
+        - ``'is_speciated'``: ``True`` if at least one species detected.
+    """
+    features = np.asarray(behavior_features, dtype=np.float64)
+    n_samples = features.shape[0]
+
+    # --- Clustering ---
+    clustering = find_optimal_clusters(
+        features, max_k=max_clusters, random_state=random_state
+    )
+    labels = clustering["labels"]
+    silhouette = clustering["silhouette"]
+    optimal_k = clustering["optimal_k"]
+    centroids = clustering["centroids"]
+
+    # --- Heredity score ---
+    heredity_score = 0.0
+    if lineage_tracker is not None and agent_ids is not None:
+        agent_ids_arr = np.asarray(agent_ids, dtype=int)
+        # Build agent_id -> cluster label map
+        id_to_cluster: dict[int, int] = {}
+        for i, aid in enumerate(agent_ids_arr):
+            id_to_cluster[int(aid)] = int(labels[i])
+
+        # Check parent-child cluster agreement
+        same_cluster = 0
+        total_pairs = 0
+        for i, aid in enumerate(agent_ids_arr):
+            aid_int = int(aid)
+            if aid_int in lineage_tracker.records:
+                parent_id = lineage_tracker.records[aid_int].parent_id
+                if parent_id >= 0 and parent_id in id_to_cluster:
+                    total_pairs += 1
+                    if id_to_cluster[parent_id] == id_to_cluster[aid_int]:
+                        same_cluster += 1
+
+        if total_pairs > 0:
+            heredity_score = same_cluster / total_pairs
+
+    # --- Build species list ---
+    species_list: list[Species] = []
+    meets_silhouette = silhouette >= threshold
+
+    if meets_silhouette and optimal_k >= 2:
+        # Heredity threshold for a cluster to be a species
+        heredity_threshold = 0.7
+
+        for cid in range(optimal_k):
+            member_mask = labels == cid
+            member_indices = np.where(member_mask)[0]
+            num_members = int(np.sum(member_mask))
+
+            if num_members == 0:
+                continue
+
+            # Compute per-cluster heredity
+            cluster_heredity = 0.0
+            if lineage_tracker is not None and agent_ids is not None:
+                agent_ids_arr = np.asarray(agent_ids, dtype=int)
+                cluster_same = 0
+                cluster_pairs = 0
+                for idx in member_indices:
+                    aid_int = int(agent_ids_arr[idx])
+                    if aid_int in lineage_tracker.records:
+                        parent_id = lineage_tracker.records[aid_int].parent_id
+                        if parent_id >= 0 and parent_id in id_to_cluster:
+                            cluster_pairs += 1
+                            if id_to_cluster[parent_id] == cid:
+                                cluster_same += 1
+                if cluster_pairs > 0:
+                    cluster_heredity = cluster_same / cluster_pairs
+            else:
+                # No lineage data: skip heredity check
+                cluster_heredity = 1.0  # assume hereditary
+
+            # Must pass heredity threshold
+            if cluster_heredity < heredity_threshold:
+                continue
+
+            # Mean raw features
+            mean_feat = np.mean(features[member_mask], axis=0)
+
+            species_list.append(
+                Species(
+                    cluster_id=cid,
+                    num_members=num_members,
+                    agent_indices=member_indices,
+                    centroid=centroids[cid] if cid < len(centroids) else mean_feat,
+                    silhouette=silhouette,
+                    heredity_score=cluster_heredity,
+                    mean_features=mean_feat,
+                )
+            )
+
+    return {
+        "species": species_list,
+        "num_species": len(species_list),
+        "silhouette": silhouette,
+        "optimal_k": optimal_k,
+        "all_labels": labels,
+        "heredity_score": heredity_score,
+        "is_speciated": len(species_list) > 0,
+    }
+
+
+@dataclass
 class SpecializationEvent:
     """A detected specialization event (sudden divergence increase)."""
 

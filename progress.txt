@@ -197,3 +197,21 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** ruff clean, mypy clean, black formatted, 309/309 tests pass
 
 ---
+
+### US-011: Species Detection ✓
+**What:** Implemented `detect_species()` function and `Species` dataclass in `src/analysis/specialization.py` for formally detecting when distinct "species" have emerged in the population.
+**Decisions:**
+- A "species" requires two conditions: (1) clear cluster boundaries (overall silhouette >= threshold, default 0.7), and (2) hereditary membership (>= 70% of parent-child pairs in same cluster)
+- `Species` dataclass stores: cluster_id, num_members, agent_indices, centroid (standardized space), silhouette, heredity_score, mean_features (raw space), and optional role label
+- Uses `find_optimal_clusters()` internally to determine optimal number of clusters and get silhouette score
+- Global heredity_score computed as fraction of all parent-child pairs (where both are in the agent set) that share a cluster
+- Per-cluster heredity computed separately — each cluster must individually pass the 70% heredity threshold to qualify as a species
+- When no `lineage_tracker` is provided, heredity check is skipped (all qualifying clusters are treated as species, heredity=1.0 assumed)
+- Returns comprehensive dict: species list, num_species, silhouette, optimal_k, all_labels, heredity_score, is_speciated bool
+- `is_speciated` is True when at least one species is detected
+**Files changed:**
+- `src/analysis/specialization.py` — added `Species` dataclass and `detect_species()` function
+- `tests/test_specialization.py` — added `TestSpeciesDetection` class with 14 tests covering: required keys, well-separated clusters detected, identical agents no species, species object attributes, all_labels shape, species cover agents, heredity with lineage tracker, heredity zero without lineage, high threshold reduces species, single agent, non-hereditary clusters excluded, mean features correct, silhouette matches clustering, full pipeline
+**Validation:** mypy clean (32 files), 323/323 tests pass
+
+---

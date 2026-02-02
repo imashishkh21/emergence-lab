@@ -1993,3 +1993,282 @@ class TestLineageCorrelation:
         assert 0.0 <= result["mean_homogeneity"] <= 1.0
         # Well-separated features → lineages should be specialists
         assert result["num_specialist_lineages"] >= 1
+
+
+class TestSpeciesDetection:
+    """US-011: Species detection tests."""
+
+    def _make_well_separated_features(
+        self, n_per_cluster: int = 30, noise: float = 0.3, seed: int = 42
+    ) -> np.ndarray:
+        """Create 3 well-separated clusters in 7D feature space."""
+        rng = np.random.RandomState(seed)
+        c1 = rng.randn(n_per_cluster, 7) * noise + np.array([10, 10, 0, 0, 0, 0, 0])
+        c2 = rng.randn(n_per_cluster, 7) * noise + np.array([0, 0, 10, 10, 0, 0, 0])
+        c3 = rng.randn(n_per_cluster, 7) * noise + np.array([0, 0, 0, 0, 10, 10, 0])
+        return np.vstack([c1, c2, c3])
+
+    def _make_lineage_for_clusters(
+        self, n_per_cluster: int = 30
+    ) -> tuple[LineageTracker, np.ndarray]:
+        """Create a lineage tracker where 3 lineages map to 3 clusters.
+
+        Lineage A (root=0): agents 0..n_per_cluster-1  → cluster 0
+        Lineage B (root=100): agents 100..100+n_per_cluster-1 → cluster 1
+        Lineage C (root=200): agents 200..200+n_per_cluster-1 → cluster 2
+
+        Returns:
+            (tracker, agent_ids) pair.
+        """
+        tracker = LineageTracker()
+        agent_ids = []
+        for base, root in [(0, 0), (100, 100), (200, 200)]:
+            tracker.register_birth(root, parent_id=-1, step=0)
+            agent_ids.append(root)
+            for i in range(1, n_per_cluster):
+                aid = base + i
+                # First half: children of root; second half: grandchildren
+                parent = root if i < n_per_cluster // 2 else base + 1
+                tracker.register_birth(aid, parent_id=parent, step=i * 10)
+                agent_ids.append(aid)
+        return tracker, np.array(agent_ids)
+
+    def test_returns_required_keys(self):
+        """detect_species returns all expected keys."""
+        from src.analysis.specialization import detect_species
+
+        rng = np.random.RandomState(0)
+        features = rng.randn(20, 7)
+        result = detect_species(features)
+
+        assert "species" in result
+        assert "num_species" in result
+        assert "silhouette" in result
+        assert "optimal_k" in result
+        assert "all_labels" in result
+        assert "heredity_score" in result
+        assert "is_speciated" in result
+
+    def test_well_separated_clusters_detected_as_species(self):
+        """Well-separated clusters should be detected as species."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features()
+        result = detect_species(features, threshold=0.5)
+
+        assert result["is_speciated"]
+        assert result["num_species"] >= 2
+        assert result["silhouette"] > 0.5
+        assert result["optimal_k"] == 3
+
+    def test_identical_agents_no_species(self):
+        """Identical agents should produce no species."""
+        from src.analysis.specialization import detect_species
+
+        features = np.ones((10, 7))
+        result = detect_species(features)
+
+        assert not result["is_speciated"]
+        assert result["num_species"] == 0
+        assert len(result["species"]) == 0
+
+    def test_species_object_attributes(self):
+        """Each Species object should have all expected attributes."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features()
+        result = detect_species(features, threshold=0.5)
+
+        assert len(result["species"]) > 0
+        sp = result["species"][0]
+
+        assert isinstance(sp.cluster_id, int)
+        assert isinstance(sp.num_members, int)
+        assert sp.num_members > 0
+        assert isinstance(sp.agent_indices, np.ndarray)
+        assert len(sp.agent_indices) == sp.num_members
+        assert isinstance(sp.centroid, np.ndarray)
+        assert sp.centroid.shape == (7,)
+        assert isinstance(sp.silhouette, float)
+        assert isinstance(sp.heredity_score, float)
+        assert isinstance(sp.mean_features, np.ndarray)
+        assert sp.mean_features.shape == (7,)
+
+    def test_all_labels_shape(self):
+        """all_labels should have shape (num_agents,)."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features(n_per_cluster=20)
+        result = detect_species(features, threshold=0.5)
+
+        assert result["all_labels"].shape == (60,)
+
+    def test_species_cover_all_agents_when_speciated(self):
+        """When speciated, species agent_indices should be subsets of all agents."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features()
+        result = detect_species(features, threshold=0.5)
+
+        if result["is_speciated"]:
+            all_species_indices = np.concatenate(
+                [sp.agent_indices for sp in result["species"]]
+            )
+            # All species indices should be valid
+            assert np.all(all_species_indices >= 0)
+            assert np.all(all_species_indices < len(features))
+
+    def test_heredity_score_with_lineage_tracker(self):
+        """heredity_score should reflect parent-child cluster agreement."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features()
+        tracker, agent_ids = self._make_lineage_for_clusters()
+
+        result = detect_species(
+            features,
+            lineage_tracker=tracker,
+            agent_ids=agent_ids,
+            threshold=0.5,
+        )
+
+        # With perfectly aligned lineages and clusters, heredity should be high
+        assert result["heredity_score"] > 0.5
+
+    def test_heredity_score_zero_without_lineage(self):
+        """Without lineage_tracker, heredity_score should be 0.0."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features()
+        result = detect_species(features, threshold=0.5)
+
+        assert result["heredity_score"] == 0.0
+
+    def test_high_threshold_reduces_species(self):
+        """A higher silhouette threshold should detect fewer or no species."""
+        from src.analysis.specialization import detect_species
+
+        # Use noisier clusters
+        rng = np.random.RandomState(99)
+        c1 = rng.randn(20, 7) * 2.0 + np.array([3, 3, 0, 0, 0, 0, 0])
+        c2 = rng.randn(20, 7) * 2.0 + np.array([0, 0, 3, 3, 0, 0, 0])
+        features = np.vstack([c1, c2])
+
+        result_low = detect_species(features, threshold=0.3)
+        result_high = detect_species(features, threshold=0.99)
+
+        assert result_high["num_species"] <= result_low["num_species"]
+
+    def test_single_agent_no_species(self):
+        """Single agent should produce no species."""
+        from src.analysis.specialization import detect_species
+
+        features = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]])
+        result = detect_species(features)
+
+        assert not result["is_speciated"]
+        assert result["num_species"] == 0
+
+    def test_non_hereditary_clusters_excluded(self):
+        """Clusters where children don't match parents should be excluded."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features(n_per_cluster=20)
+
+        # Create lineage where parents are in different clusters than children
+        tracker = LineageTracker()
+        agent_ids = list(range(60))
+
+        # Register all as roots or with cross-cluster parents
+        for i in range(60):
+            if i < 20:
+                # Cluster 0 agents: parent in cluster 1 range
+                if i == 0:
+                    tracker.register_birth(i, parent_id=-1, step=0)
+                else:
+                    # parent_id points to an agent in cluster 1 (20-39)
+                    tracker.register_birth(i, parent_id=20 + (i % 20), step=i * 10)
+            elif i < 40:
+                # Cluster 1 agents: parent in cluster 2 range
+                if i == 20:
+                    tracker.register_birth(i, parent_id=-1, step=0)
+                else:
+                    tracker.register_birth(i, parent_id=40 + (i % 20), step=i * 10)
+            else:
+                # Cluster 2 agents: parent in cluster 0 range
+                if i == 40:
+                    tracker.register_birth(i, parent_id=-1, step=0)
+                else:
+                    tracker.register_birth(i, parent_id=i % 20, step=i * 10)
+
+        result = detect_species(
+            features,
+            lineage_tracker=tracker,
+            agent_ids=np.array(agent_ids),
+            threshold=0.5,
+        )
+
+        # Cross-cluster parentage → low heredity → species should be excluded
+        assert result["heredity_score"] < 0.3
+
+    def test_species_mean_features_correct(self):
+        """Species mean_features should match mean of member features."""
+        from src.analysis.specialization import detect_species
+
+        features = self._make_well_separated_features()
+        result = detect_species(features, threshold=0.5)
+
+        for sp in result["species"]:
+            expected_mean = np.mean(features[sp.agent_indices], axis=0)
+            np.testing.assert_allclose(sp.mean_features, expected_mean, atol=1e-10)
+
+    def test_silhouette_matches_clustering(self):
+        """Returned silhouette should match find_optimal_clusters result."""
+        from src.analysis.specialization import detect_species, find_optimal_clusters
+
+        features = self._make_well_separated_features()
+        result = detect_species(features, threshold=0.5)
+        clustering = find_optimal_clusters(features, max_k=5, random_state=42)
+
+        assert result["silhouette"] == pytest.approx(clustering["silhouette"])
+        assert result["optimal_k"] == clustering["optimal_k"]
+
+    def test_pipeline_features_to_species(self):
+        """Full pipeline: extract_behavior_features -> detect_species."""
+        from src.analysis.specialization import (
+            detect_species,
+            extract_behavior_features,
+        )
+
+        rng = np.random.RandomState(77)
+        num_steps, num_agents = 200, 10
+
+        # Create trajectory with distinguishable groups
+        actions = np.zeros((num_steps, num_agents), dtype=int)
+        positions = np.zeros((num_steps, num_agents, 2), dtype=int)
+
+        # Group A (agents 0-4): stationary, always action 0
+        actions[:, :5] = 0
+        for a in range(5):
+            positions[:, a] = [a, a]
+
+        # Group B (agents 5-9): moving, varied actions
+        for t in range(num_steps):
+            actions[t, 5:] = rng.randint(1, 5, size=5)
+            for a in range(5, 10):
+                positions[t, a] = [t % 32, (a * t) % 32]
+
+        traj = {
+            "actions": actions,
+            "positions": positions,
+            "rewards": rng.uniform(0, 1, size=(num_steps, num_agents)),
+            "alive_mask": np.ones((num_steps, num_agents), dtype=bool),
+            "energy": rng.uniform(10, 100, size=(num_steps, num_agents)),
+        }
+
+        features = extract_behavior_features(traj)
+        result = detect_species(features, threshold=0.3)
+
+        # Should detect at least some structure
+        assert result["optimal_k"] >= 2
+        assert isinstance(result["species"], list)

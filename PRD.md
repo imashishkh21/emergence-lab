@@ -143,7 +143,7 @@ With shared field + evolution, agents should differentiate into roles:
 - `plot_specialization_score_over_time(scores)`
 **Verification:** Running visualization produces PNG files
 
-### US-011: Species Detection [ ]
+### US-011: Species Detection [x]
 **Task:** Formally detect when distinct "species" have emerged.
 **Files:** `src/analysis/specialization.py`
 **Changes:**
