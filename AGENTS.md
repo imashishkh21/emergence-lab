@@ -11,12 +11,26 @@ Unlike typical multi-agent RL (agents coordinate), we add a **learnable field** 
 
 The hypothesis: The field could develop structures that encode collective knowledge.
 
-## Phase 4: Research Microscope
+## Phase 4B: Kaggle Infrastructure
 
-We're building a **live visualization dashboard** to:
-1. Watch agents in real-time (Pixi.js)
-2. Fix gradient homogenization (agent-specific heads)
-3. Measure emergence (transfer entropy, division of labor)
+We're building **autonomous training infrastructure** to:
+1. Wire training to dashboard (real data, not mock)
+2. Fix checkpointing (save full state: optimizer, PRNG, step, trackers)
+3. Kaggle CLI automation (Titan can run training 24/7)
+
+### Key Decisions (FOLLOW THESE)
+- **Enhanced pickle, NOT Orbax** — Orbax has cross-platform GPU→CPU bugs
+- **Kaggle only** — Don't mention Colab
+- **Save every 100k steps** — Keep last 5 checkpoints with rotation
+- **Signal handlers** — Save emergency checkpoint on SIGTERM/SIGINT
+
+### What Already Exists (from Phase 4)
+- `src/server/streaming.py` — `TrainingBridge` with `publish_frame()` method
+- `src/analysis/emergence.py` — `EmergenceTracker` (needs serialization)
+- `src/analysis/specialization.py` — `SpecializationTracker` (needs serialization)
+- `config.log.save_interval` — Exists but unused
+- `config.log.checkpoint_dir` — Exists
+- Dashboard works with mock data via `python -m src.server.main --mock`
 
 ## Tech Stack
 
@@ -46,15 +60,11 @@ pytest tests/ -v
 python -m mypy src/ --ignore-missing-imports
 
 # Start training with visualization server
-python -m src.server.main
+python -m src.server.main --mock  # Mock data (works now)
+python -m src.training.train --server  # Real data (after US-001)
 
-# Setup Dashboard (one-time)
-cd dashboard
-npm install
-
-# Run Dashboard
-cd dashboard
-npm run dev
+# Dashboard
+cd dashboard && npm run dev
 # Opens http://localhost:5173
 ```
 
@@ -66,27 +76,39 @@ src/
 ├── environment/         # Grid world + food
 ├── field/               # Shared medium (THE KEY INNOVATION)
 ├── agents/
-│   └── network.py       # Neural networks (ADD agent-specific heads)
+│   └── network.py       # Neural networks with agent-specific heads
 ├── training/
-│   └── train.py         # PPO + freeze-evolve (MODIFY)
+│   ├── train.py         # PPO + freeze-evolve
+│   └── checkpointing.py # NEW in Phase 4B: full state save/load
 ├── analysis/
-│   ├── specialization.py  # Clustering, metrics (ADD DOL)
-│   ├── information.py     # NEW: transfer entropy
-│   └── archive.py         # NEW: MAP-Elites
-└── server/                # NEW: WebSocket streaming
+│   ├── specialization.py  # Clustering, metrics
+│   ├── emergence.py       # EmergenceTracker (add serialization)
+│   ├── information.py     # Transfer entropy
+│   └── archive.py         # MAP-Elites
+└── server/
     ├── main.py            # FastAPI app
-    └── streaming.py       # Training bridge
+    └── streaming.py       # TrainingBridge
 
-dashboard/                 # NEW: Svelte web app
+dashboard/                 # Svelte web app
 ├── src/
 │   ├── App.svelte
 │   └── lib/
-│       ├── AgentCanvas.svelte   # Pixi.js renderer
-│       ├── MetricsPanel.svelte  # Plotly charts
-│       ├── ControlPanel.svelte  # Play/pause, sliders
-│       ├── GlossaryPanel.svelte # Help for laypeople
+│       ├── AgentCanvas.svelte
+│       ├── MetricsPanel.svelte
+│       ├── ControlPanel.svelte
 │       └── ...
 └── package.json
+
+notebooks/
+└── kaggle_training.ipynb  # NEW in Phase 4B: Kaggle notebook
+
+scripts/
+├── ralph.sh               # Ralph loop runner
+├── kaggle_setup.sh        # NEW: Kaggle CLI setup
+├── kaggle_push.sh         # NEW: Push to Kaggle
+├── kaggle_run.sh          # NEW: Start Kaggle run
+├── kaggle_status.sh       # NEW: Check run status
+└── kaggle_download.sh     # NEW: Download results
 ```
 
 ## Key Patterns
@@ -97,31 +119,21 @@ dashboard/                 # NEW: Svelte web app
 3. **vmap over agents** — batched operations
 4. **JIT everything** — wrap training step
 
-### Dashboard Patterns
-1. **Reactive stores** — Svelte runes ($state, $derived)
-2. **Binary streaming** — MessagePack for efficiency
-3. **Object pooling** — Pre-allocate Pixi sprites
-4. **Tooltips everywhere** — Help for laypeople
-
-## The Gradient Homogenization Problem
-
-**Problem:** PPO shared gradients push all agent weights together.
-
-**Solution 1: Agent-Specific Heads**
+### Checkpointing Pattern (Phase 4B)
 ```python
-class AgentSpecificNetwork(nn.Module):
-    shared_encoder: nn.Module  # Same for all agents
-    agent_heads: List[nn.Module]  # Different for each agent
-    
-    def __call__(self, obs, agent_id):
-        features = self.shared_encoder(obs)
-        return self.agent_heads[agent_id](features)
+# Save full state
+checkpoint = {
+    'params': params,
+    'opt_state': opt_state,
+    'agent_params': agent_params,
+    'prng_key': prng_key,
+    'step': step,
+    'config': config,
+    'tracker_state': tracker.to_dict()
+}
+# Convert JAX arrays to numpy for cross-platform
+save_checkpoint(path, checkpoint)
 ```
-
-**Solution 2: Freeze-Evolve Cycles**
-- GRADIENT phase: Normal PPO training
-- EVOLVE phase: Freeze gradients, only evolution (reproduction + mutation)
-- Alternate every N steps
 
 ## Testing
 
@@ -130,15 +142,6 @@ Every story must pass its acceptance test. Run:
 pytest tests/test_<module>.py::test_<name> -v
 ```
 
-For dashboard tests (requires Playwright):
-```bash
-npx playwright test
-```
-
 ## Glossary Reference
 
-See PRD.md for the full glossary. Key terms:
-- **Emergence** — Complex behavior from simple rules
-- **Specialization** — Agents developing different roles
-- **Transfer Entropy** — Information flow between agents
-- **Division of Labor** — How well tasks are split among agents
+See PRD.md for the full glossary.
