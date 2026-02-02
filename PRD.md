@@ -158,7 +158,7 @@ sleep 10 && kill -TERM $!
 
 ---
 
-### US-007: Kaggle Notebook [ ]
+### US-007: Kaggle Notebook [x]
 
 **Task:** Create ready-to-use Kaggle notebook.
 

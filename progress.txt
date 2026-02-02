@@ -828,3 +828,20 @@ Goals:
 
 ---
 
+### US-007: Kaggle Notebook ✓
+**What:** Created `notebooks/kaggle_training.ipynb` — a ready-to-use Kaggle notebook for autonomous training on GPU instances with automatic checkpoint resume.
+**Decisions:**
+- Cell 1: Installs `jax[cuda12]` via pip, verifies GPU availability by checking device kinds, prints a warning if no GPU detected (instructs user to enable GPU accelerator in Kaggle settings)
+- Cell 2: Clones the repo (or pulls latest if already present) using `--depth 1` shallow clone for speed. Installs the package with `--no-deps` to avoid overwriting the CUDA JAX installation, then installs non-JAX dependencies separately. Adds repo to `sys.path` and changes working directory.
+- Cell 3: Configuration cell with all hyperparameters in a single `Config()` constructor call. Uses survival-friendly params from CLAUDE.md (`num_food=20`, `starting_energy=200`, `food_energy=100`, `reproduce_threshold=120`, `reproduce_cost=50`). W&B disabled by default, server disabled, specialization pressure enabled (`diversity_bonus=0.1`, `niche_pressure=0.05`). Prints a config summary.
+- Cell 4: Resume-or-start logic — checks for explicit `RESUME_FROM` path first, then auto-detects `latest.pkl` in the checkpoint directory. When resuming, loads the checkpoint and shows step count and remaining steps. Creates checkpoint directory on fresh start.
+- Cell 5: Runs `train(config)` with timing, graceful exception handling (KeyboardInterrupt, general Exception), and post-training checkpoint listing with file sizes. Points user to the Output tab for downloading results.
+- All 5 code cells pass Python syntax validation via `compile()`
+- Notebook metadata set to Python 3 kernel, nbformat 4.4
+- `REPO_URL` placeholder marked with "UPDATE THIS" comment for user to fill in their fork URL
+**Files changed:**
+- `notebooks/kaggle_training.ipynb` (new) — 5 code cells + 6 markdown cells (intro + section headers)
+**Validation:** mypy clean (39 source files, 0 errors), notebook opens without error, all cells syntactically valid
+
+---
+
