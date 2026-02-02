@@ -34,6 +34,34 @@ Phase 2 adds an energy system and reproduction mechanics on top of the field-bas
 
 These mechanics create a natural selection loop: agents that forage efficiently accumulate energy, reproduce more, and pass their (mutated) weights to offspring — driving population-level adaptation alongside gradient-based learning.
 
+## Phase 3: Specialization Detection
+
+Phase 3 adds analysis tools to detect when agents evolve into distinct "species" with specialized strategies:
+
+- **Weight divergence**: Measures pairwise cosine distance between agents' neural network weights over time, tracking how genetically different agents become.
+- **Behavioral feature extraction**: Extracts 7 features per agent from trajectories — movement entropy, food collection rate, distance per step, reproduction rate, mean energy, exploration ratio, and stay fraction.
+- **Behavioral clustering**: K-means clustering with silhouette score evaluation identifies distinct behavioral groups (e.g., scouts vs exploiters).
+- **Species detection**: Formally detects "species" — stable, hereditary behavioral clusters where children consistently adopt the same strategy as parents.
+- **Field usage analysis**: Classifies clusters as "writers" (high movement, spread field deposits), "readers" (exploit known field areas), or "balanced".
+- **Lineage-strategy correlation**: Checks whether agents from the same evolutionary lineage cluster into the same behavioral strategy.
+- **Specialization training options**: Optional `diversity_bonus` and `niche_pressure` reward modifiers to encourage population diversity, plus per-layer mutation rates.
+
+### Phase 3 Commands
+
+```bash
+# Generate a full specialization analysis report (trains briefly, then analyzes)
+python scripts/generate_specialization_report.py
+
+# Generate report from an existing checkpoint
+python scripts/generate_specialization_report.py --checkpoint checkpoints/params.pkl --skip-ablation
+
+# Run specialization ablation (divergent vs uniform vs random weights)
+python scripts/run_specialization_ablation.py --iterations 100
+
+# Train with diversity bonus to encourage specialization
+python -m src.training.train --specialization.diversity-bonus 0.1 --specialization.niche-pressure 0.05
+```
+
 ## Quick Start
 
 ### Prerequisites
@@ -77,6 +105,12 @@ python -m src.analysis.ablation --checkpoint checkpoints/params.pkl
 
 # Run evolution ablation (field x evolution 2x2 comparison)
 python scripts/run_ablation.py --iterations 100 --seed 42 --evolution
+
+# Generate specialization analysis report with visualizations
+python scripts/generate_specialization_report.py --checkpoint checkpoints/params.pkl
+
+# Run specialization ablation (divergent vs uniform vs random weights)
+python scripts/run_specialization_ablation.py --iterations 100
 ```
 
 ### Run Tests
@@ -116,9 +150,12 @@ emergence-lab/
 │   │   └── ppo.py              # PPO clipped surrogate loss
 │   ├── analysis/
 │   │   ├── field_metrics.py    # Entropy, structure, mutual information
-│   │   ├── ablation.py         # Field ablation experiments
+│   │   ├── ablation.py         # Field + specialization ablation experiments
 │   │   ├── emergence.py        # Phase transition detection
-│   │   └── lineage.py          # Lineage tracking and weight divergence
+│   │   ├── lineage.py          # Lineage tracking and weight divergence
+│   │   ├── specialization.py   # Weight divergence, clustering, species detection
+│   │   ├── trajectory.py       # Trajectory recording for behavior analysis
+│   │   └── visualization.py    # Specialization visualization (PCA, charts)
 │   └── utils/
 │       ├── logging.py          # W&B integration
 │       └── video.py            # Episode recording to MP4
@@ -128,7 +165,9 @@ emergence-lab/
 ├── scripts/
 │   ├── setup.sh                # Environment setup
 │   ├── train.sh                # Training launcher with JAX flags
-│   └── run_ablation.py         # Ablation runner (field x evolution)
+│   ├── run_ablation.py         # Ablation runner (field x evolution)
+│   ├── run_specialization_ablation.py  # Specialization ablation (Phase 3)
+│   └── generate_specialization_report.py  # Full analysis report (Phase 3)
 └── tests/                      # Unit tests for all modules
 ```
 
@@ -181,6 +220,32 @@ The evolution ablation (`scripts/run_ablation.py --evolution`) runs a 2x2 compar
 | **Evolution only** | Zeroed | Enabled | Selection without field communication |
 | **Neither** | Zeroed | Disabled | Agents learning alone |
 
+### Specialization Results
+
+With specialization detection enabled (Phase 3), training also reports:
+
+- **Weight divergence**: Pairwise cosine distance between agents' weight vectors. Increasing divergence indicates agents are differentiating genetically.
+- **Specialization score**: Composite 0-1 metric combining cluster silhouette (50%), weight divergence (25%), and behavioral variance (25%). Higher = more specialized population.
+- **Specialization events**: Sudden increases in divergence detected via z-score threshold, analogous to phase transitions.
+
+The specialization ablation (`scripts/run_specialization_ablation.py`) compares three weight conditions:
+
+| Condition | Description | What it tests |
+|-----------|-------------|---------------|
+| **Divergent** | Trained per-agent weights (as-is) | Baseline with evolved specialization |
+| **Uniform** | All agents cloned to mean weights | Whether weight diversity matters |
+| **Random** | Mean weights + Gaussian noise | Whether learned divergence beats noise |
+
+A positive result looks like: **Divergent > Uniform > Random** in food collected, indicating that evolved weight specialization improves collective foraging.
+
+The specialization report (`scripts/generate_specialization_report.py`) produces a comprehensive markdown report with:
+- Specialization score breakdown
+- Detected species and their characteristics
+- Field usage patterns per behavioral cluster
+- PCA/t-SNE scatter plots of agent behaviors
+- Weight divergence over training
+- Ablation comparison results
+
 ## Interpreting Field Visualizations
 
 In rendered frames and videos:
@@ -229,10 +294,20 @@ Default parameters (see `configs/default.yaml`):
 | `evolution.max_agents` | 32 | Maximum population size (array dimension) |
 | `evolution.min_agents` | 2 | Minimum population (respawn if below) |
 
+### Specialization Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `specialization.diversity_bonus` | 0.0 | Reward bonus for weight diversity (0 = disabled) |
+| `specialization.niche_pressure` | 0.0 | Penalty for identical strategies (0 = disabled) |
+| `specialization.layer_mutation_rates` | None | Per-layer mutation rate overrides (e.g., `{"Dense_0": 0.02}`) |
+
 ## Tech Stack
 
 - **JAX** — Accelerated numerical computing
 - **Flax** — Neural network library for JAX
 - **Optax** — Gradient processing and optimization
+- **scikit-learn** — Clustering and dimensionality reduction (Phase 3)
+- **matplotlib** — Visualization and plotting
 - **Weights & Biases** — Experiment tracking (optional)
 - **tyro** — CLI argument parsing from dataclasses

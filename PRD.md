@@ -186,7 +186,7 @@ With shared field + evolution, agents should differentiate into roles:
 - Assert: specialization > baseline random
 **Verification:** `pytest tests/test_integration.py::test_specialization_emerges -v` passes
 
-### US-015: Final Review [ ]
+### US-015: Final Review [x]
 **Task:** Code quality and documentation.
 **Files:** All modified files
 **Verification:**
