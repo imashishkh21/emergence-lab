@@ -586,3 +586,22 @@ Goals:
 - `dashboard/static/glossary.json` — Expanded from 13 to 21 terms (added Cluster, Field, Gradient, Freeze-Evolve, Fitness, Lineage, Heatmap)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 543/543 tests pass (no new Python tests — frontend task). `npm run build` succeeds (861 modules). Every metric has hover help, glossary contains all terms.
 
+---
+
+### US-014: Dashboard Integration Test ✓
+**What:** Created comprehensive end-to-end integration tests for the full training → server → dashboard pipeline. Tests verify that real training data flows through the TrainingBridge to WebSocket clients, controls affect training state, frame serialization round-trips correctly, help system data is available, and dashboard build artifacts exist.
+**Decisions:**
+- **No Playwright dependency**: Used FastAPI's `TestClient` with WebSocket support instead of headless browser testing, since Playwright is listed as an optional dependency and the Python-side pipeline is the critical integration path
+- **Real training data tests**: 3 tests in `TestTrainingToServer` class run actual JAX training (`create_train_state` → `train_step`) and verify the resulting frames contain valid data — positions, alive masks, energy, and finite metrics. This proves the full training → bridge → serialize pipeline works end-to-end
+- **Background thread training**: `TestBackgroundTrainingIntegration` class (3 tests) simulates the real deployment pattern — training runs in a background thread publishing frames, while a WebSocket client in the main thread receives and decodes them. Tests use `threading.Event` for clean shutdown
+- **Control round-trip tests**: `TestControlsAffectTraining` class (5 tests) verifies pause/resume, speed changes, and parameter updates flow correctly from WebSocket → server → bridge → training thread. Includes a full pipeline test that trains, publishes, connects, and sends multiple commands
+- **Frame serialization tests**: `TestFrameSerialization` (2 tests) verifies MessagePack pack/unpack round-trip preserves all fields including positions, alive masks, cluster labels, metrics, and training mode
+- **Help system validation**: `TestHelpSystemData` (3 tests) verifies glossary.json exists, is valid JSON with correct structure (`{terms: [{term, simple, analogy}]}`), contains all expected terms (agent, emergence, specialization, evolution), and has analogies for laypeople
+- **Dashboard artifact checks**: `TestDashboardBuildArtifacts` (4 tests) verifies package.json has all required dependencies (svelte, pixi.js, plotly.js, msgpack-lite), key source files exist (App.svelte, renderer.js, all component files), and vite config + index.html are present
+- **Mock data pipeline tests**: `TestMockDataPipeline` (4 tests) verifies mock frames stream correctly, metrics simulate gradual improvement over time, arrays have correct dtypes/shapes, and training mode cycling works
+- **Small config optimized for speed**: Used minimal config (2 envs, 4 agents, grid 10, 32 hidden dims) to keep tests fast (~21s total)
+- **8 test classes, 27 tests total** covering all PRD acceptance criteria except headless browser rendering (which would require Playwright installation)
+**Files changed:**
+- `tests/test_dashboard_integration.py` (new) — 27 tests across 8 classes: `TestTrainingToServer` (3), `TestServerEndpoints` (3), `TestControlsAffectTraining` (5), `TestMockDataPipeline` (4), `TestFrameSerialization` (2), `TestHelpSystemData` (3), `TestBackgroundTrainingIntegration` (3), `TestDashboardBuildArtifacts` (4)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 570/570 tests pass (27 new).
+

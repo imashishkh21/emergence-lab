@@ -390,7 +390,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-014: Dashboard Integration Test
-[ ] **Task:** End-to-end test of training → server → dashboard.
+[x] **Task:** End-to-end test of training → server → dashboard.
 
 **Why (ELI5):** Make sure everything actually works together before we say "done."
 
