@@ -122,6 +122,47 @@ cd dashboard && npm run dev
 | `freeze_evolve.evolve_steps` | 1000 | Steps of pure evolution per cycle |
 | `freeze_evolve.evolve_mutation_boost` | 5.0 | Mutation multiplier during evolve phases |
 
+## Kaggle Training
+
+Run autonomous 24/7 training on Kaggle GPUs with automatic checkpointing and resume.
+
+### Setup
+
+```bash
+# One-time setup: install Kaggle CLI and create kernel metadata
+./scripts/kaggle_setup.sh --username YOUR_KAGGLE_USERNAME
+```
+
+### Workflow
+
+```bash
+# Push notebook to Kaggle
+./scripts/kaggle_push.sh
+
+# Start execution (push + run)
+./scripts/kaggle_run.sh --push-first
+
+# Monitor status (poll every 60s)
+./scripts/kaggle_status.sh --watch
+
+# Download checkpoints when complete
+./scripts/kaggle_download.sh --output-dir ./kaggle_output
+
+# Resume locally from downloaded checkpoint
+python -m src.training.train --train.resume-from kaggle_output/checkpoints/latest.pkl
+```
+
+### How It Works
+
+1. The Kaggle notebook (`notebooks/kaggle_training.ipynb`) installs JAX with CUDA, clones the repo, and runs training
+2. Checkpoints are saved every 100k steps (last 5 kept) with full state: optimizer, PRNG, step counter, tracker history
+3. Signal handlers save emergency checkpoints on SIGTERM/SIGINT (Kaggle session timeouts)
+4. Re-running the notebook auto-detects the latest checkpoint and resumes seamlessly
+
+### Kaggle Budget
+
+Kaggle provides 30 GPU hours per week. A 10M step run takes ~8-12 hours on a T4 GPU.
+
 ## Quick Start
 
 ### Prerequisites
@@ -254,7 +295,12 @@ emergence-lab/
 │   ├── train.sh                # Training launcher with JAX flags
 │   ├── run_ablation.py         # Ablation runner (field x evolution)
 │   ├── run_specialization_ablation.py  # Specialization ablation (Phase 3)
-│   └── generate_specialization_report.py  # Full analysis report (Phase 3)
+│   ├── generate_specialization_report.py  # Full analysis report (Phase 3)
+│   ├── kaggle_setup.sh         # Kaggle CLI setup + kernel metadata
+│   ├── kaggle_push.sh          # Push notebook to Kaggle
+│   ├── kaggle_run.sh           # Start Kaggle execution
+│   ├── kaggle_status.sh        # Check kernel status
+│   └── kaggle_download.sh      # Download results/checkpoints
 └── tests/                      # 656+ tests across all modules
 ```
 

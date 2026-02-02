@@ -178,7 +178,7 @@ sleep 10 && kill -TERM $!
 
 ---
 
-### US-008: Kaggle CLI Scripts [ ]
+### US-008: Kaggle CLI Scripts [x]
 
 **Task:** Create scripts for automated Kaggle interaction.
 

@@ -845,3 +845,25 @@ Goals:
 
 ---
 
+### US-008: Kaggle CLI Scripts ✓
+**What:** Created 5 shell scripts for automated Kaggle interaction: setup, push, run, status, and download. Added Kaggle workflow section to README.md and updated project structure.
+**Decisions:**
+- `kaggle_setup.sh` — Installs kaggle CLI if missing, verifies API credentials at `~/.kaggle/kaggle.json`, auto-detects username, creates `kernel-metadata.json` in notebooks/ directory with GPU enabled and internet access. Supports `--username` override for manual specification.
+- `kaggle_push.sh` — Pushes notebook to Kaggle using `kaggle kernels push`. Reads kernel ID from `kernel-metadata.json`. Supports `--new` flag for first-time creation (though `kaggle kernels push` handles both create and update).
+- `kaggle_run.sh` — Triggers kernel execution by pushing the notebook (Kaggle automatically queues pushed kernels for execution). Supports `--push-first` to explicitly push latest changes before running.
+- `kaggle_status.sh` — Shows kernel execution status, time, and output files. Supports `--watch` mode for repeated polling with configurable `--interval` (default 60s). Documents all Kaggle status values (queued, running, complete, error, cancelAcknowledged).
+- `kaggle_download.sh` — Downloads kernel output (checkpoints, logs) to a local directory (default `./kaggle_output/`). Lists downloaded checkpoints with sizes and prints resume command. Supports `--output-dir` for custom download location.
+- All scripts: use `set -euo pipefail` for safety, validate prerequisites (metadata file, kaggle CLI), have `--help` flags with usage documentation, use consistent error messages and next-step suggestions.
+- Added Kaggle Training section to README.md with setup, workflow, and budget information.
+- Updated README project structure to include all 5 kaggle scripts.
+**Files changed:**
+- `scripts/kaggle_setup.sh` (new) — setup instructions + kernel metadata creation
+- `scripts/kaggle_push.sh` (new) — push notebook to Kaggle
+- `scripts/kaggle_run.sh` (new) — start kernel execution
+- `scripts/kaggle_status.sh` (new) — check execution status with watch mode
+- `scripts/kaggle_download.sh` (new) — download results and checkpoints
+- `README.md` — added Kaggle Training section, updated project structure
+**Validation:** mypy clean (39 source files, 0 errors), 729/732 tests pass (3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4), all scripts executable and --help verified
+
+---
+
