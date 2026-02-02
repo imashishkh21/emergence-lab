@@ -35,7 +35,7 @@ Enable **autonomous 24/7 training** on Kaggle with proper checkpointing, and wir
 
 ## User Stories
 
-### US-001: Wire Training to Dashboard [ ]
+### US-001: Wire Training to Dashboard [x]
 
 **Task:** Connect training loop to WebSocket streaming server.
 

@@ -720,3 +720,19 @@ Goals:
 - Fix checkpointing (save full state: optimizer, PRNG, step, trackers)
 - Kaggle CLI automation (Titan can run training 24/7)
 
+---
+
+## Task Log
+
+### US-001: Wire Training to Dashboard ✓
+**What:** Verified that training-to-dashboard wiring is already fully implemented from Phase 4 (US-005, US-009). The `train()` function in `train.py` already: (1) imports `TrainingBridge` when `config.log.server` is True, (2) starts FastAPI server on a daemon thread, (3) publishes frames every iteration via `bridge.create_frame_from_state()` + `bridge.publish_frame()` with 30fps rate limiting, (4) processes dashboard commands (pause/resume). No code changes required.
+**Decisions:**
+- No new code needed — Phase 4 already wired the full pipeline: `train.py` → `TrainingBridge` → `FastAPI WebSocket` → `dashboard`
+- The `--log.server` CLI flag (via tyro) enables the server. The PRD verification uses `--server` which would need to be `--log.server` with the current tyro CLI
+- Frame publishing happens every training iteration, rate-limited by the bridge (30fps target). Each frame includes: agent positions, alive mask, energy, food, field values, metrics, lineage data, training mode
+- Training works normally without `--log.server` — all server code is guarded by `if config.log.server`
+**Files changed:** None (already implemented)
+**Validation:** mypy clean (38 source files, 0 errors), 23/23 test_training.py tests pass
+
+---
+
