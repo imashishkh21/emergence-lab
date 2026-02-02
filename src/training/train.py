@@ -27,7 +27,6 @@ from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
 from src.utils.logging import finish_wandb, init_wandb, log_metrics
 
-
 # Mutable container for emergency checkpoint state.
 # Updated every training iteration so signal handlers can save state.
 _emergency_state: dict[str, Any] = {}
@@ -854,8 +853,6 @@ def train(config: Config) -> RunnerState:
     # Freeze-evolve phase tracking
     if training_mode == TrainingMode.FREEZE_EVOLVE:
         fe_cfg = config.freeze_evolve
-        # Cycle length in env steps
-        cycle_length = fe_cfg.gradient_steps + fe_cfg.evolve_steps
         current_phase = TrainingMode.GRADIENT  # Start with gradient phase
         phase_step_counter = steps_per_iter  # Steps in current phase
         phase_transitions: list[tuple[int, str]] = []  # (step, phase_name)

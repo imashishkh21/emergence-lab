@@ -12,7 +12,6 @@ k-NN estimator: Kraskov et al. (2004), "Estimating Mutual Information", PRE 69.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from typing import Any
 
 import numpy as np
@@ -54,20 +53,20 @@ def compute_transfer_entropy(
     if target.ndim == 1:
         target = target[:, np.newaxis]
 
-    T = min(len(source), len(target))
-    if T < lag + 2 or T < k + 2:
+    n_steps = min(len(source), len(target))
+    if n_steps < lag + 2 or n_steps < k + 2:
         return 0.0
 
     # Construct the embedding vectors:
     # target_future: Y(t+lag)
     # target_past:   Y(t)
     # source_past:   X(t)
-    target_future = target[lag:T]  # (N, D)
-    target_past = target[: T - lag]  # (N, D)
-    source_past = source[: T - lag]  # (N, D)
-    N = len(target_future)
+    target_future = target[lag:n_steps]  # (n_samples, D)
+    target_past = target[: n_steps - lag]  # (n_samples, D)
+    source_past = source[: n_steps - lag]  # (n_samples, D)
+    n_samples = len(target_future)
 
-    if N < k + 1:
+    if n_samples < k + 1:
         return 0.0
 
     # Add small jitter to avoid zero distances (important for discrete data)
@@ -98,7 +97,7 @@ def compute_transfer_entropy(
     # query k+1 because the point itself is included
     dists_joint, _ = tree_joint.query(joint, k=k + 1, p=np.inf)
     # k-th neighbor distance (0-indexed: index k is the k-th neighbor)
-    eps = dists_joint[:, k]  # (N,)
+    eps = dists_joint[:, k]  # (n_samples,)
 
     # Count neighbors within eps in each marginal space
     # Using Chebyshev balls
@@ -110,11 +109,11 @@ def compute_transfer_entropy(
 
     # Count points within distance eps[i] for each marginal
     # query_ball_point with p=inf gives Chebyshev ball
-    n_z1 = np.zeros(N, dtype=np.float64)
-    n_z2 = np.zeros(N, dtype=np.float64)
-    n_z3 = np.zeros(N, dtype=np.float64)
+    n_z1 = np.zeros(n_samples, dtype=np.float64)
+    n_z2 = np.zeros(n_samples, dtype=np.float64)
+    n_z3 = np.zeros(n_samples, dtype=np.float64)
 
-    for i in range(N):
+    for i in range(n_samples):
         # Subtract 1 to exclude the point itself
         n_z1[i] = max(len(tree_z1.query_ball_point(z1[i], eps[i], p=np.inf)) - 1, 0)
         n_z2[i] = max(len(tree_z2.query_ball_point(z2[i], eps[i], p=np.inf)) - 1, 0)
@@ -165,9 +164,9 @@ def compute_te_matrix(
     histories = np.asarray(agent_histories, dtype=np.float64)
     if histories.ndim == 2:
         # (T, num_agents) → add feature dim
-        T, num_agents = histories.shape
+        _, num_agents = histories.shape
     elif histories.ndim == 3:
-        T, num_agents, D = histories.shape
+        _, num_agents, _ = histories.shape
     else:
         raise ValueError(
             f"agent_histories must be 2D or 3D, got shape {histories.shape}"

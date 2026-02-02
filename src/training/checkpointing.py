@@ -17,6 +17,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+
 def _jax_to_numpy(tree: Any) -> Any:
     """Convert all JAX arrays in a pytree to numpy arrays."""
     return jax.tree_util.tree_map(
