@@ -45,6 +45,11 @@ class TrainConfig:
     num_epochs: int = 4
     minibatch_size: int = 256
 
+    # Checkpoint resume
+    resume_from: str | None = None
+    """Path to checkpoint file to resume training from. Loads shared params
+    (and per-agent params if available) before starting the training loop."""
+
     # PPO specific
     learning_rate: float = 3e-4
     lr_schedule: Literal["constant", "linear"] = "linear"

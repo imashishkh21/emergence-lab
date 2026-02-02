@@ -498,6 +498,52 @@ def train(config: Config) -> RunnerState:
     runner_state = create_train_state(config, key)
     print("Training state initialized.")
 
+    # Resume from checkpoint if specified
+    if config.train.resume_from is not None:
+        print(f"Loading checkpoint from {config.train.resume_from}...")
+        with open(config.train.resume_from, "rb") as f:
+            checkpoint_data = pickle.load(f)
+
+        if isinstance(checkpoint_data, dict) and "agent_params" in checkpoint_data:
+            loaded_params = checkpoint_data["params"]
+        else:
+            loaded_params = checkpoint_data
+
+        # Replace shared params and reinitialize optimizer
+        runner_state = runner_state.replace(  # type: ignore[attr-defined]
+            params=loaded_params,
+            opt_state=optax.chain(
+                optax.clip_by_global_norm(config.train.max_grad_norm),
+                optax.adam(config.train.learning_rate, eps=1e-5),
+            ).init(loaded_params),
+        )
+
+        # If evolution is enabled, replicate loaded params to per-agent params
+        if config.evolution.enabled:
+            max_agents = config.evolution.max_agents
+            num_envs = config.train.num_envs
+            per_agent_params = jax.tree.map(
+                lambda leaf: jnp.broadcast_to(
+                    leaf[None, None], (num_envs, max_agents) + leaf.shape
+                ).copy(),
+                loaded_params,
+            )
+            env_state = runner_state.env_state.replace(  # type: ignore[attr-defined]
+                agent_params=per_agent_params,
+            )
+            runner_state = runner_state.replace(  # type: ignore[attr-defined]
+                env_state=env_state,
+            )
+
+        # Recompute observations with new params
+        last_obs = jax.vmap(lambda s: get_observations(s, config))(
+            runner_state.env_state
+        )
+        runner_state = runner_state.replace(  # type: ignore[attr-defined]
+            last_obs=last_obs,
+        )
+        print("Checkpoint loaded.")
+
     # Initialize emergence tracker
     emergence_tracker = EmergenceTracker(config)
 
@@ -640,8 +686,24 @@ def train(config: Config) -> RunnerState:
     checkpoint_dir = config.log.checkpoint_dir
     os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, "params.pkl")
-    with open(checkpoint_path, "wb") as f:
-        pickle.dump(runner_state.params, f)
+    if (
+        config.evolution.enabled
+        and runner_state.env_state.agent_params is not None
+    ):
+        # Structured checkpoint with per-agent data
+        checkpoint_data: dict = {
+            "params": runner_state.params,
+            "agent_params": jax.tree_util.tree_map(
+                lambda x: x[0], runner_state.env_state.agent_params
+            ),
+            "alive_mask": runner_state.env_state.agent_alive[0],
+        }
+        with open(checkpoint_path, "wb") as f:
+            pickle.dump(checkpoint_data, f)
+    else:
+        # Raw Flax variables dict (backward compatible)
+        with open(checkpoint_path, "wb") as f:
+            pickle.dump(runner_state.params, f)
     print(f"Checkpoint saved to {checkpoint_path}")
 
     # Finish W&B run

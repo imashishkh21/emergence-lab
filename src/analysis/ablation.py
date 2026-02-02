@@ -779,7 +779,12 @@ def main() -> None:
 
     # Load checkpoint params
     with open(args.checkpoint, "rb") as f:
-        params = pickle.load(f)
+        checkpoint_data = pickle.load(f)
+
+    if isinstance(checkpoint_data, dict) and "agent_params" in checkpoint_data:
+        params = checkpoint_data["params"]
+    else:
+        params = checkpoint_data
 
     # Create network
     observation_dim = obs_dim(config)

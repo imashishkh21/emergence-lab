@@ -87,14 +87,15 @@ def main() -> None:
         with open(args.checkpoint, "rb") as f:
             checkpoint_data = pickle.load(f)
 
-        if isinstance(checkpoint_data, dict) and "params" in checkpoint_data:
+        if isinstance(checkpoint_data, dict) and "agent_params" in checkpoint_data:
+            # Structured checkpoint (from this script's own save)
             params = checkpoint_data["params"]
             trained_agent_params = checkpoint_data.get("agent_params")
             trained_alive_mask = checkpoint_data.get("alive_mask")
             if trained_alive_mask is not None:
                 trained_alive_mask = jnp.array(trained_alive_mask)
         else:
-            # Legacy format: just params
+            # Raw Flax variables dict (from train.py)
             params = checkpoint_data
             trained_agent_params = None
             trained_alive_mask = None
