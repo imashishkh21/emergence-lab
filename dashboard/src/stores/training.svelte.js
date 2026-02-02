@@ -19,25 +19,29 @@ function unpackArray(packed) {
     return { data: new Float32Array(0), shape: [0] };
   }
 
-  const buffer = packed.data.buffer
-    ? packed.data.buffer
-    : new Uint8Array(packed.data).buffer;
-  const offset = packed.data.byteOffset || 0;
   const dtype = packed.dtype || "<f4";
   const shape = packed.shape;
+  const totalElements = shape.reduce((a, b) => a * b, 1);
+
+  // Copy raw bytes into a fresh ArrayBuffer to guarantee correct size and alignment.
+  // msgpack-lite may decode into a shared buffer with arbitrary offsets that break
+  // typed array constructors (e.g., Float32Array needs 4-byte alignment).
+  const raw = packed.data instanceof Uint8Array
+    ? packed.data
+    : new Uint8Array(packed.data);
+  const buffer = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
 
   let data;
   if (dtype === "<f4" || dtype === "float32") {
-    data = new Float32Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
+    data = new Float32Array(buffer, 0, totalElements);
   } else if (dtype === "<i4" || dtype === "int32") {
-    data = new Int32Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
+    data = new Int32Array(buffer, 0, totalElements);
   } else if (dtype === "<i1" || dtype === "int8") {
-    data = new Int8Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
+    data = new Int8Array(buffer, 0, totalElements);
   } else if (dtype === "|u1" || dtype === "uint8" || dtype === "<u1") {
-    data = new Uint8Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
+    data = new Uint8Array(buffer, 0, totalElements);
   } else {
-    // Fallback: treat as float32
-    data = new Float32Array(buffer, offset, shape.reduce((a, b) => a * b, 1));
+    data = new Float32Array(buffer, 0, totalElements);
   }
 
   return { data, shape };
