@@ -136,7 +136,7 @@ python -m src.training.train --train.total-steps 1000 --train.resume-from checkp
 
 ---
 
-### US-006: Signal Handlers [ ]
+### US-006: Signal Handlers [x]
 
 **Task:** Add signal handlers to save checkpoint on interrupt.
 

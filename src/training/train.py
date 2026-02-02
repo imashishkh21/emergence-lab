@@ -1,6 +1,8 @@
 """Training step and loop for PPO with shared field dynamics."""
 
+import atexit
 import os
+import signal
 import sys
 import threading
 import time
@@ -24,6 +26,80 @@ from src.training.gae import compute_gae
 from src.training.ppo import ppo_loss
 from src.training.rollout import RunnerState, collect_rollout
 from src.utils.logging import finish_wandb, init_wandb, log_metrics
+
+
+# Mutable container for emergency checkpoint state.
+# Updated every training iteration so signal handlers can save state.
+_emergency_state: dict[str, Any] = {}
+
+
+def _save_emergency_checkpoint() -> None:
+    """Save an emergency checkpoint from the current _emergency_state.
+
+    Called by signal handlers and atexit. Only saves if state is populated
+    and hasn't already been saved (guarded by 'saved' flag).
+    """
+    state = _emergency_state
+    if not state or state.get("saved"):
+        return
+    state["saved"] = True
+
+    try:
+        config = state["config"]
+        step = state["step"]
+        ckpt_path = os.path.join(
+            config.log.checkpoint_dir,
+            f"emergency_step_{step}.pkl",
+        )
+
+        # Build tracker state from tracker objects
+        tracker_state: dict[str, Any] | None = None
+        emergence_tracker = state.get("emergence_tracker")
+        specialization_tracker = state.get("specialization_tracker")
+        if emergence_tracker is not None:
+            tracker_state = {"emergence": emergence_tracker.to_dict()}
+            if specialization_tracker is not None and config.evolution.enabled:
+                tracker_state["specialization"] = specialization_tracker.to_dict()
+
+        ckpt_state: dict[str, Any] = {
+            "params": state["runner_state"].params,
+            "opt_state": state["runner_state"].opt_state,
+            "agent_params": (
+                state["runner_state"].env_state.agent_params
+                if state["runner_state"].env_state.agent_params is not None
+                else None
+            ),
+            "prng_key": state["runner_state"].key,
+            "step": step,
+            "config": config,
+            "tracker_state": tracker_state,
+        }
+        # Use max_checkpoints=0 to skip rotation for emergency saves
+        saved_path = save_checkpoint(ckpt_path, ckpt_state, max_checkpoints=0)
+        print(f"\nEmergency checkpoint saved: step {step} → {saved_path}")
+    except Exception as exc:
+        print(f"\nFailed to save emergency checkpoint: {exc}")
+
+
+def _signal_handler(signum: int, frame: Any) -> None:
+    """Handle SIGTERM/SIGINT by saving emergency checkpoint then exiting."""
+    sig_name = signal.Signals(signum).name
+    print(f"\nReceived {sig_name}, saving emergency checkpoint...")
+    _save_emergency_checkpoint()
+    sys.exit(128 + signum)
+
+
+def _install_signal_handlers() -> None:
+    """Install SIGTERM and SIGINT handlers, plus atexit fallback.
+
+    Only installs from the main thread (signal module restriction).
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+    atexit.register(_save_emergency_checkpoint)
 
 
 def _compute_specialization_bonuses(
@@ -602,6 +678,9 @@ def train(config: Config) -> RunnerState:
         print(f"Dashboard server started on http://localhost:{config.log.server_port}")
         print("Connect the dashboard at http://localhost:5173")
 
+    # Install signal handlers for emergency checkpoint saves
+    _install_signal_handlers()
+
     # Initialize training state
     print("Initializing training state...")
     runner_state = create_train_state(config, key)
@@ -716,6 +795,15 @@ def train(config: Config) -> RunnerState:
     else:
         specialization_tracker = SpecializationTracker(config)
 
+    # Populate emergency state for signal handlers
+    _emergency_state.clear()
+    _emergency_state["config"] = config
+    _emergency_state["runner_state"] = runner_state
+    _emergency_state["step"] = resumed_step
+    _emergency_state["saved"] = False
+    _emergency_state["emergence_tracker"] = emergence_tracker
+    _emergency_state["specialization_tracker"] = specialization_tracker
+
     # JIT-compile train_step and evolve_step with config captured in closure
     training_mode = config.train.training_mode
     use_evolve = training_mode in (TrainingMode.EVOLVE, TrainingMode.FREEZE_EVOLVE)
@@ -797,6 +885,11 @@ def train(config: Config) -> RunnerState:
             runner_state, metrics = jit_train_step(runner_state)
 
         total_env_steps += steps_per_iter
+
+        # Update emergency checkpoint state (for signal handlers)
+        _emergency_state["runner_state"] = runner_state
+        _emergency_state["step"] = total_env_steps
+        _emergency_state["saved"] = False
 
         # Freeze-evolve phase switching
         if training_mode == TrainingMode.FREEZE_EVOLVE:
@@ -1001,6 +1094,9 @@ def train(config: Config) -> RunnerState:
     for k, v in sorted(metrics.items()):
         print(f"  {k}: {float(v):.6f}")
     print("=" * 60)
+
+    # Clear emergency state — normal completion, no emergency save needed
+    _emergency_state.clear()
 
     # Save final checkpoint
     final_tracker_state: dict[str, Any] = {

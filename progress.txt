@@ -811,3 +811,20 @@ Goals:
 
 ---
 
+### US-006: Signal Handlers ✓
+**What:** Added signal handlers for SIGTERM and SIGINT that save emergency checkpoints, plus an atexit handler as fallback. Emergency checkpoints are named `emergency_step_{N}.pkl`.
+**Decisions:**
+- Used a module-level mutable dict `_emergency_state` as the bridge between the training loop and signal handlers. Updated every iteration with the latest `runner_state`, `step`, `config`, and tracker objects.
+- `_signal_handler(signum, frame)` prints the signal name, calls `_save_emergency_checkpoint()`, then exits with code `128 + signum` (Unix convention).
+- `_save_emergency_checkpoint()` is guarded by a `saved` flag to prevent duplicate saves (e.g., signal handler fires, then atexit fires on exit). Also guards against empty state (not yet populated).
+- `_install_signal_handlers()` only installs from the main thread (Python restriction on `signal.signal()`). Registers SIGTERM, SIGINT handlers and an `atexit` callback.
+- Emergency checkpoints use `max_checkpoints=0` to skip rotation — emergency saves should never delete regular periodic checkpoints.
+- Emergency state includes tracker objects (`emergence_tracker`, `specialization_tracker`) so emergency checkpoints include full tracker history via `to_dict()`.
+- On normal training completion, `_emergency_state.clear()` is called before the final checkpoint save to prevent the atexit handler from creating a redundant emergency checkpoint.
+- Works on both Mac (Darwin) and Linux — uses only `signal.SIGTERM` and `signal.SIGINT` which are POSIX-standard.
+**Files changed:**
+- `src/training/train.py` — added `import atexit`, `import signal`; added `_emergency_state` dict, `_save_emergency_checkpoint()`, `_signal_handler()`, `_install_signal_handlers()` functions; called `_install_signal_handlers()` at start of `train()`; update `_emergency_state` after tracker init and in each training iteration; clear emergency state on normal completion
+**Validation:** mypy clean (39 source files, 0 errors), 729/732 tests pass (0 new; 3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4)
+
+---
+
