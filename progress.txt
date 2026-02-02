@@ -753,3 +753,23 @@ Goals:
 
 ---
 
+### US-003: Checkpointing Module ✓
+**What:** Created `src/training/checkpointing.py` with `save_checkpoint()` and `load_checkpoint()` functions for saving and loading full training state.
+**Decisions:**
+- `save_checkpoint(path, state_dict, max_checkpoints=5)` saves a dict containing: params, opt_state, agent_params, prng_key, step, config, tracker_state
+- All JAX arrays are converted to numpy before pickling via `_jax_to_numpy()` — ensures cross-platform compatibility (GPU→CPU safe)
+- `load_checkpoint(path)` restores all state and converts numpy arrays back to JAX via `_numpy_to_jax()`
+- Config dataclass is serialized to a plain dict via `_config_to_dict()` using `dataclasses.asdict()` recursion
+- Atomic writes: writes to `.tmp` file first, then `os.replace()` to avoid corrupt partial writes on crash
+- `latest.pkl` symlink created/updated in the checkpoint directory pointing to the most recent save
+- Checkpoint rotation via `_rotate_checkpoints()`: only considers `step_*.pkl` files (pattern-matched), deletes oldest by mtime. `latest.pkl` symlink is never deleted.
+- Rotation can be disabled with `max_checkpoints=0`
+- `FileNotFoundError` raised on missing checkpoint path
+- `None` agent_params handled gracefully (for non-evolution runs)
+**Files changed:**
+- `src/training/checkpointing.py` (new) — `_jax_to_numpy`, `_numpy_to_jax`, `_config_to_dict`, `save_checkpoint`, `_rotate_checkpoints`, `load_checkpoint`
+- `tests/test_checkpointing.py` (new) — 41 tests across 7 classes: `TestJaxNumpyConversion` (7 tests: convert arrays, round-trip values, nested pytree, non-arrays passthrough, dtype preservation), `TestConfigSerialization` (4 tests: returns dict, subconfigs, values, picklable), `TestSaveCheckpoint` (10 tests: creates file, parent dir, latest symlink, symlink updates, absolute path, JAX→numpy, config dict, None params, step int, tracker state), `TestCheckpointRotation` (5 tests: keeps max, oldest deleted, disabled with zero, symlink not counted, direct rotation), `TestLoadCheckpoint` (11 tests: loads saved, numpy→JAX, params values, agent params, None params, PRNG key, step, config dict, tracker state, file not found, via latest symlink), `TestFullRoundTrip` (4 tests: full state, opt_state, multiple cycles, cross-platform no JAX arrays)
+**Validation:** mypy clean (39 source files, 0 errors), 717/720 tests pass (41 new; 3 pre-existing failures in test_dashboard_integration.py due to missing glossary.json from Phase 4)
+
+---
+

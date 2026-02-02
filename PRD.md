@@ -74,7 +74,7 @@ pytest tests/test_tracker_serialization.py -v
 
 ---
 
-### US-003: Checkpointing Module [ ]
+### US-003: Checkpointing Module [x]
 
 **Task:** Create checkpointing module that saves/loads full training state.
 
