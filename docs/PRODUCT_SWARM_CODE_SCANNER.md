@@ -1455,6 +1455,209 @@ Each product is a thin translation layer. The engine does the heavy lifting.
 
 ---
 
+## The Central Brain: Collective Learning Across All Swarms
+
+### The Limitation of Local-Only Swarms
+
+Without a central brain, every customer's swarm is isolated:
+
+```
+Company A runs swarm on their codebase → swarm evolves for Company A
+Company B runs swarm on their codebase → swarm evolves for Company B
+
+Company A's swarm knows nothing about Company B.
+Company B's swarm knows nothing about Company A.
+They never talk. They're completely independent.
+```
+
+Each swarm is like a doctor who only ever sees one patient. They get really good at treating THAT patient, but they never learn from other patients.
+
+### Federated Learning: Every Swarm Makes Every Other Swarm Smarter
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│  CENTRAL BRAIN (our servers)                                     │
+│                                                                  │
+│  Collects from all customer swarms:                              │
+│    - Which agent STRATEGIES work across many codebases           │
+│      (not the code itself — just the evolved agent weights)      │
+│    - Which finding TYPES get confirmed vs dismissed              │
+│    - Which species PATTERNS are universally useful               │
+│                                                                  │
+│  Does NOT collect:                                               │
+│    - Customer source code (NEVER)                                │
+│    - Customer-specific findings (NEVER)                          │
+│    - Any identifiable data (NEVER)                               │
+│                                                                  │
+│  Produces:                                                       │
+│    - "Global swarm" — pre-evolved agents with industry-wide      │
+│      instincts, updated monthly                                  │
+│    - "Species library" — proven specialist types that work       │
+│      across codebases                                            │
+│    - "Pattern confidence" — global stats on what's usually       │
+│      a real bug vs usually a false positive                      │
+│                                                                  │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │
+          ┌────────────┼────────────┐
+          │            │            │
+          ▼            ▼            ▼
+     Company A    Company B    Company C
+
+     Each company:
+     1. Downloads the global swarm as a starting point
+     2. Evolves it further on their specific codebase
+     3. Sends back anonymized learnings (agent weights +
+        confirm/dismiss stats, NOT source code)
+```
+
+### What Gets Sent Back (And What Doesn't)
+
+| Sent back (safe) | NOT sent back (private) |
+|---|---|
+| Agent weight vectors (just numbers, meaningless without context) | Source code |
+| "Finding type X was confirmed 80% of the time" | The actual code that was flagged |
+| "Species with these behavioral features performed well" | File names, function names |
+| "Swarm converged on 12 nodes in this scan" | What those nodes contained |
+| Aggregate stats: scan count, confirm rate, species count | Any identifiable information |
+
+Think of it like how a phone keyboard learns. It sends back "people often type 'the' after 'in'" — it doesn't send back your actual messages. We send back "agents that ask about input sanitization near database calls get confirmed 85% of the time" — not the actual code.
+
+### How the Flywheel Compounds
+
+```
+Day 1:     10 companies using the tool
+           Central brain has basic patterns from 10 codebases
+
+Month 6:   500 companies using the tool
+           Central brain has seen patterns across 500 codebases
+           New customers get a swarm that's already seen 500 codebases worth of bugs
+
+Year 2:    10,000 companies
+           Central brain has the most comprehensive bug pattern database
+           in existence — built by evolution, not by human rule-writers
+
+           A NEW competitor starts. Their swarm has seen 0 codebases.
+           Ours has seen 10,000. They can never catch up because
+           the learning compounds.
+```
+
+This is a **data network effect.** Every new customer makes the product better for every other customer. Same reason Google Search got better as more people used it — more queries = better ranking = more users = more queries.
+
+SonarQube's 6,500 rules were written by humans over years. Our "rules" would be evolved across thousands of real codebases automatically.
+
+### Three Privacy Models
+
+| Model | What's shared | Who it's for |
+|---|---|---|
+| **Fully Local** | Nothing. Ever. Your swarm only learns from YOUR codebase. You don't benefit from the collective. | Air-gapped enterprises, regulated industries, free tier |
+| **Federated** | Anonymized agent weights + confirm/dismiss stats. No source code leaves your machine. You benefit from the collective brain. | Standard paid tier — best value |
+| **Community** | Full findings shared (with consent) in a public database. Like a community CVE database but built by swarms. | Open-source projects |
+
+### Emergence at Two Levels
+
+This is actually emergence happening at TWO scales:
+
+```
+Level 1: Emergence WITHIN a swarm
+  64 agents → collective intelligence about ONE codebase
+  This is what the research proves (Phase 1-6)
+
+Level 2: Emergence ACROSS swarms
+  10,000 swarms → collective intelligence about ALL code everywhere
+  This is the product endgame
+
+Level 1 is ants in a colony.
+Level 2 is colonies sharing knowledge across an ecosystem.
+```
+
+Level 1 proves the science works. Level 2 is where the real business value is — the flywheel that makes this a platform, not just a tool.
+
+---
+
+## Feedback Resilience: What If the Developer Is Wrong?
+
+### The Problem
+
+A developer dismisses a real bug by mistake. The agents that found it lose energy, some die, and the swarm learns the wrong lesson. Bad feedback corrupts the swarm.
+
+### Why It's Not Catastrophic
+
+One dismiss doesn't kill a strategy — it kills a few agents. The strategy itself exists across many agents in the population. Evolution is noisy by design. A few bad signals don't erase a strong instinct.
+
+But **consistent** bad feedback IS dangerous. If a developer keeps dismissing a real vulnerability category (e.g., XSS warnings), agents that hunt XSS will gradually die off. That species goes extinct. The swarm becomes blind to XSS.
+
+### Five Mitigations
+
+**1. Species Protection (Minimum Viable Population)**
+
+No species can drop below 5% of the population, regardless of feedback. Even if every security finding gets dismissed, security-hunter agents survive at minimum levels. Like endangered species protection.
+
+The MAP-Elites archive from Phase 4 already does this — it preserves behavioral diversity even when selection pressure pushes against it.
+
+**2. Confidence Warnings**
+
+If the LLM is highly confident AND many agents converged, but the developer dismisses:
+
+```
+You dismissed: SQL injection in login.py:47
+LLM confidence: 95% | Agent convergence: 31/64
+
+Are you sure? This has strong signals.
+  [Yes, dismiss anyway]  [Let me look again]
+```
+
+**3. Graded Dismiss Reasons**
+
+Not all dismissals mean "this isn't a bug":
+
+```
+Why are you dismissing this?
+
+  [Not a bug]        → agents lose energy (real negative signal)
+  [Known/accepted]   → agents lose NO energy (it IS a bug, we accept the risk)
+  [Won't fix]        → agents lose NO energy (real but low priority)
+  [Not sure]         → agents lose NO energy (inconclusive)
+```
+
+Only "Not a bug" actually penalizes agents. Everything else is neutral. The swarm only learns from confident developer judgment.
+
+**4. Team Consensus**
+
+In a team setting, one developer's feedback doesn't override everything:
+
+```
+Developer A dismissed finding #7.
+Developer B confirmed finding #7.
+
+Result: conflicting → agents get ZERO feedback.
+        Finding stays flagged for team discussion.
+```
+
+**5. Fresh Swarm Audits**
+
+Every N scans, run a small population of "fresh" agents with no evolutionary history. They look at the codebase with zero bias from previous feedback.
+
+```
+Main swarm (evolved): finds 5 issues
+Fresh swarm (reset):  finds 8 issues
+
+3 issues the main swarm stopped finding →
+Alert: "Your feedback may have suppressed real findings.
+        Review these 3 items."
+```
+
+This catches feedback corruption before it becomes permanent.
+
+### With the Central Brain, Bad Feedback Self-Corrects
+
+If Company A's developer dismisses SQL injection, but 847 other companies confirm it, the central brain knows SQL injection is real. When Company A's swarm syncs with the global model, the SQL injection hunting instinct gets reinforced — overriding the local bad feedback.
+
+The larger the network, the more resilient it is to any single developer's mistakes.
+
+---
+
 ## Success Metrics
 
 ### Research Gates (Must Pass Before Building Product)
@@ -1591,6 +1794,7 @@ This gate validates the "one engine, many products" thesis. If the engine only w
 | Engine dependency creates single point of failure | Low | High | Local SDK mode works without internet. Engine is our own system. |
 | Enterprise customers demand custom engines | Medium | Medium | SDK license model lets them self-host. Consulting tier supports custom integration. Platform approach means we don't need to maintain N forks. |
 | LLM hallucinations propagate through swarm | Low | Medium | Convergence filtering is a natural defense — hallucinated findings from one agent's LLM query are suppressed when other agents don't independently converge. Multi-agent diversity is the mitigation. |
+| Bad developer feedback corrupts the swarm | Medium | Medium | Species protection (minimum 5% population), graded dismiss reasons, confidence warnings, team consensus, fresh swarm audits, and central brain override from global network. |
 
 ---
 
