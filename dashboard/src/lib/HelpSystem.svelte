@@ -187,6 +187,7 @@
       class="wh-tour-btn"
       onclick={restartTour}
       title="Restart the guided tour"
+      aria-label="Restart guided tour"
     >
       ?
     </button>
@@ -194,6 +195,7 @@
       class="wh-glossary-btn"
       onclick={() => showGlossary?.()}
       title="Open glossary — look up any term"
+      aria-label="Open glossary"
     >
       &#x1F4D6;
     </button>

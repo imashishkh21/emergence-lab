@@ -82,7 +82,7 @@
     <div class="session-selector">
       <div class="control-header">
         <span class="control-label">Recorded Sessions</span>
-        <button class="btn-refresh" onclick={fetchSessions} title="Refresh session list">
+        <button class="btn-refresh" onclick={fetchSessions} title="Refresh session list" aria-label="Refresh session list">
           &#8635;
         </button>
       </div>
@@ -159,6 +159,7 @@
                 class="speed-btn"
                 class:active={store.replayStatus.speed === speed}
                 onclick={() => store.sendReplayCommand({ type: "set_speed", value: speed })}
+                aria-label="Set replay speed to {speed}x"
               >
                 {speed}x
               </button>
@@ -179,6 +180,7 @@
                   class="bookmark-item"
                   onclick={() => store.sendReplayCommand({ type: "seek_bookmark", index: idx })}
                   title="Step {bookmark.step}"
+                  aria-label="Jump to bookmark: {bookmark.label} at step {bookmark.step}"
                 >
                   <span class="bookmark-icon">&#128278;</span>
                   <span class="bookmark-label">{bookmark.label}</span>

@@ -89,6 +89,7 @@
           class:active={store.speedMultiplier === speed}
           onclick={() => store.setSpeed(speed)}
           disabled={!store.connected}
+          aria-label="Set speed to {speed}x"
         >
           {speed}x
         </button>
