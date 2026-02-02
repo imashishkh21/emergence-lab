@@ -81,7 +81,7 @@
     <!-- Session selector -->
     <div class="session-selector">
       <div class="control-header">
-        <label class="control-label">Recorded Sessions</label>
+        <span class="control-label">Recorded Sessions</span>
         <button class="btn-refresh" onclick={fetchSessions} title="Refresh session list">
           &#8635;
         </button>
@@ -170,7 +170,7 @@
         {#if store.replayStatus.bookmarks && store.replayStatus.bookmarks.length > 0}
           <div class="bookmarks-section">
             <div class="control-header">
-              <label class="control-label">Bookmarks</label>
+              <span class="control-label">Bookmarks</span>
               <Tooltip text="Jump to interesting moments that were saved during recording." />
             </div>
             <div class="bookmark-list">

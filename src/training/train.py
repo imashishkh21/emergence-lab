@@ -864,19 +864,19 @@ def train(config: Config) -> RunnerState:
         and runner_state.env_state.agent_params is not None
     ):
         # Structured checkpoint with per-agent data
-        checkpoint_data: dict = {
+        save_data: dict = {
             "params": runner_state.params,
             "agent_params": jax.tree_util.tree_map(
                 lambda x: x[0], runner_state.env_state.agent_params
             ),
             "alive_mask": runner_state.env_state.agent_alive[0],
         }
-        with open(checkpoint_path, "wb") as f:
-            pickle.dump(checkpoint_data, f)
+        with open(checkpoint_path, "wb") as fw:
+            pickle.dump(save_data, fw)
     else:
         # Raw Flax variables dict (backward compatible)
-        with open(checkpoint_path, "wb") as f:
-            pickle.dump(runner_state.params, f)
+        with open(checkpoint_path, "wb") as fw:
+            pickle.dump(runner_state.params, fw)
     print(f"Checkpoint saved to {checkpoint_path}")
 
     # Finish W&B run

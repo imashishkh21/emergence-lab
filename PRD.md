@@ -474,7 +474,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-018: Final Review & Documentation
-[ ] **Task:** Code review, documentation, and polish.
+[x] **Task:** Code review, documentation, and polish.
 
 **Files:** `README.md`, `dashboard/README.md`, various
 

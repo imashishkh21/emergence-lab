@@ -78,7 +78,7 @@
   <!-- Speed Slider -->
   <div class="control-group">
     <div class="control-header">
-      <label class="control-label">Speed</label>
+      <span class="control-label">Speed</span>
       <span class="control-value">{store.speedMultiplier}x</span>
       <Tooltip text="How fast to run the simulation. Higher = more steps per second, but may reduce frame smoothness." />
     </div>
@@ -99,11 +99,12 @@
   <!-- Mutation Rate Slider -->
   <div class="control-group">
     <div class="control-header">
-      <label class="control-label">Mutation Rate</label>
+      <label class="control-label" for="mutation-rate">Mutation Rate</label>
       <span class="control-value">{mutationRate.toFixed(3)}</span>
       <Tooltip text="How much do babies differ from parents? Higher = more variation between generations. Too high = chaotic. Too low = everyone stays the same." />
     </div>
     <input
+      id="mutation-rate"
       type="range"
       min="0.001"
       max="0.1"
@@ -122,11 +123,12 @@
   <!-- Diversity Bonus Slider -->
   <div class="control-group">
     <div class="control-header">
-      <label class="control-label">Diversity Bonus</label>
+      <label class="control-label" for="diversity-bonus">Diversity Bonus</label>
       <span class="control-value">{diversityBonus.toFixed(2)}</span>
       <Tooltip text="Extra reward for being different from other agents. Higher = stronger push for agents to develop unique strategies. 0 = no bonus." />
     </div>
     <input
+      id="diversity-bonus"
       type="range"
       min="0"
       max="1.0"

@@ -62,6 +62,66 @@ python scripts/run_specialization_ablation.py --iterations 100
 python -m src.training.train --specialization.diversity-bonus 0.1 --specialization.niche-pressure 0.05
 ```
 
+## Phase 4: Research Microscope
+
+Phase 4 adds a **live visualization dashboard** and fixes the gradient homogenization problem so that real behavioral specialization can emerge:
+
+### Architecture Fixes
+- **Agent-Specific Heads**: Shared encoder backbone + per-agent output heads — agents share "perception" but have independent "decision-making" parts
+- **Agent ID Embedding**: Learnable identity embedding concatenated to observations, so each agent knows which agent it is
+- **Freeze-Evolve Training**: Alternates between gradient-based PPO training (Learning) and pure evolutionary selection (Evolving), preventing shared gradients from homogenizing weights
+- **MAP-Elites Archive**: Behavioral archive maintaining diverse agent strategies across a 2D descriptor space (exploration vs exploitation)
+
+### Live Dashboard
+A Svelte 5 + Pixi.js web dashboard connects to the training server via WebSocket and displays:
+- **Agent Canvas**: Real-time Pixi.js rendering of agents (colored by behavioral cluster), food, and field heatmap with smooth position interpolation and optional trail effects
+- **Metrics Charts**: Live Plotly.js charts for reward, weight divergence, specialization score, and population — updated every frame via `Plotly.extendTraces`
+- **Training Controls**: Pause/resume, speed control (0.5x–8x), mutation rate and diversity bonus sliders, training mode indicator
+- **Lineage Panel**: Family tree visualization showing parent-child relationships, dominant lineages, and agent details on hover
+- **Help System**: Contextual tooltips on every metric, searchable glossary of all technical terms, plain-English "What's happening?" summary, and a first-time onboarding tour
+- **Status & Alerts**: Connection status, population/divergence health indicators, and toast notifications for phase transitions, specialization milestones, and population warnings
+- **Replay**: Record training sessions to disk and replay at variable speed with timeline scrubber and bookmarks
+
+### Emergence Metrics
+- **Transfer Entropy**: KSG estimator measuring information flow between agent pairs — high TE means agents are coordinating through the field
+- **Division of Labor Index**: Composite metric quantifying how well agents have split into distinct task roles (0 = everyone does everything, 1 = perfect specialization)
+- **Phase Transition Detection**: Susceptibility spikes + critical slowing down detection to catch the moment organization suddenly appears
+
+### Phase 4 Commands
+
+```bash
+# Start training with visualization server (mock data for development)
+python -m src.server.main --mock
+
+# Start dashboard (separate terminal)
+cd dashboard && npm install && npm run dev
+# Opens http://localhost:5173
+
+# Train with agent-specific heads and freeze-evolve
+python -m src.training.train \
+  --agent.agent-architecture agent_heads \
+  --agent.agent-embed-dim 8 \
+  --train.training-mode FREEZE_EVOLVE \
+  --specialization.diversity-bonus 0.1
+
+# Train with full visualization pipeline
+# Terminal 1: Start training server
+python -m src.server.main
+# Terminal 2: Start dashboard
+cd dashboard && npm run dev
+```
+
+### Phase 4 Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `agent.agent_architecture` | "shared" | Architecture type: "shared" or "agent_heads" |
+| `agent.agent_embed_dim` | 0 | Agent identity embedding dimension (0 = disabled) |
+| `train.training_mode` | GRADIENT | Training mode: GRADIENT, EVOLVE, or FREEZE_EVOLVE |
+| `freeze_evolve.gradient_steps` | 10000 | Steps of gradient training per cycle |
+| `freeze_evolve.evolve_steps` | 1000 | Steps of pure evolution per cycle |
+| `freeze_evolve.evolve_mutation_boost` | 5.0 | Mutation multiplier during evolve phases |
+
 ## Quick Start
 
 ### Prerequisites
@@ -140,25 +200,52 @@ emergence-lab/
 │   │   ├── dynamics.py         # Diffusion + decay physics
 │   │   └── ops.py              # Local read/write operations
 │   ├── agents/
-│   │   ├── network.py          # ActorCritic (Flax nn.Module, 6 actions)
+│   │   ├── network.py          # ActorCritic + AgentSpecificActorCritic (Flax nn.Module)
 │   │   ├── policy.py           # Action sampling + deterministic policy
-│   │   └── reproduction.py     # Weight mutation for offspring
+│   │   └── reproduction.py     # Weight mutation (uniform + per-layer rates)
 │   ├── training/
-│   │   ├── train.py            # Full training loop + train_step
+│   │   ├── train.py            # Training loop + train_step + evolve_step (freeze-evolve)
 │   │   ├── rollout.py          # Trajectory collection via lax.scan
 │   │   ├── gae.py              # Generalized Advantage Estimation
 │   │   └── ppo.py              # PPO clipped surrogate loss
 │   ├── analysis/
+│   │   ├── archive.py          # MAP-Elites behavioral archive
 │   │   ├── field_metrics.py    # Entropy, structure, mutual information
 │   │   ├── ablation.py         # Field + specialization ablation experiments
-│   │   ├── emergence.py        # Phase transition detection
+│   │   ├── emergence.py        # Phase transition + susceptibility detection
+│   │   ├── information.py      # Transfer entropy (KSG estimator)
 │   │   ├── lineage.py          # Lineage tracking and weight divergence
-│   │   ├── specialization.py   # Weight divergence, clustering, species detection
+│   │   ├── specialization.py   # Weight divergence, clustering, species, DOL
 │   │   ├── trajectory.py       # Trajectory recording for behavior analysis
 │   │   └── visualization.py    # Specialization visualization (PCA, charts)
+│   ├── server/
+│   │   ├── main.py             # FastAPI app + WebSocket endpoints
+│   │   ├── streaming.py        # TrainingBridge + Frame serialization
+│   │   └── replay.py           # Session recording and playback
 │   └── utils/
 │       ├── logging.py          # W&B integration
 │       └── video.py            # Episode recording to MP4
+├── dashboard/                   # Svelte 5 + Pixi.js visualization dashboard
+│   ├── src/
+│   │   ├── App.svelte          # Root layout component
+│   │   ├── lib/
+│   │   │   ├── AgentCanvas.svelte    # Pixi.js agent renderer
+│   │   │   ├── MetricsPanel.svelte   # Live Plotly.js charts
+│   │   │   ├── ControlPanel.svelte   # Play/pause, speed, sliders
+│   │   │   ├── LineagePanel.svelte   # Family tree visualization
+│   │   │   ├── ReplayControls.svelte # Session playback controls
+│   │   │   ├── HelpSystem.svelte     # What's happening + onboarding tour
+│   │   │   ├── GlossaryPanel.svelte  # Searchable term glossary
+│   │   │   ├── Tooltip.svelte        # Reusable tooltip component
+│   │   │   ├── StatusBar.svelte      # Connection + health indicators
+│   │   │   ├── AlertSystem.svelte    # Toast notifications
+│   │   │   ├── Header.svelte         # Dashboard header
+│   │   │   └── renderer.js           # Pixi.js rendering engine
+│   │   └── stores/
+│   │       └── training.svelte.js    # Reactive state store + WebSocket client
+│   ├── static/glossary.json    # Glossary data for help system
+│   ├── package.json
+│   └── vite.config.js
 ├── configs/
 │   ├── default.yaml            # Default hyperparameters
 │   └── phase2.yaml             # Phase 2 evolution config
@@ -168,7 +255,7 @@ emergence-lab/
 │   ├── run_ablation.py         # Ablation runner (field x evolution)
 │   ├── run_specialization_ablation.py  # Specialization ablation (Phase 3)
 │   └── generate_specialization_report.py  # Full analysis report (Phase 3)
-└── tests/                      # Unit tests for all modules
+└── tests/                      # 656+ tests across all modules
 ```
 
 ## Expected Results
@@ -304,10 +391,51 @@ Default parameters (see `configs/default.yaml`):
 
 ## Tech Stack
 
+### Training (Python)
 - **JAX** — Accelerated numerical computing
 - **Flax** — Neural network library for JAX
 - **Optax** — Gradient processing and optimization
-- **scikit-learn** — Clustering and dimensionality reduction (Phase 3)
+- **scikit-learn** — Clustering and dimensionality reduction
 - **matplotlib** — Visualization and plotting
+- **FastAPI** — WebSocket server for real-time streaming
+- **msgpack** — Binary frame serialization
 - **Weights & Biases** — Experiment tracking (optional)
 - **tyro** — CLI argument parsing from dataclasses
+
+### Dashboard (Web)
+- **Svelte 5** — Reactive UI framework with runes
+- **Pixi.js v8** — WebGPU/WebGL agent rendering
+- **Plotly.js** — Live-updating metric charts
+- **msgpack-lite** — Binary frame decoding
+- **Vite 6** — Build tool
+
+## Troubleshooting
+
+### Dashboard won't connect to server
+- Ensure the server is running (`python -m src.server.main` or `python -m src.server.main --mock`)
+- Check that the server port (default 8765) isn't blocked or in use
+- The dashboard auto-reconnects with exponential backoff — wait a few seconds after starting the server
+
+### "Module not found" errors
+- Run `pip install -e ".[dev]"` to install all dependencies including fastapi, uvicorn, websockets, msgpack
+- For the dashboard: `cd dashboard && npm install`
+
+### JAX OOM (Out of Memory)
+- Reduce `train.num_envs` (e.g., `--train.num-envs 8`)
+- Reduce `evolution.max_agents` (e.g., `--evolution.max-agents 16`)
+- Reduce `env.grid_size` (e.g., `--env.grid-size 12`)
+- On macOS, JAX uses Metal by default. Set `JAX_PLATFORM_NAME=cpu` if GPU memory is limited
+
+### Tests timing out
+- Some integration tests require more memory. Try running specific test files: `pytest tests/test_specialization.py -v`
+- Set a longer timeout: `pytest tests/ -v --timeout=180`
+
+### Dashboard build warnings about chunk size
+- The Plotly.js bundle is ~1.4MB gzipped. This is expected — it's dynamically loaded and doesn't block initial render
+- Pixi.js tree-shakes to ~294KB gzipped with separate WebGPU/WebGL renderer chunks
+
+### Population collapses to 0
+- Increase food: `--env.num-food 20`
+- Increase starting energy: `--evolution.starting-energy 200`
+- Lower reproduction threshold: `--evolution.reproduce-threshold 120`
+- Lower reproduction cost: `--evolution.reproduce-cost 50`

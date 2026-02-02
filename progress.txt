@@ -685,3 +685,27 @@ Goals:
 - `PRD.md` — Marked US-017 as complete
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 656/656 tests pass (no regressions). `npm run build` succeeds (869 modules). Alerts fire for simulated events from mock server data.
 
+---
+
+### US-018: Final Review & Documentation ✓
+**What:** Code review, documentation update, type check cleanup, and final validation of the complete Phase 4 Research Microscope implementation across all 18 user stories.
+**Decisions:**
+- Fixed 3 mypy errors in `src/training/train.py`: `checkpoint_data` variable name collision (renamed to `save_data`) and file handle type annotation conflicts (renamed `f` to `fw` in write blocks)
+- Fixed 5 a11y warnings in dashboard build: changed decorative `<label>` elements to `<span>` in ControlPanel (Speed label) and ReplayControls (Recorded Sessions, Bookmarks labels); added proper `for`/`id` associations for Mutation Rate and Diversity Bonus slider labels
+- Updated `README.md` with comprehensive Phase 4 section: architecture fixes (agent-specific heads, agent ID embedding, freeze-evolve, MAP-Elites), live dashboard features, emergence metrics, Phase 4 commands, Phase 4 parameters table, troubleshooting guide
+- Updated project structure in README to include all new Phase 4 files: `src/server/`, `src/analysis/archive.py`, `src/analysis/information.py`, `dashboard/` with all component files
+- Updated tech stack section: split into Training (Python) and Dashboard (Web) subsections, added FastAPI, msgpack, Svelte 5, Pixi.js v8, Plotly.js, Vite 6
+- Created `dashboard/README.md` with setup instructions, architecture overview, key files table, build instructions, and WebSocket protocol documentation
+- Added troubleshooting guide covering: dashboard connection issues, module not found errors, JAX OOM, test timeouts, chunk size warnings, population collapse
+**Files changed:**
+- `src/training/train.py` — Fixed mypy errors: renamed `checkpoint_data` to `save_data` at line 867, renamed `f` to `fw` in checkpoint save blocks (lines 874, 878)
+- `dashboard/src/lib/ControlPanel.svelte` — Changed Speed `<label>` to `<span>`, added `for="mutation-rate"` and `for="diversity-bonus"` to slider labels, added `id` attributes to range inputs
+- `dashboard/src/lib/ReplayControls.svelte` — Changed Recorded Sessions and Bookmarks `<label>` elements to `<span>`
+- `README.md` — Added Phase 4 section (architecture fixes, dashboard features, emergence metrics, commands, parameters), updated project structure, updated tech stack, added troubleshooting guide
+- `dashboard/README.md` (new) — Dashboard setup, architecture, key files, build instructions, WebSocket protocol docs
+- `PRD.md` — Marked US-018 as complete
+**Validation:** mypy clean (0 errors, 38 source files), 656/656 tests pass, `npm run build` succeeds (869 modules, no a11y warnings), dashboard builds cleanly
+
+---
+
+COMPLETE: All Phase 4 tasks finished.
