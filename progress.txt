@@ -387,3 +387,26 @@ Goals:
 - `tests/test_archive.py` (new) — 49 tests across 8 classes: `TestBehavioralArchiveInit` (6 tests), `TestBehavioralArchiveAdd` (8 tests), `TestBehavioralArchiveSample` (7 tests), `TestBehavioralArchiveQuery` (9 tests), `TestDescriptorMapping` (6 tests), `TestExtractDescriptors` (7 tests), `TestArchiveWithDescriptors` (3 tests: full pipeline, fitness preservation, novelty_score compatibility), `TestArchiveConfig` (3 tests)
 **Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 406/406 tests pass (49 new)
 
+---
+
+### US-005: FastAPI WebSocket Server ✓
+**What:** Created a FastAPI WebSocket server for real-time training visualization. Implemented `TrainingBridge` class for thread-safe communication between the training loop and the async server, plus a binary MessagePack streaming protocol at 30Hz.
+**Decisions:**
+- **Architecture:** `TrainingBridge` acts as a decoupled bridge — training loop calls `publish_frame()` from its thread, server's async loop reads via `get_latest_frame()`. Thread-safe via `threading.Lock` on the shared latest frame buffer.
+- **Frame format:** `Frame` dataclass holds numpy arrays (positions, alive, energy, food, field, optional cluster labels) plus a metrics dict. All JAX arrays are converted to numpy at the bridge boundary.
+- **Serialization:** `pack_frame()` converts Frame to MessagePack binary. Each numpy array is serialized as `{shape, dtype, data}` dict so clients can reconstruct typed arrays. MessagePack chosen over JSON for binary efficiency (field array alone is 20×20×4 float32 = 6.4KB).
+- **Rate limiting:** `TrainingBridge` enforces target_fps (default 30Hz) — `publish_frame()` returns False if called too frequently, avoiding overwhelming the WebSocket.
+- **Bidirectional commands:** Dashboard clients send JSON commands over the same WebSocket (pause, resume, set_param). Commands are queued in the bridge via `push_command()` and consumed by the training loop via `pop_commands()`.
+- **Mock mode:** `python -m src.server.main --mock` generates synthetic training data for frontend development without running actual training.
+- **CORS:** Allow all origins so dashboard at `localhost:5173` can connect to server at `localhost:8765`.
+- **Endpoints:** `GET /` (health), `GET /config` (server state), `WS /ws/training` (binary frame stream).
+- **`create_frame_from_state()`:** Convenience method on TrainingBridge that extracts data from batched JAX EnvState (takes first env) and converts metrics to plain floats, ready for publishing.
+- Added `httpx` as implicit dev dependency (required by FastAPI's TestClient via starlette).
+**Files changed:**
+- `pyproject.toml` — added fastapi, uvicorn, websockets, msgpack to dependencies
+- `src/server/__init__.py` (new) — package init
+- `src/server/streaming.py` (new) — `Frame` dataclass, `pack_frame()`, `_pack_array()`, `TrainingBridge` class with publish/consume/command queue/create_frame_from_state
+- `src/server/main.py` (new) — FastAPI app with health/config/WebSocket endpoints, `_handle_command()`, `_generate_mock_frame()`, `_mock_training_loop()`, `start_server()`, CLI entry point
+- `tests/test_server.py` (new) — 38 tests across 8 classes: TestFrame (3), TestPackFrame (8), TestTrainingBridge (7), TestCommandQueue (7), TestFastAPIApp (3), TestWebSocket (2), TestMockData (5), TestCreateFrameFromState (3)
+**Validation:** mypy clean (0 new errors; 3 pre-existing in train.py), 444/444 tests pass (38 new). Server starts, accepts WebSocket connections, and streams mock data at 30fps.
+

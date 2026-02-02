@@ -193,7 +193,7 @@ Every technical term used in this project, explained simply:
 ---
 
 ### US-005: FastAPI WebSocket Server
-[ ] **Task:** Create streaming server for real-time visualization.
+[x] **Task:** Create streaming server for real-time visualization.
 
 **Why (ELI5):** Build a pipe that sends what's happening in the simulation to your web browser, 30 times per second, so you can watch live.
 
