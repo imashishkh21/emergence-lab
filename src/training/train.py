@@ -25,6 +25,68 @@ from src.training.rollout import RunnerState, collect_rollout
 from src.utils.logging import finish_wandb, init_wandb, log_metrics
 
 
+def _compute_specialization_bonuses(
+    agent_params: Any,
+    alive_mask: jnp.ndarray,
+    diversity_bonus: float,
+    niche_pressure: float,
+) -> jnp.ndarray:
+    """Compute per-agent reward bonuses for specialization incentives.
+
+    Operates on a single environment's per-agent params.
+
+    Args:
+        agent_params: Per-agent params pytree, each leaf shape (max_agents, ...).
+        alive_mask: Boolean (max_agents,) indicating alive agents.
+        diversity_bonus: Scale for diversity reward (mean cosine distance).
+        niche_pressure: Scale for niche penalty (penalize nearest-neighbor similarity).
+
+    Returns:
+        Per-agent bonus array of shape (max_agents,).
+    """
+    # Flatten each agent's params into a single vector
+    leaves = jax.tree_util.tree_leaves(agent_params)
+    flat_parts = [leaf.reshape(leaf.shape[0], -1) for leaf in leaves]
+    weight_matrix = jnp.concatenate(flat_parts, axis=-1)  # (max_agents, D)
+
+    max_agents = weight_matrix.shape[0]
+    alive_f = alive_mask.astype(jnp.float32)
+    n_alive = jnp.maximum(jnp.sum(alive_f), 1.0)
+
+    # Compute pairwise cosine distances: 1 - cos_sim(a, b)
+    norms = jnp.linalg.norm(weight_matrix, axis=-1, keepdims=True)  # (max_agents, 1)
+    norms = jnp.maximum(norms, 1e-8)
+    normalized = weight_matrix / norms  # (max_agents, D)
+    cos_sim = normalized @ normalized.T  # (max_agents, max_agents)
+    cos_dist = 1.0 - cos_sim  # (max_agents, max_agents)
+
+    # Mask: only consider alive pairs
+    pair_mask = alive_f[:, None] * alive_f[None, :]  # (max_agents, max_agents)
+    # Zero out self-pairs
+    self_mask = 1.0 - jnp.eye(max_agents)
+    pair_mask = pair_mask * self_mask
+
+    bonuses = jnp.zeros(max_agents)
+
+    # Diversity bonus: mean cosine distance to all other alive agents
+    if diversity_bonus != 0.0:
+        pair_count = jnp.maximum(jnp.sum(pair_mask, axis=-1), 1.0)  # (max_agents,)
+        mean_dist = jnp.sum(cos_dist * pair_mask, axis=-1) / pair_count
+        bonuses = bonuses + diversity_bonus * mean_dist * alive_f
+
+    # Niche pressure: penalize agents too close to nearest neighbor
+    if niche_pressure != 0.0:
+        # Set non-pair entries to large distance so they don't affect min
+        large_dist = jnp.where(pair_mask > 0, cos_dist, 1e6)
+        min_dist = jnp.min(large_dist, axis=-1)  # (max_agents,)
+        # Penalty: niche_pressure * (1 - min_dist) when min_dist < 1
+        # More similar neighbors → higher penalty
+        penalty = niche_pressure * jnp.maximum(1.0 - min_dist, 0.0)
+        bonuses = bonuses - penalty * alive_f
+
+    return bonuses
+
+
 def create_train_state(config: Config, key: jax.Array) -> RunnerState:
     """Initialize all training state: network, optimizer, environments.
 
@@ -146,6 +208,21 @@ def train_step(
     alive_mask = batch['alive_mask']  # (T, num_envs, max_agents)
     alive_f = alive_mask.astype(jnp.float32)
     masked_rewards = batch['rewards'] * alive_f
+
+    # Apply specialization incentives (diversity bonus / niche pressure)
+    div_bonus = config.specialization.diversity_bonus
+    niche_p = config.specialization.niche_pressure
+    if (div_bonus != 0.0 or niche_p != 0.0) and runner_state.env_state.agent_params is not None:
+        # Compute per-agent bonuses for each environment using current params
+        per_env_params = runner_state.env_state.agent_params
+        per_env_alive = runner_state.env_state.agent_alive
+        # vmap over environments
+        spec_bonuses = jax.vmap(
+            lambda p, a: _compute_specialization_bonuses(p, a, div_bonus, niche_p)
+        )(per_env_params, per_env_alive)  # (num_envs, max_agents)
+        # Add bonus to every timestep's rewards
+        masked_rewards = masked_rewards + spec_bonuses[None, :, :] * alive_f
+
     masked_values = batch['values'] * alive_f
 
     # Bootstrap values also masked by final alive state
@@ -385,6 +462,11 @@ def train(config: Config) -> RunnerState:
     print(f"Agents: {config.env.num_agents} (max: {config.evolution.max_agents})")
     print(f"Food: {config.env.num_food}")
     print(f"Evolution: {'enabled' if config.evolution.enabled else 'disabled'}")
+    if config.specialization.diversity_bonus != 0.0 or config.specialization.niche_pressure != 0.0:
+        print(f"Specialization: diversity_bonus={config.specialization.diversity_bonus}, "
+              f"niche_pressure={config.specialization.niche_pressure}")
+        if config.specialization.layer_mutation_rates:
+            print(f"  Layer mutation rates: {config.specialization.layer_mutation_rates}")
     print(f"Field channels: {config.field.num_channels}")
     print(f"Num envs: {config.train.num_envs}")
     print(f"Total steps: {config.train.total_steps}")

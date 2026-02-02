@@ -76,6 +76,22 @@ class AnalysisConfig:
 
 
 @dataclass
+class SpecializationConfig:
+    """Configuration for encouraging specialization."""
+    diversity_bonus: float = 0.0
+    """Reward bonus for weight diversity. Agents with more unique weights
+    get a positive reward bonus proportional to their cosine distance from
+    the population mean. 0.0 = disabled."""
+    niche_pressure: float = 0.0
+    """Penalty for identical strategies. Agents whose weights are very
+    similar to their nearest neighbor get a negative reward. 0.0 = disabled."""
+    layer_mutation_rates: dict[str, float] | None = None
+    """Optional per-layer mutation rates. Maps layer name substrings to
+    mutation std overrides, e.g. {"Dense_0": 0.02, "Dense_1": 0.005}.
+    When None, all layers use the global evolution.mutation_std."""
+
+
+@dataclass
 class EvolutionConfig:
     """Evolution and reproduction configuration."""
     enabled: bool = True
@@ -100,6 +116,7 @@ class Config:
     log: LogConfig = dataclass_field(default_factory=LogConfig)
     analysis: AnalysisConfig = dataclass_field(default_factory=AnalysisConfig)
     evolution: EvolutionConfig = dataclass_field(default_factory=EvolutionConfig)
+    specialization: SpecializationConfig = dataclass_field(default_factory=SpecializationConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -119,6 +136,7 @@ class Config:
             log=LogConfig(**data.get("log", {})),
             analysis=AnalysisConfig(**data.get("analysis", {})),
             evolution=EvolutionConfig(**data.get("evolution", {})),
+            specialization=SpecializationConfig(**data.get("specialization", {})),
         )
 
     def to_yaml(self, path: str) -> None:

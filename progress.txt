@@ -232,3 +232,26 @@ Prove that field enables DIVERSITY, not just higher reward.
 **Validation:** mypy clean (32 files), 323/323 tests pass, script produces report with markdown + 5 PNG figures
 
 ---
+
+### US-013: Update Training to Encourage Specialization ✓
+**What:** Added `SpecializationConfig` with three config options that encourage specialization: `diversity_bonus`, `niche_pressure`, and `layer_mutation_rates`. Implemented reward modification in `train_step` and per-layer mutation in reproduction.
+**Decisions:**
+- Created `SpecializationConfig` dataclass with three fields: `diversity_bonus` (default 0.0), `niche_pressure` (default 0.0), `layer_mutation_rates` (default None)
+- **Diversity bonus**: Computes per-agent cosine distance from other alive agents in weight space; adds scaled bonus to rewards before GAE. Rewards agents with more unique weights, creating gradient pressure to maintain diversity.
+- **Niche pressure**: Computes minimum cosine distance to nearest neighbor; penalizes agents too similar to their closest neighbor. `penalty = niche_pressure * (1 - min_dist)`, encouraging weight differentiation.
+- Both bonuses computed inside JIT-compiled `train_step` using pure JAX operations (no numpy/scipy). The `_compute_specialization_bonuses` function uses vectorized cosine distance with alive masking.
+- Bonuses are vmapped over environments and added to every timestep's rewards (broadcast from per-env per-agent snapshot to `(T, num_envs, max_agents)`).
+- **Per-layer mutation rates**: `layer_mutation_rates` maps layer name substrings (e.g., `"Dense_0"`, `"Dense_2"`) to custom mutation std values. Uses `jax.tree_util.tree_flatten_with_path` to match leaf paths.
+- Added `compute_per_leaf_mutation_rates()` to compute per-leaf rate tuples, and `mutate_agent_params_layered()` to apply them during reproduction.
+- Per-leaf rates are pre-computed at trace time in `env.py` (Python-level, not traced) and captured in the scan closure, so they work within JIT.
+- All features are opt-in (defaults are 0/None), so existing behavior is unchanged when not configured.
+- Added `specialization` field to `Config` master dataclass and `from_yaml()` support.
+**Files changed:**
+- `src/configs.py` — added `SpecializationConfig` dataclass, added `specialization` field to `Config`, updated `from_yaml()`
+- `src/training/train.py` — added `_compute_specialization_bonuses()` helper, integrated reward modification in `train_step`, added specialization config display in training banner
+- `src/agents/reproduction.py` — added `compute_per_leaf_mutation_rates()`, `mutate_agent_params_layered()`
+- `src/environment/env.py` — imported new reproduction functions, added conditional layered mutation in reproduction scan
+- `scripts/verify_specialization_training.py` (new) — verification script testing all specialization features
+**Validation:** mypy clean (32 files), 323/323 tests pass, verification script confirms all configs run without errors and bonuses are computed correctly
+
+---

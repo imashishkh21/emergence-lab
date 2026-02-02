@@ -5,7 +5,11 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from src.agents.reproduction import mutate_agent_params
+from src.agents.reproduction import (
+    compute_per_leaf_mutation_rates,
+    mutate_agent_params,
+    mutate_agent_params_layered,
+)
 from src.configs import Config
 from src.environment.state import EnvState
 from src.field.dynamics import step_field
@@ -266,6 +270,14 @@ def step(
     has_agent_params = state.agent_params is not None
     mutation_std = config.evolution.mutation_std
 
+    # Pre-compute per-leaf mutation rates if layer-specific rates are configured
+    layer_rates = getattr(config.specialization, 'layer_mutation_rates', None)
+    use_layered = has_agent_params and layer_rates is not None
+    if use_layered:
+        per_leaf_rates = compute_per_leaf_mutation_rates(
+            state.agent_params, mutation_std, layer_rates
+        )
+
     current_step = state.step
 
     if has_agent_params:
@@ -297,7 +309,14 @@ def step(
             next_id = jnp.where(eligible, next_id + 1, next_id)
 
             # Mutate parent params -> child params
-            mutated = mutate_agent_params(ag_params, agent_idx, free_slot, mutate_key, mutation_std)
+            if use_layered:
+                mutated = mutate_agent_params_layered(
+                    ag_params, agent_idx, free_slot, mutate_key, per_leaf_rates
+                )
+            else:
+                mutated = mutate_agent_params(
+                    ag_params, agent_idx, free_slot, mutate_key, mutation_std
+                )
             ag_params = jax.tree.map(
                 lambda orig, mut: jnp.where(eligible, mut, orig),
                 ag_params,

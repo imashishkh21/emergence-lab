@@ -167,7 +167,7 @@ With shared field + evolution, agents should differentiate into roles:
   - Visualizations
 **Verification:** `python scripts/generate_specialization_report.py --checkpoint checkpoints/params.pkl` produces report
 
-### US-013: Update Training to Encourage Specialization [ ]
+### US-013: Update Training to Encourage Specialization [x]
 **Task:** Add config options that encourage specialization.
 **Files:** `src/configs.py`, `src/training/train.py`
 **Changes:**
