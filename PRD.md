@@ -105,7 +105,7 @@ python -c "from src.analysis.o_information import compute_o_information; print('
 
 ---
 
-### US-003: Pairwise PID Synergy via dit [ ]
+### US-003: Pairwise PID Synergy via dit [x]
 
 **Task:** Implement pairwise Partial Information Decomposition over agent pairs using the `dit` library. Variables: agent action (discrete, 6 values), field summary (K=2 quantile bins), future food (K=2 quantile bins).
 

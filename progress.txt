@@ -55,3 +55,19 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_o_information.py` — NEW: 27 tests covering all functions and edge cases
 **Verification:** mypy clean, ruff clean, 27/27 tests pass
 
+### US-003: Pairwise PID Synergy via dit ✓
+**Date:** 2026-02-03
+**What:** Implemented Partial Information Decomposition (PID) for measuring synergy between agent pairs using dit library.
+**Decisions:**
+- Using coinformation (not interaction_information) from dit for correct sign convention (negative = synergy, matching PRD)
+- Jeffreys smoothing (alpha=0.5 pseudocounts) applied to joint distributions before PID computation
+- K=2 quantile bins for continuous variables (field_summary, future_food)
+- Special handling in discretize_continuous() for discrete data with <= num_bins unique values (direct mapping instead of quantile binning)
+- PID decomposition using Williams-Beer (PID_WB) from dit
+- Row shuffle surrogate test for statistical significance (shuffles y to break cross-variable coordination)
+- Column shuffle variant uses circular shift to break temporal dependencies
+**Files changed:**
+- `src/analysis/pid_synergy.py` — NEW: compute_interaction_information(), compute_pairwise_pid(), compute_median_synergy(), surrogate_significance_test(), discretize_continuous(), apply_jeffreys_smoothing()
+- `tests/test_pid_synergy.py` — NEW: 31 tests covering all functions, edge cases, XOR synergy, copy redundancy, surrogate testing
+**Verification:** mypy clean, ruff clean, 31/31 tests pass
+
