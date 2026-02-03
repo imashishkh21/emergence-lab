@@ -144,3 +144,21 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_baselines.py` — EXTENDED: 17 tests in TestACO + 2 tests in TestACOImportability
 **Verification:** mypy clean, ruff clean, 19/19 ACO tests pass, 942 total tests pass (1 skip)
 
+### US-008: MAPPO Baseline (Centralized Critic) ✓
+**Date:** 2026-02-03
+**What:** Implemented MAPPO baseline with centralized critic and decentralized actors. This is CTDE (Centralized Training, Decentralized Execution) — the actor sees only local observations while the critic sees all agents' observations concatenated.
+**Decisions:**
+- CentralizedCritic: Flax module that takes concatenated observations of all agents, outputs per-agent value estimates
+- Hidden dims are 2x the actor's hidden dims for increased capacity (handles n_agents * obs_dim inputs)
+- Field disabled via: write_strength=0.0, decay_rate=1.0 (no field communication — MAPPO handles coordination via centralized critic)
+- Evolution disabled: population stays constant (no births/deaths)
+- ~200 lines of code as specified in PRD (actually 220 lines)
+- RunningMeanStd class for value normalization (running mean/std of returns)
+- mappo_loss() uses vmap for vectorized forward pass over batch
+- Death masking via alive_mask in loss computation
+- create_mappo_train_state() sets up actor/critic optimizers with gradient clipping
+**Files changed:**
+- `src/baselines/mappo.py` — NEW: CentralizedCritic, RunningMeanStd, mappo_config(), create_mappo_network(), create_centralized_critic(), init_mappo_params(), mappo_loss(), run_mappo_episode(), evaluate_mappo(), create_mappo_train_state()
+- `tests/test_baselines.py` — EXTENDED: 19 tests in TestMAPPO + 4 tests in TestMAPPOImportability
+**Verification:** mypy clean, ruff clean, 23/23 MAPPO tests pass, 59/59 total baseline tests pass
+

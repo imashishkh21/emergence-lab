@@ -747,3 +747,546 @@ class TestACOImportability:
         assert ACO_BETA == 2.0
         assert ACO_RHO == 0.5
         assert ACO_Q == 1.0
+
+
+class TestMAPPO:
+    """Tests for the MAPPO baseline (Multi-Agent PPO with centralized critic)."""
+
+    def test_mappo_config_creates_valid_config(self):
+        """mappo_config() should return a valid Config object."""
+        from src.baselines.mappo import mappo_config
+
+        config = mappo_config()
+
+        assert isinstance(config, Config)
+        # Field should be disabled
+        assert config.field.write_strength == 0.0
+        assert config.field.decay_rate == 1.0
+        # Evolution should be disabled
+        assert config.evolution.enabled is False
+        # High starting energy to prevent deaths
+        assert config.evolution.starting_energy >= 1000000
+
+    def test_mappo_config_with_base_config(self):
+        """mappo_config() should preserve non-field/evolution settings from base."""
+        from src.baselines.mappo import mappo_config
+
+        base = Config()
+        base.env.grid_size = 30
+        base.env.num_agents = 16
+        base.env.num_food = 20
+
+        config = mappo_config(base)
+
+        # Preserved settings
+        assert config.env.grid_size == 30
+        assert config.env.num_agents == 16
+        assert config.env.num_food == 20
+        # Modified settings
+        assert config.field.write_strength == 0.0
+        assert config.evolution.enabled is False
+
+    def test_mappo_config_max_agents_matches_num_agents(self):
+        """MAPPO config should have max_agents equal to num_agents."""
+        from src.baselines.mappo import mappo_config
+
+        base = Config()
+        base.env.num_agents = 12
+
+        config = mappo_config(base)
+
+        assert config.evolution.max_agents == 12
+        assert config.evolution.min_agents == 12
+
+    def test_create_mappo_network(self):
+        """create_mappo_network() should return a valid ActorCritic."""
+        from src.agents.network import ActorCritic
+        from src.baselines.mappo import create_mappo_network, mappo_config
+
+        config = mappo_config()
+        actor = create_mappo_network(config)
+
+        assert isinstance(actor, ActorCritic)
+        assert actor.num_actions == 6
+
+    def test_create_centralized_critic(self):
+        """create_centralized_critic() should return a valid CentralizedCritic."""
+        from src.baselines.mappo import (
+            CentralizedCritic,
+            create_centralized_critic,
+            mappo_config,
+        )
+
+        config = mappo_config()
+        critic = create_centralized_critic(config)
+
+        assert isinstance(critic, CentralizedCritic)
+        assert critic.n_agents == config.env.num_agents
+
+    def test_centralized_critic_larger_hidden_dims(self):
+        """Centralized critic should have larger hidden dims than actor."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            mappo_config,
+        )
+
+        config = mappo_config()
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+
+        # Critic should have 2x hidden dims
+        assert critic.hidden_dims[0] == actor.hidden_dims[0] * 2
+
+    def test_init_mappo_params(self):
+        """init_mappo_params() should initialize valid network parameters."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+        )
+
+        config = mappo_config()
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        assert actor_params is not None
+        assert critic_params is not None
+        assert "params" in actor_params
+        assert "params" in critic_params
+
+    def test_centralized_critic_forward_pass(self):
+        """CentralizedCritic should produce correct output shapes."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+        )
+        from src.environment.obs import obs_dim
+
+        config = mappo_config()
+        config.env.num_agents = 4
+        config = mappo_config(config)
+
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+
+        _, critic_params = init_mappo_params(actor, critic, config, key)
+
+        # Test forward pass
+        observation_dim = obs_dim(config)
+        all_obs = jnp.zeros((config.env.num_agents * observation_dim,))
+        values = critic.apply(critic_params, all_obs)
+
+        assert values.shape == (config.env.num_agents,)
+
+    def test_run_mappo_episode_returns_correct_format(self):
+        """run_mappo_episode() should return standardized result dict."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+            run_mappo_episode,
+        )
+
+        config = mappo_config()
+        config.env.max_steps = 10  # Short episode for test
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        key, episode_key = jax.random.split(key)
+        result = run_mappo_episode(
+            actor, critic, actor_params, critic_params, config, episode_key
+        )
+
+        # Check required fields
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+
+        # Check types
+        assert isinstance(result["total_reward"], float)
+        assert isinstance(result["food_collected"], float)
+        assert isinstance(result["final_population"], int)
+        assert isinstance(result["per_agent_rewards"], list)
+
+        # Check per_agent_rewards length
+        assert len(result["per_agent_rewards"]) == config.env.num_agents
+
+    def test_run_mappo_episode_population_stable(self):
+        """MAPPO should maintain constant population (no deaths or births)."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+            run_mappo_episode,
+        )
+
+        config = mappo_config()
+        config.env.max_steps = 50
+        config.env.num_agents = 8
+        config = mappo_config(config)
+
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        key, episode_key = jax.random.split(key)
+        result = run_mappo_episode(
+            actor, critic, actor_params, critic_params, config, episode_key
+        )
+
+        assert result["final_population"] == config.env.num_agents
+
+    def test_run_mappo_episode_deterministic(self):
+        """run_mappo_episode() with deterministic=True should use greedy actions."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+            run_mappo_episode,
+        )
+
+        config = mappo_config()
+        config.env.max_steps = 20
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        # Run deterministic episodes with same seed - should give same result
+        result1 = run_mappo_episode(
+            actor,
+            critic,
+            actor_params,
+            critic_params,
+            config,
+            jax.random.PRNGKey(0),
+            deterministic=True,
+        )
+        result2 = run_mappo_episode(
+            actor,
+            critic,
+            actor_params,
+            critic_params,
+            config,
+            jax.random.PRNGKey(0),
+            deterministic=True,
+        )
+
+        # Deterministic should give same results
+        assert result1["total_reward"] == result2["total_reward"]
+        assert result1["food_collected"] == result2["food_collected"]
+
+    def test_run_mappo_episode_stochastic_varies(self):
+        """run_mappo_episode() with stochastic policy should vary with seed."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+            run_mappo_episode,
+        )
+
+        config = mappo_config()
+        config.env.max_steps = 50
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        # Run with different seeds
+        result1 = run_mappo_episode(
+            actor,
+            critic,
+            actor_params,
+            critic_params,
+            config,
+            jax.random.PRNGKey(1),
+            deterministic=False,
+        )
+        result2 = run_mappo_episode(
+            actor,
+            critic,
+            actor_params,
+            critic_params,
+            config,
+            jax.random.PRNGKey(999),
+            deterministic=False,
+        )
+
+        # Results should differ (with high probability)
+        assert (
+            result1["total_reward"] != result2["total_reward"]
+            or result1["food_collected"] != result2["food_collected"]
+        )
+
+    def test_evaluate_mappo_returns_correct_format(self):
+        """evaluate_mappo() should return aggregated result dict."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            evaluate_mappo,
+            init_mappo_params,
+            mappo_config,
+        )
+
+        config = mappo_config()
+        config.env.max_steps = 10
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        result = evaluate_mappo(
+            actor, critic, actor_params, critic_params, config, n_episodes=3, seed=42
+        )
+
+        # Check required fields
+        assert "total_reward" in result
+        assert "total_reward_std" in result
+        assert "food_collected" in result
+        assert "food_collected_std" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+        assert "episode_rewards" in result
+        assert "episode_food" in result
+        assert "n_episodes" in result
+
+        # Check types and shapes
+        assert isinstance(result["total_reward"], float)
+        assert isinstance(result["total_reward_std"], float)
+        assert isinstance(result["episode_rewards"], list)
+        assert len(result["episode_rewards"]) == 3
+        assert result["n_episodes"] == 3
+
+    def test_evaluate_mappo_reproducible_with_seed(self):
+        """evaluate_mappo() with same seed should give same results."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            evaluate_mappo,
+            init_mappo_params,
+            mappo_config,
+        )
+
+        config = mappo_config()
+        config.env.max_steps = 10
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        result1 = evaluate_mappo(
+            actor, critic, actor_params, critic_params, config, n_episodes=3, seed=123
+        )
+        result2 = evaluate_mappo(
+            actor, critic, actor_params, critic_params, config, n_episodes=3, seed=123
+        )
+
+        assert result1["episode_rewards"] == result2["episode_rewards"]
+        assert result1["episode_food"] == result2["episode_food"]
+
+    def test_mappo_field_is_zeroed(self):
+        """MAPPO should have a zeroed field throughout the episode."""
+        from src.baselines.mappo import mappo_config
+        from src.environment.env import reset, step
+
+        config = mappo_config()
+        config.env.max_steps = 20
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Run a few steps with random actions
+        for _ in range(10):
+            key, action_key = jax.random.split(key)
+            actions = jax.random.randint(action_key, (config.env.num_agents,), 0, 5)
+            state, _, done, _ = step(state, actions, config)
+
+            # Field should be all zeros
+            field_values = np.array(state.field_state.values)
+            assert np.allclose(
+                field_values, 0.0, atol=1e-6
+            ), f"Field not zeroed: max={np.max(np.abs(field_values))}"
+
+            if done:
+                break
+
+    def test_mappo_no_evolution_deaths(self):
+        """MAPPO agents should not die (energy infinite)."""
+        from src.baselines.mappo import mappo_config
+        from src.environment.env import reset, step
+
+        config = mappo_config()
+        config.env.max_steps = 200
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        initial_alive = int(np.sum(np.array(state.agent_alive)))
+
+        # Run full episode
+        for _ in range(config.env.max_steps):
+            key, action_key = jax.random.split(key)
+            actions = jax.random.randint(
+                action_key, (config.evolution.max_agents,), 0, 5
+            )
+            state, _, done, _ = step(state, actions, config)
+            if done:
+                break
+
+        final_alive = int(np.sum(np.array(state.agent_alive)))
+        assert final_alive == initial_alive, "Agents died in MAPPO (should not happen)"
+
+    def test_mappo_loss_computes_correctly(self):
+        """mappo_loss() should compute loss and metrics without errors."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            init_mappo_params,
+            mappo_config,
+            mappo_loss,
+        )
+        from src.environment.obs import obs_dim
+
+        config = mappo_config()
+        config.env.num_agents = 4
+        config = mappo_config(config)
+
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+        actor_params, critic_params = init_mappo_params(actor, critic, config, key)
+
+        observation_dim = obs_dim(config)
+        batch_size = 16
+
+        # Create dummy batch
+        batch = {
+            "obs": jnp.zeros((batch_size, observation_dim)),
+            "all_obs": jnp.zeros((batch_size, config.env.num_agents * observation_dim)),
+            "actions": jnp.zeros((batch_size,), dtype=jnp.int32),
+            "log_probs": jnp.zeros((batch_size,)),
+            "advantages": jnp.ones((batch_size,)),
+            "returns": jnp.zeros((batch_size,)),
+            "alive_mask": jnp.ones((batch_size,), dtype=jnp.bool_),
+            "agent_indices": jnp.zeros((batch_size,), dtype=jnp.int32),
+        }
+
+        loss, metrics = mappo_loss(
+            actor,
+            critic,
+            actor_params,
+            critic_params,
+            batch,
+            clip_eps=0.2,
+            vf_coef=0.5,
+            ent_coef=0.01,
+        )
+
+        assert loss.shape == ()
+        assert "policy_loss" in metrics
+        assert "value_loss" in metrics
+        assert "entropy" in metrics
+        assert "approx_kl" in metrics
+        assert "clip_fraction" in metrics
+
+    def test_running_mean_std(self):
+        """RunningMeanStd should track statistics correctly."""
+        from src.baselines.mappo import RunningMeanStd
+
+        rms = RunningMeanStd()
+
+        # Update with some values
+        x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        rms.update(x)
+
+        assert np.isclose(rms.mean, 3.0, atol=0.1)
+        assert rms.var > 0
+
+        # Normalize should work
+        normalized = rms.normalize(x)
+        assert len(normalized) == len(x)
+
+    def test_create_mappo_train_state(self):
+        """create_mappo_train_state() should initialize all training components."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            create_mappo_train_state,
+            mappo_config,
+        )
+
+        config = mappo_config()
+        actor = create_mappo_network(config)
+        critic = create_centralized_critic(config)
+        key = jax.random.PRNGKey(42)
+
+        actor_params, critic_params, actor_opt, critic_opt = create_mappo_train_state(
+            actor, critic, config, key
+        )
+
+        assert actor_params is not None
+        assert critic_params is not None
+        assert actor_opt is not None
+        assert critic_opt is not None
+
+
+class TestMAPPOImportability:
+    """Tests for MAPPO module importability."""
+
+    def test_import_mappo_module(self):
+        """mappo module should be importable."""
+        from src.baselines import mappo
+
+        assert mappo is not None
+
+    def test_import_mappo_classes(self):
+        """All public classes should be importable."""
+        from src.baselines.mappo import CentralizedCritic, RunningMeanStd
+
+        assert CentralizedCritic is not None
+        assert RunningMeanStd is not None
+
+    def test_import_mappo_functions(self):
+        """All public functions should be importable."""
+        from src.baselines.mappo import (
+            create_centralized_critic,
+            create_mappo_network,
+            create_mappo_train_state,
+            evaluate_mappo,
+            init_mappo_params,
+            mappo_config,
+            mappo_loss,
+            run_mappo_episode,
+        )
+
+        assert callable(mappo_config)
+        assert callable(create_mappo_network)
+        assert callable(create_centralized_critic)
+        assert callable(init_mappo_params)
+        assert callable(run_mappo_episode)
+        assert callable(evaluate_mappo)
+        assert callable(mappo_loss)
+        assert callable(create_mappo_train_state)
+
+    def test_print_centralized_critic(self):
+        """CentralizedCritic should be printable (for CLI verification)."""
+        from src.baselines.mappo import CentralizedCritic
+
+        critic_str = str(CentralizedCritic)
+        assert "CentralizedCritic" in critic_str

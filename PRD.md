@@ -227,7 +227,7 @@ python -c "from src.baselines.aco_fixed import run_aco_fixed_episode; print('OK'
 
 ---
 
-### US-008: MAPPO Baseline (Centralized Critic) [ ]
+### US-008: MAPPO Baseline (Centralized Critic) [x]
 
 **Task:** Implement Multi-Agent PPO with a centralized critic (all agents' observations concatenated) and decentralized actors. Modify our existing PPO, not a JaxMARL wrapper. Disable field and evolution, shared weights for all actors.
 
