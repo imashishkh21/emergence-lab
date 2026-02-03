@@ -310,3 +310,23 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_emergence_report.py` — NEW: 38 tests covering all dataclasses, functions, serialization, integration, edge cases
 **Verification:** mypy clean, ruff clean, 38/38 tests pass
 
+### US-016: Publication Figures — Scaling + Ablation ✓
+**Date:** 2026-02-03
+**What:** Created publication-quality matplotlib figures module for Phase 5 experiments. All figures at 300 DPI with colorblind-safe palette, PDF + PNG output.
+**Decisions:**
+- setup_publication_style() configures matplotlib for consistent figure appearance
+- Colorblind-safe Paul Tol palette (7 colors) for accessibility
+- METHOD_COLORS dict maps method/condition names to specific colors
+- plot_scaling_curve(): log-log plot with power law fit lines and alpha=1.0 reference
+- plot_ablation_bars(): horizontal bar chart sorted by metric value with CI error bars
+- plot_performance_profiles(): CDFs showing fraction of runs >= normalized score threshold
+- plot_probability_of_improvement(): pairwise heatmap showing P(method_i > method_j)
+- save_figure(): utility to save in multiple formats with auto-parent-directory creation
+- Also includes emergence figures (US-017): plot_pid_synergy_heatmap(), plot_o_information_trajectory(), plot_causal_emergence_gap(), plot_phase_transitions()
+- CLI supports --dry-run, --figures (comma-separated), --verbose
+**Files changed:**
+- `src/analysis/paper_figures.py` — NEW: All figure functions + style constants + utilities
+- `scripts/generate_paper_figures.py` — NEW: CLI for batch figure generation
+- `tests/test_paper_figures.py` — NEW: 44 tests covering all figure functions and utilities
+**Verification:** mypy clean, ruff clean, 44/44 tests pass
+

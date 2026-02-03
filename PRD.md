@@ -440,7 +440,7 @@ python scripts/compute_emergence_metrics.py --checkpoint checkpoints/params.pkl 
 
 ---
 
-### US-016: Publication Figures — Scaling + Ablation [ ]
+### US-016: Publication Figures — Scaling + Ablation [x]
 
 **Task:** Create publication-quality matplotlib figures for scaling curves and ablation results. Consistent style, 300 DPI, PDF + PNG output.
 
