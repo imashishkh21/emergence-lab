@@ -83,7 +83,7 @@ pytest tests/test_phase5_deps.py -v
 
 ---
 
-### US-002: O-Information Metric via hoi [ ]
+### US-002: O-Information Metric via hoi [x]
 
 **Task:** Implement O-information (Omega = TC - DTC) over agent behavioral features using the `hoi` library. Omega < 0 means synergy dominates, which is our emergence signal.
 

@@ -41,3 +41,17 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_phase5_deps.py` — NEW: 13 smoke tests (12 pass, 1 skip for jaxmarl)
 **Verification:** mypy clean, ruff clean, 744 tests pass (1 skip)
 
+### US-002: O-Information Metric via hoi ✓
+**Date:** 2026-02-03
+**What:** Implemented O-information (Omega = TC - DTC) metric using hoi library. Omega < 0 indicates synergy-dominant emergence.
+**Decisions:**
+- Using hoi's Gaussian Copula method ("gc") for fast continuous-data O-info estimation
+- Returns 0.0 for edge cases: <3 agents (O-info undefined), <10 samples, constant features, NaN inputs
+- Added noise injection (1e-8 scale) to avoid numerical issues with near-constant dimensions
+- OInformationTracker follows same pattern as TransferEntropyTracker with z-score phase transition detection
+- Tracks synergy_ratio: cumulative fraction of negative O-info values (emergence signal)
+**Files changed:**
+- `src/analysis/o_information.py` — NEW: compute_o_information(), compute_o_information_by_condition(), OInfoEvent, OInformationTracker
+- `tests/test_o_information.py` — NEW: 27 tests covering all functions and edge cases
+**Verification:** mypy clean, ruff clean, 27/27 tests pass
+
