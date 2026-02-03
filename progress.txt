@@ -109,3 +109,20 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_surrogates.py` — NEW: 50 tests covering all functions, edge cases, integration tests
 **Verification:** mypy clean, ruff clean, 50/50 tests pass
 
+### US-006: IPPO Baseline (No Field, Shared Params) ✓
+**Date:** 2026-02-03
+**What:** Implemented IPPO baseline — the simplest baseline with no field communication and no evolution. This is the "no communication at all" lower bound for baseline comparisons.
+**Decisions:**
+- Field disabled via: write_strength=0.0, decay_rate=1.0 (field zeros out each step)
+- Evolution disabled via: enabled=False, infinite starting_energy (1000000), energy_per_step=0, impossible reproduce_threshold
+- max_agents set equal to num_agents (no population growth or death)
+- Reuses existing ActorCritic and step() — zero new neural network code (as required by PRD)
+- Returns standardized result dict: {"total_reward", "food_collected", "final_population", "per_agent_rewards"}
+- evaluate_ippo() aggregates results across multiple episodes with mean/std/per-episode tracking
+- Supports both stochastic (sampling) and deterministic (greedy) action selection
+**Files changed:**
+- `src/baselines/__init__.py` — NEW: Module docstring with baseline descriptions
+- `src/baselines/ippo.py` — NEW: ippo_config(), run_ippo_episode(), evaluate_ippo(), create_ippo_network(), init_ippo_params()
+- `tests/test_baselines.py` — NEW: 17 tests in TestIPPO and TestIPPOImportability classes
+**Verification:** mypy clean, ruff clean, 17/17 IPPO tests pass, 923 total tests pass (1 skip)
+

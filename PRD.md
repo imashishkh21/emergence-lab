@@ -180,7 +180,7 @@ python -c "from src.analysis.surrogates import bootstrap_ci, mann_whitney_u; pri
 
 ---
 
-### US-006: IPPO Baseline (No Field, Shared Params) [ ]
+### US-006: IPPO Baseline (No Field, Shared Params) [x]
 
 **Task:** Create the simplest baseline: Independent PPO with no field and no evolution. Shared parameters, individual rewards. This is the "no communication at all" lower bound.
 
