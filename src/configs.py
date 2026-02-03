@@ -33,6 +33,30 @@ class TrainingMode(Enum):
 
 
 @dataclass
+class HiddenFoodConfig:
+    """Configuration for hidden food that requires coordination to reveal.
+
+    Hidden food items are invisible until K agents are within distance D.
+    Once revealed, they stay visible for a duration then re-hide at a new position.
+    This creates tasks that REQUIRE coordination — individuals cannot solve alone.
+
+    Based on Level-Based Foraging (LBF) benchmark (Papoudakis et al. 2021).
+    """
+    enabled: bool = False
+    """Whether hidden food is active. Disabled by default for backward compatibility."""
+    num_hidden: int = 3
+    """Number of hidden food items on the grid."""
+    required_agents: int = 3
+    """Minimum number of alive agents within reveal_distance to reveal hidden food."""
+    reveal_distance: int = 3
+    """Chebyshev distance for agents to be considered 'near' hidden food."""
+    reveal_duration: int = 10
+    """Number of steps hidden food stays revealed before re-hiding."""
+    hidden_food_value_multiplier: float = 5.0
+    """Multiplier on food_energy for hidden food (5x default = high-value coordination reward)."""
+
+
+@dataclass
 class EnvConfig:
     """Environment configuration."""
     grid_size: int = 20
@@ -41,6 +65,8 @@ class EnvConfig:
     max_steps: int = 500
     observation_radius: int = 5
     food_respawn_prob: float = 0.1
+    hidden_food: HiddenFoodConfig = dataclass_field(default_factory=HiddenFoodConfig)
+    """Configuration for hidden food requiring coordination to reveal."""
 
 
 @dataclass

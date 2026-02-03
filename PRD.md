@@ -278,7 +278,7 @@ python -c "from src.experiments.runner import ExperimentConfig, run_experiment; 
 
 ---
 
-### US-010: Hidden Resources Environment Modification [ ]
+### US-010: Hidden Resources Environment Modification [x]
 
 **Task:** Modify the environment so that K=3 agents within Chebyshev distance D=3 of a hidden food location reveals it. Hidden food has 5x value, stays revealed for 10 steps, then re-hides. This creates a task that REQUIRES coordination — individuals cannot solve it alone.
 

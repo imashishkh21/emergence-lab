@@ -208,6 +208,10 @@ def _reset_energy(state: EnvState, config: Config) -> EnvState:
         next_agent_id=state.next_agent_id,
         agent_birth_step=state.agent_birth_step,
         agent_params=state.agent_params,
+        hidden_food_positions=state.hidden_food_positions,
+        hidden_food_revealed=state.hidden_food_revealed,
+        hidden_food_reveal_timer=state.hidden_food_reveal_timer,
+        hidden_food_collected=state.hidden_food_collected,
     )
 
 
@@ -227,6 +231,10 @@ def _replace_field(state: EnvState, field_state: FieldState) -> EnvState:
         next_agent_id=state.next_agent_id,
         agent_birth_step=state.agent_birth_step,
         agent_params=state.agent_params,
+        hidden_food_positions=state.hidden_food_positions,
+        hidden_food_revealed=state.hidden_food_revealed,
+        hidden_food_reveal_timer=state.hidden_food_reveal_timer,
+        hidden_food_collected=state.hidden_food_collected,
     )
 
 
@@ -520,6 +528,10 @@ def _replace_agent_params(state: EnvState, agent_params: Any) -> EnvState:
         next_agent_id=state.next_agent_id,
         agent_birth_step=state.agent_birth_step,
         agent_params=agent_params,
+        hidden_food_positions=state.hidden_food_positions,
+        hidden_food_revealed=state.hidden_food_revealed,
+        hidden_food_reveal_timer=state.hidden_food_reveal_timer,
+        hidden_food_collected=state.hidden_food_collected,
     )
 
 

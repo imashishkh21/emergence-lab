@@ -86,6 +86,22 @@ def reset(key: jax.Array, config: Config) -> EnvState:
     agent_birth_step = jnp.full((max_agents,), -1, dtype=jnp.int32)
     agent_birth_step = agent_birth_step.at[:num_agents].set(0)
 
+    # Initialize hidden food fields if enabled
+    hidden_food_positions = None
+    hidden_food_revealed = None
+    hidden_food_reveal_timer = None
+    hidden_food_collected = None
+
+    if config.env.hidden_food.enabled:
+        num_hidden = config.env.hidden_food.num_hidden
+        k3, hidden_key = jax.random.split(k3)
+        hidden_food_positions = jax.random.randint(
+            hidden_key, shape=(num_hidden, 2), minval=0, maxval=grid_size
+        )
+        hidden_food_revealed = jnp.zeros((num_hidden,), dtype=jnp.bool_)
+        hidden_food_reveal_timer = jnp.zeros((num_hidden,), dtype=jnp.int32)
+        hidden_food_collected = jnp.zeros((num_hidden,), dtype=jnp.bool_)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -99,6 +115,10 @@ def reset(key: jax.Array, config: Config) -> EnvState:
         agent_parent_ids=agent_parent_ids,
         next_agent_id=next_agent_id,
         agent_birth_step=agent_birth_step,
+        hidden_food_positions=hidden_food_positions,
+        hidden_food_revealed=hidden_food_revealed,
+        hidden_food_reveal_timer=hidden_food_reveal_timer,
+        hidden_food_collected=hidden_food_collected,
     )
 
 
@@ -212,12 +232,129 @@ def step(
     # Mark respawned food as not collected
     food_collected = food_collected & ~respawns
 
-    # --- 4. Compute reward ---
-    # Individual reward: each agent gets reward equal to energy gained
-    # Full (max_agents,) shape — dead agents get 0 reward
-    rewards = jnp.where(state.agent_alive, energy_gained, 0.0)
+    # --- 4. Hidden food reveal and collection (if enabled) ---
+    # Hidden food fields (carry through unchanged if disabled)
+    hidden_food_positions = state.hidden_food_positions
+    hidden_food_revealed = state.hidden_food_revealed
+    hidden_food_reveal_timer = state.hidden_food_reveal_timer
+    hidden_food_collected = state.hidden_food_collected
+    hidden_food_energy_gained = jnp.zeros((max_agents,), dtype=jnp.float32)
 
-    # --- 5. Update field ---
+    if config.env.hidden_food.enabled:
+        hf_config = config.env.hidden_food
+        num_hidden = hf_config.num_hidden
+        required_agents = hf_config.required_agents
+        reveal_distance = hf_config.reveal_distance
+        reveal_duration = hf_config.reveal_duration
+        value_multiplier = hf_config.hidden_food_value_multiplier
+
+        # Type assertions for mypy (we know these are not None when enabled)
+        assert hidden_food_positions is not None
+        assert hidden_food_revealed is not None
+        assert hidden_food_reveal_timer is not None
+        assert hidden_food_collected is not None
+
+        # Compute distances from all agents to all hidden food
+        # new_positions: (max_agents, 2), hidden_food_positions: (num_hidden, 2)
+        hf_rows = hidden_food_positions[:, 0]  # (num_hidden,)
+        hf_cols = hidden_food_positions[:, 1]  # (num_hidden,)
+        agent_rows_hf = new_positions[:, 0:1]  # (max_agents, 1)
+        agent_cols_hf = new_positions[:, 1:2]  # (max_agents, 1)
+
+        hf_row_dist = jnp.abs(agent_rows_hf - hf_rows[None, :])  # (max_agents, num_hidden)
+        hf_col_dist = jnp.abs(agent_cols_hf - hf_cols[None, :])  # (max_agents, num_hidden)
+        hf_chebyshev = jnp.maximum(hf_row_dist, hf_col_dist)  # (max_agents, num_hidden)
+
+        # Count alive agents within reveal_distance of each hidden food
+        within_reveal = (hf_chebyshev <= reveal_distance) & state.agent_alive[:, None]  # (max_agents, num_hidden)
+        agents_near_hf = jnp.sum(within_reveal.astype(jnp.int32), axis=0)  # (num_hidden,)
+
+        # Check reveal condition: >= required_agents near hidden food
+        should_reveal = (agents_near_hf >= required_agents) & ~hidden_food_collected
+
+        # Update reveal timer: if newly revealed, set to reveal_duration
+        # If already revealed, decrement timer (but not below 0)
+        new_reveal_timer = jnp.where(
+            should_reveal & ~hidden_food_revealed,
+            reveal_duration,
+            jnp.maximum(hidden_food_reveal_timer - 1, 0),
+        )
+        # Keep timer at reveal_duration if continuously revealed
+        new_reveal_timer = jnp.where(
+            should_reveal & hidden_food_revealed,
+            reveal_duration,
+            new_reveal_timer,
+        )
+
+        # Food is revealed if timer > 0 or just triggered
+        new_revealed = (new_reveal_timer > 0) | should_reveal
+
+        # Hidden food collection: within distance 1 AND revealed AND not collected
+        within_collect = (hf_chebyshev <= 1)  # (max_agents, num_hidden)
+        hf_collectible = within_collect & new_revealed[None, :] & ~hidden_food_collected[None, :] & state.agent_alive[:, None]
+
+        # Any agent can collect revealed hidden food
+        hf_newly_collected = jnp.any(hf_collectible, axis=0)  # (num_hidden,)
+
+        # Determine which agent collects each hidden food (closest)
+        hf_masked_dist = jnp.where(hf_collectible, hf_chebyshev, jnp.float32(1e6))
+        hf_closest_agent = jnp.argmin(hf_masked_dist, axis=0)  # (num_hidden,)
+
+        # Calculate hidden food energy: food_energy * value_multiplier
+        hf_energy_val = jnp.float32(config.evolution.food_energy * value_multiplier)
+
+        # Build per-agent hidden food energy gain
+        hf_agent_mask = (
+            jax.nn.one_hot(hf_closest_agent, max_agents)  # (num_hidden, max_agents)
+            * hf_newly_collected[:, None]
+        )
+        hf_per_agent = jnp.sum(hf_agent_mask, axis=0)  # (max_agents,)
+        hidden_food_energy_gained = hf_per_agent * hf_energy_val
+
+        # Add hidden food energy to agents
+        energy_after_food = jnp.where(
+            state.agent_alive,
+            jnp.minimum(energy_after_food + hidden_food_energy_gained, max_energy_val),
+            energy_after_food,
+        )
+
+        # Update hidden food collected status
+        new_hf_collected = hidden_food_collected | hf_newly_collected
+
+        # When hidden food timer expires (reaches 0) and food was revealed but not collected,
+        # re-hide and respawn at new position
+        timer_expired = (new_reveal_timer == 0) & hidden_food_revealed & ~new_hf_collected
+
+        # Generate new positions for expired hidden food
+        remaining_key, hf_respawn_key = jax.random.split(remaining_key)
+        new_hf_positions = jax.random.randint(
+            hf_respawn_key, shape=(num_hidden, 2), minval=0, maxval=grid_size
+        )
+        hidden_food_positions = jnp.where(
+            timer_expired[:, None], new_hf_positions, hidden_food_positions
+        )
+
+        # When hidden food is collected, respawn at new position and reset state
+        remaining_key, hf_collected_respawn_key = jax.random.split(remaining_key)
+        collected_new_positions = jax.random.randint(
+            hf_collected_respawn_key, shape=(num_hidden, 2), minval=0, maxval=grid_size
+        )
+        hidden_food_positions = jnp.where(
+            hf_newly_collected[:, None], collected_new_positions, hidden_food_positions
+        )
+
+        # Reset collected status for respawned food (both timer-expired and collected)
+        hidden_food_collected = jnp.where(timer_expired | hf_newly_collected, False, new_hf_collected)
+        hidden_food_revealed = jnp.where(timer_expired | hf_newly_collected, False, new_revealed)
+        hidden_food_reveal_timer = jnp.where(timer_expired | hf_newly_collected, 0, new_reveal_timer)
+
+    # --- 5. Compute reward ---
+    # Individual reward: each agent gets reward equal to energy gained (normal + hidden food)
+    # Full (max_agents,) shape — dead agents get 0 reward
+    total_energy_gained = energy_gained + hidden_food_energy_gained
+    rewards = jnp.where(state.agent_alive, total_energy_gained, 0.0)
+
+    # --- 6. Update field ---
     # Step field dynamics (diffuse + decay)
     field_state = step_field(
         state.field_state,
@@ -234,7 +371,7 @@ def step(
     write_values = write_values * state.agent_alive[:, None]
     field_state = write_local(field_state, new_positions, write_values)
 
-    # --- 6. Energy drain ---
+    # --- 7. Energy drain ---
     # Subtract energy_per_step from alive agents (after food energy), clamp to 0
     energy_drain = jnp.where(
         state.agent_alive,
@@ -243,13 +380,13 @@ def step(
     )
     new_energy = energy_drain
 
-    # --- 7. Death from starvation ---
+    # --- 8. Death from starvation ---
     # Agents with energy <= 0 die (only check previously alive agents)
     starved = state.agent_alive & (new_energy <= 0)
     new_alive = state.agent_alive & ~starved
     death_count = jnp.sum(starved.astype(jnp.int32))
 
-    # --- 8. Reproduction ---
+    # --- 9. Reproduction ---
     # Action 5 = attempt reproduction
     # Conditions: agent alive, chose action 5, energy >= threshold, free slot exists
     reproduce_threshold = jnp.float32(config.evolution.reproduce_threshold)
@@ -374,11 +511,11 @@ def step(
     birth_count = jnp.sum(births_per_agent.astype(jnp.int32))
     new_key = post_repro_key
 
-    # --- 9. Advance step counter and check done ---
+    # --- 10. Advance step counter and check done ---
     new_step = state.step + 1
     done = new_step >= config.env.max_steps
 
-    # --- 10. Split PRNG key ---
+    # --- 11. Split PRNG key ---
     # (key already split during reproduction above)
 
     new_state = EnvState(
@@ -395,14 +532,26 @@ def step(
         next_agent_id=new_next_id,
         agent_birth_step=new_birth_steps,
         agent_params=new_agent_params,
+        hidden_food_positions=hidden_food_positions,
+        hidden_food_revealed=hidden_food_revealed,
+        hidden_food_reveal_timer=hidden_food_reveal_timer,
+        hidden_food_collected=hidden_food_collected,
     )
 
     num_collected = jnp.sum(newly_collected.astype(jnp.float32))
+    # Track hidden food collected this step if enabled
+    hf_collected_this_step = jnp.float32(0.0)
+    if config.env.hidden_food.enabled:
+        # Count hidden food collected this step (need to recompute since we respawned)
+        # We can infer from hidden_food_energy_gained: if > 0, food was collected
+        hf_collected_this_step = jnp.sum((hidden_food_energy_gained > 0).astype(jnp.float32))
+
     info: dict[str, Any] = {
         "food_collected_this_step": num_collected,
         "total_food_collected": jnp.sum(food_collected.astype(jnp.float32)),
         "deaths_this_step": death_count,
         "births_this_step": birth_count,
+        "hidden_food_collected_this_step": hf_collected_this_step,
     }
 
     return new_state, rewards, done, info

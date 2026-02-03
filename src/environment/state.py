@@ -30,6 +30,14 @@ class EnvState:
             0 for original agents, -1 for empty slots.
         agent_params: Per-agent network parameters. Pytree where each leaf has
             shape (max_agents, ...). None when evolution is disabled.
+        hidden_food_positions: Positions of hidden food, shape (num_hidden, 2).
+            Only used when hidden_food.enabled=True. None otherwise.
+        hidden_food_revealed: Boolean mask for revealed hidden food, shape (num_hidden,).
+            True = currently revealed and collectible. None when disabled.
+        hidden_food_reveal_timer: Countdown timer for each hidden food, shape (num_hidden,).
+            When > 0, food is revealed. Decrements each step. None when disabled.
+        hidden_food_collected: Boolean mask for collected hidden food, shape (num_hidden,).
+            Once collected, hidden food respawns at new position. None when disabled.
     """
     agent_positions: jnp.ndarray   # (max_agents, 2)
     food_positions: jnp.ndarray    # (num_food, 2)
@@ -44,6 +52,11 @@ class EnvState:
     next_agent_id: jnp.ndarray     # scalar int
     agent_birth_step: jnp.ndarray  # (max_agents,) int
     agent_params: Any = None       # per-agent params pytree, (max_agents, ...)
+    # Hidden food fields (None when hidden_food.enabled=False)
+    hidden_food_positions: jnp.ndarray | None = None    # (num_hidden, 2)
+    hidden_food_revealed: jnp.ndarray | None = None     # (num_hidden,) bool
+    hidden_food_reveal_timer: jnp.ndarray | None = None # (num_hidden,) int
+    hidden_food_collected: jnp.ndarray | None = None    # (num_hidden,) bool
 
 
 def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState:  # type: ignore[name-defined]  # noqa: F821
@@ -110,6 +123,22 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
     agent_birth_step = jnp.full((max_agents,), -1, dtype=jnp.int32)
     agent_birth_step = agent_birth_step.at[:num_agents].set(0)
 
+    # Initialize hidden food fields if enabled
+    hidden_food_positions = None
+    hidden_food_revealed = None
+    hidden_food_reveal_timer = None
+    hidden_food_collected = None
+
+    if config.env.hidden_food.enabled:
+        num_hidden = config.env.hidden_food.num_hidden
+        k3, hidden_key = jax.random.split(k3)
+        hidden_food_positions = jax.random.randint(
+            hidden_key, shape=(num_hidden, 2), minval=0, maxval=grid_size
+        )
+        hidden_food_revealed = jnp.zeros((num_hidden,), dtype=jnp.bool_)
+        hidden_food_reveal_timer = jnp.zeros((num_hidden,), dtype=jnp.int32)
+        hidden_food_collected = jnp.zeros((num_hidden,), dtype=jnp.bool_)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -123,4 +152,8 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
         agent_parent_ids=agent_parent_ids,
         next_agent_id=next_agent_id,
         agent_birth_step=agent_birth_step,
+        hidden_food_positions=hidden_food_positions,
+        hidden_food_revealed=hidden_food_revealed,
+        hidden_food_reveal_timer=hidden_food_reveal_timer,
+        hidden_food_collected=hidden_food_collected,
     )
