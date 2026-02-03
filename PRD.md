@@ -414,7 +414,7 @@ python scripts/run_baselines_comparison.py --dry-run --methods ours,ippo
 
 ---
 
-### US-015: Emergence Metrics Integration Script [ ]
+### US-015: Emergence Metrics Integration Script [x]
 
 **Task:** Create a unified script that loads a checkpoint and computes ALL emergence metrics with surrogate tests for statistical significance. Windowed analysis for temporal stability.
 

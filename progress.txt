@@ -292,3 +292,21 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `pyproject.toml` — Added "slow" pytest marker registration
 **Verification:** mypy clean, ruff clean, 1188/1188 tests pass (12 slow tests deselected with -m "not slow")
 
+### US-015: Emergence Metrics Integration Script ✓
+**Date:** 2026-02-03
+**What:** Created unified emergence metrics module that computes all 7 metrics (O-info, PID synergy, EI gap, Rosas Psi, mean TE, specialization score, DOL) with optional surrogate testing and windowed analysis.
+**Decisions:**
+- MetricResult dataclass: stores value, p_value, significant flag, CI bounds, surrogate mean/std
+- EmergenceReport dataclass: aggregates all 7 metrics + metadata (checkpoint path, n_agents, n_timesteps, timestamp) + windowed results
+- compute_all_emergence_metrics(): main entry point, calls each metric function with optional surrogate tests
+- compute_windowed_metrics(): 1M-step windows with 50% overlap per PRD for temporal stability analysis
+- JSON serialization via report_to_json/report_from_json
+- CLI supports --dry-run, --skip-surrogates, --use-synthetic, --window-size, --window-overlap
+- Graceful fallbacks for missing imports (conditional imports with try/except)
+- Edge case handling: empty trajectory, single agent, short trajectory, constant data, NaN/inf
+**Files changed:**
+- `src/analysis/emergence_report.py` — NEW: MetricResult, EmergenceReport, compute_all_emergence_metrics(), compute_windowed_metrics(), report_to_json(), report_from_json(), print_emergence_report()
+- `scripts/compute_emergence_metrics.py` — NEW: CLI for computing metrics with dry-run support
+- `tests/test_emergence_report.py` — NEW: 38 tests covering all dataclasses, functions, serialization, integration, edge cases
+**Verification:** mypy clean, ruff clean, 38/38 tests pass
+
