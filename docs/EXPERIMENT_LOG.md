@@ -584,11 +584,14 @@ train=TrainConfig(
 | 5 | 15 | 4.61 | 62 | 🎉 Near-UTOPIA |
 | 5 | 16 | 3.46 | 39 | 👍 Thriving |
 | 5 | 17 | 4.56 | 58 | 🎉 Near-UTOPIA |
-| 6 | 18 | - | - | ⬜ Pending |
-| 6 | 19 | - | - | ⬜ Pending |
-| 6 | 20 | - | - | ⬜ Pending |
+| 6 | 18 | 5.48 | 64 | 🎉 UTOPIA |
+| 6 | 19 | 4.42 | 64 | 🎉 UTOPIA |
+| 6 | 20 | 5.43 | 64 | 🎉 UTOPIA |
+| 7 | 21 | - | - | ⬜ Pending |
+| 7 | 22 | - | - | ⬜ Pending |
+| 7 | 23 | - | - | ⬜ Pending |
 
-**Running tally:** 9/18 UTOPIA/Near (50%), 7 thriving, 1 struggled, 1 died. Survival: 94%
+**Running tally:** 12/21 UTOPIA/Near (57%), 7 thriving, 1 struggled, 1 died. Survival: 95%
 
 ### Field OFF Results (30 seeds)
 
