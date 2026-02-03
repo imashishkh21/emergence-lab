@@ -28,13 +28,14 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.figure import Figure
 
 # Use non-interactive backend for server/CI compatibility
+# IMPORTANT: Must be called BEFORE importing pyplot
 matplotlib.use("Agg")
 
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np
+from matplotlib.figure import Figure
 
 # =============================================================================
 # Style Constants
@@ -706,6 +707,19 @@ def plot_phase_transitions(
         Matplotlib Figure object.
     """
     setup_publication_style()
+
+    # Handle empty metrics_dict
+    if not metrics_dict:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(
+            0.5, 0.5, "No metrics data provided",
+            ha="center", va="center", fontsize=FONT_SIZE,
+            transform=ax.transAxes
+        )
+        ax.set_title("Phase Transitions: Multiple Metrics Over Training")
+        save_figure(fig, output_path)
+        return fig
+
     fig, axes = plt.subplots(
         len(metrics_dict),
         1,

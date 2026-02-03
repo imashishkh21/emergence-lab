@@ -31,6 +31,24 @@ from src.analysis.paper_figures import (
 )
 
 
+@pytest.fixture(autouse=True)
+def reset_matplotlib_state():
+    """Reset matplotlib rcParams before and after each test.
+
+    This prevents state leakage from setup_publication_style() calls
+    affecting other tests.
+    """
+    # Save original rcParams
+    original_rcparams = plt.rcParams.copy()
+
+    yield
+
+    # Restore original rcParams after test
+    plt.rcParams.update(original_rcparams)
+    # Close any open figures
+    plt.close("all")
+
+
 class TestStyleConstants:
     """Tests for style constants and configuration."""
 
@@ -562,3 +580,143 @@ class TestIntegration:
         assert (tmp_path / "o_info.pdf").exists()
         assert (tmp_path / "ce.pdf").exists()
         assert (tmp_path / "phase.pdf").exists()
+
+
+class TestEdgeCases:
+    """Edge case tests for robustness."""
+
+    def test_scaling_curve_empty_results(self, tmp_path):
+        """Test scaling curve handles empty results list."""
+        output_path = str(tmp_path / "scaling_empty")
+        fig = plot_scaling_curve([], output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_scaling_curve_single_point(self, tmp_path):
+        """Test scaling curve with single data point."""
+        scaling_results = [
+            MockScalingAnalysis(
+                field_condition="normal",
+                n_agents_list=[8],
+                mean_foods=[100.0],
+            )
+        ]
+        output_path = str(tmp_path / "scaling_single")
+        fig = plot_scaling_curve(scaling_results, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_ablation_bars_empty_results(self, tmp_path):
+        """Test ablation bars handles empty results dict."""
+        output_path = str(tmp_path / "ablation_empty")
+        fig = plot_ablation_bars({}, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_performance_profiles_single_method(self, tmp_path):
+        """Test performance profiles with single method."""
+        score_dict = {"ours": np.array([100, 90, 80])}
+        output_path = str(tmp_path / "profiles_single")
+        fig = plot_performance_profiles(score_dict, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_performance_profiles_all_zeros(self, tmp_path):
+        """Test performance profiles handles all-zero scores."""
+        score_dict = {
+            "ours": np.array([0.0, 0.0, 0.0]),
+            "baseline": np.array([0.0, 0.0, 0.0]),
+        }
+        output_path = str(tmp_path / "profiles_zeros")
+        fig = plot_performance_profiles(score_dict, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_poi_single_method(self, tmp_path):
+        """Test probability of improvement with single method."""
+        score_dict = {"ours": np.array([100, 90, 80])}
+        output_path = str(tmp_path / "poi_single")
+        fig = plot_probability_of_improvement(score_dict, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_synergy_heatmap_single_agent(self, tmp_path):
+        """Test synergy heatmap with 1x1 matrix."""
+        synergy_matrix = np.array([[0.5]])
+        output_path = str(tmp_path / "synergy_1x1")
+        fig = plot_pid_synergy_heatmap(synergy_matrix, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_synergy_heatmap_all_zeros(self, tmp_path):
+        """Test synergy heatmap with all-zero values."""
+        synergy_matrix = np.zeros((4, 4))
+        output_path = str(tmp_path / "synergy_zeros")
+        fig = plot_pid_synergy_heatmap(synergy_matrix, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_o_information_single_point(self, tmp_path):
+        """Test O-information trajectory with single point."""
+        output_path = str(tmp_path / "o_info_single")
+        fig = plot_o_information_trajectory([-0.1], [0], output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_causal_emergence_single_point(self, tmp_path):
+        """Test causal emergence gap with single point."""
+        output_path = str(tmp_path / "ce_single")
+        fig = plot_causal_emergence_gap([0.5], [0.3], [0], output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_causal_emergence_negative_gap(self, tmp_path):
+        """Test causal emergence where micro > macro (negative gap)."""
+        macro_ei = [0.3, 0.35, 0.4]
+        micro_ei = [0.5, 0.6, 0.7]  # micro > macro
+        steps = [0, 1000, 2000]
+        output_path = str(tmp_path / "ce_negative")
+        fig = plot_causal_emergence_gap(macro_ei, micro_ei, steps, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_phase_transitions_empty_dict(self, tmp_path):
+        """Test phase transitions with empty metrics dict."""
+        output_path = str(tmp_path / "phase_empty")
+        fig = plot_phase_transitions({}, [0, 1000], output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_figure_grid_large_count(self):
+        """Test create_figure_grid with many panels."""
+        fig, axes = create_figure_grid(12, max_cols=4)
+        assert len(axes) == 12
+        plt.close(fig)
+
+    def test_save_figure_empty_formats(self, tmp_path):
+        """Test save_figure with empty formats list."""
+        fig, ax = plt.subplots()
+        ax.plot([1, 2, 3])
+        output_path = str(tmp_path / "test_empty_formats")
+        save_figure(fig, output_path, formats=[])
+        # Should not create any files
+        assert not (tmp_path / "test_empty_formats.pdf").exists()
+        assert not (tmp_path / "test_empty_formats.png").exists()
+        plt.close(fig)
+
+    def test_nan_values_in_data(self, tmp_path):
+        """Test figures handle NaN values gracefully."""
+        # O-information with NaN
+        o_info_values = [-0.1, np.nan, -0.3]
+        steps = [0, 1000, 2000]
+        output_path = str(tmp_path / "o_info_nan")
+        fig = plot_o_information_trajectory(o_info_values, steps, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+        # Synergy heatmap with NaN
+        synergy_matrix = np.array([[0.1, np.nan], [np.nan, 0.2]])
+        output_path = str(tmp_path / "synergy_nan")
+        fig = plot_pid_synergy_heatmap(synergy_matrix, output_path)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)

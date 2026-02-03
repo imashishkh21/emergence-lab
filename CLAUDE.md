@@ -13,6 +13,7 @@ This is a research project. Every code change should serve one question: *does t
 | **Phase 1: Digital Petri Dish** | COMPLETE | Agents learn to forage; field develops spatial structure; Normal > Zeroed > Random field in ablation |
 | **Phase 2: Evolutionary Pressure** | COMPLETE | Birth/death/reproduction working; population reaches equilibrium (32/32 maxed); 108 births + 108 deaths = perfect turnover; weight inheritance + mutation |
 | **Phase 3: Specialization Detection** | COMPLETE | Weight divergence tracking, behavioral clustering (K-means + silhouette), species detection, lineage-strategy correlation, specialization ablation (divergent > uniform > random) |
+| **Phase 4/4B: Infrastructure** | COMPLETE | Transfer entropy, division of labor, phase transition detection, dashboard, checkpointing, Kaggle training (9.8M steps) |
 | **Phase 5: Prove Emergence** | COMPLETE | Information-theoretic metrics (O-info, PID, Causal Emergence), baselines (IPPO, ACO, MAPPO), statistical reporting (rliable), publication figures, multi-seed experiments |
 
 **Key empirical finding**: Random field HURTS agents (585 < 600 food) — they learned to READ the field for information. The field is not noise; it carries signal.
@@ -135,7 +136,7 @@ src/
 │   ├── pid_synergy.py          # PID synergy via dit (action + field → outcome) [Phase 5]
 │   ├── causal_emergence.py     # Hoel's EI + Rosas Psi (macro vs micro) [Phase 5]
 │   ├── surrogates.py           # Surrogate testing framework (row/col/block shuffle) [Phase 5]
-│   ├── information.py          # Transfer entropy (agent coordination) [Phase 5]
+│   ├── information.py          # Transfer entropy + division of labor [Phase 4]
 │   ├── statistics.py           # rliable integration (IQM, bootstrap CI) [Phase 5]
 │   ├── scaling.py              # Superlinear scaling analysis [Phase 5]
 │   ├── paper_figures.py        # Publication figures (300 DPI, PDF+PNG) [Phase 5]

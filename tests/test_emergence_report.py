@@ -579,3 +579,95 @@ class TestEdgeCases:
         )
         # O-info requires 3+ agents, should return 0
         assert report.o_information.value == 0.0
+
+
+class TestWindowEdgeCases:
+    """Tests for windowed metrics edge cases."""
+
+    def test_window_larger_than_trajectory(self):
+        """Test window size larger than trajectory length."""
+        trajectory = _create_synthetic_trajectory(n_timesteps=100)
+        windows = compute_windowed_metrics(
+            trajectory,
+            window_size=200,  # Larger than trajectory
+            overlap=0.5,
+            run_surrogates=False,
+        )
+        # Should return empty list (no complete windows)
+        assert len(windows) == 0
+
+    def test_window_equals_trajectory_length(self):
+        """Test window exactly equals trajectory length."""
+        trajectory = _create_synthetic_trajectory(n_timesteps=100)
+        windows = compute_windowed_metrics(
+            trajectory,
+            window_size=100,  # Exact match
+            overlap=0.5,
+            run_surrogates=False,
+        )
+        # Should return exactly one window
+        assert len(windows) == 1
+        assert windows[0]["window_start"] == 0
+        assert windows[0]["window_end"] == 100
+
+    def test_zero_overlap(self):
+        """Test windowed metrics with 0% overlap."""
+        trajectory = _create_synthetic_trajectory(n_timesteps=200)
+        windows = compute_windowed_metrics(
+            trajectory,
+            window_size=100,
+            overlap=0.0,  # No overlap
+            run_surrogates=False,
+        )
+        # Should get 2 non-overlapping windows
+        assert len(windows) == 2
+        assert windows[0]["window_start"] == 0
+        assert windows[0]["window_end"] == 100
+        assert windows[1]["window_start"] == 100
+        assert windows[1]["window_end"] == 200
+
+    def test_high_overlap(self):
+        """Test windowed metrics with 90% overlap."""
+        trajectory = _create_synthetic_trajectory(n_timesteps=150)
+        windows = compute_windowed_metrics(
+            trajectory,
+            window_size=100,
+            overlap=0.9,  # 90% overlap, step of 10
+            run_surrogates=False,
+        )
+        # Step = 100 * (1 - 0.9) = 10, should get 6 windows
+        # (0-100, 10-110, 20-120, 30-130, 40-140, 50-150)
+        assert len(windows) == 6
+
+    def test_window_result_structure(self):
+        """Test windowed result contains expected keys."""
+        trajectory = _create_synthetic_trajectory(n_timesteps=200)
+        windows = compute_windowed_metrics(
+            trajectory,
+            window_size=100,
+            overlap=0.5,
+            run_surrogates=False,
+        )
+        assert len(windows) > 0
+        window = windows[0]
+        # Check required keys
+        assert "window_start" in window
+        assert "window_end" in window
+        assert "metrics" in window
+        # Check metrics structure
+        metrics = window["metrics"]
+        assert "o_information" in metrics
+        assert "mean_transfer_entropy" in metrics
+        assert "specialization_score" in metrics
+
+    def test_small_window_size(self):
+        """Test with very small window size."""
+        trajectory = _create_synthetic_trajectory(n_timesteps=100)
+        windows = compute_windowed_metrics(
+            trajectory,
+            window_size=20,  # Small window
+            overlap=0.5,
+            run_surrogates=False,
+        )
+        # With step=10, should get ~9 windows
+        assert len(windows) >= 5

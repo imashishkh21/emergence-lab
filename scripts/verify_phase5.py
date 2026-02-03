@@ -7,6 +7,7 @@ to ensure nothing is broken.
 
 Usage:
     python scripts/verify_phase5.py
+    python scripts/verify_phase5.py --verbose
 
 Exit codes:
     0: All checks passed
@@ -17,15 +18,50 @@ Reference: US-018 in Phase 5 PRD.
 
 from __future__ import annotations
 
+import argparse
 import sys
 import traceback
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="End-to-end verification script for Phase 5.",
+        epilog=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show detailed output including tracebacks for all errors",
+    )
+    parser.add_argument(
+        "--n-timesteps",
+        type=int,
+        default=1000,
+        help="Number of timesteps for synthetic trajectory (default: 1000)",
+    )
+    parser.add_argument(
+        "--n-agents",
+        type=int,
+        default=8,
+        help="Number of agents for synthetic trajectory (default: 8)",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
     """Run all Phase 5 verification checks."""
+    args = parse_args()
+    verbose = args.verbose
+
     print("=" * 60)
     print("Phase 5 Verification")
     print("=" * 60)
+    if verbose:
+        print("  Verbose mode: enabled")
+        print(f"  Timesteps: {args.n_timesteps}")
+        print(f"  Agents: {args.n_agents}")
     print()
 
     all_passed = True
@@ -65,9 +101,13 @@ def main() -> int:
         except ImportError as e:
             print(f"  FAIL: {module_name} - {e}")
             import_failures.append((module_name, str(e)))
+            if verbose:
+                traceback.print_exc()
         except AttributeError as e:
             print(f"  FAIL: {module_name}.{function_name} - {e}")
             import_failures.append((module_name, str(e)))
+            if verbose:
+                traceback.print_exc()
 
     if import_failures:
         print(f"  {len(import_failures)} import(s) failed")
@@ -86,8 +126,8 @@ def main() -> int:
         from numpy import ndarray
 
         rng = np.random.default_rng(42)
-        n_timesteps = 1000
-        n_agents = 8
+        n_timesteps = args.n_timesteps
+        n_agents = args.n_agents
 
         trajectory: dict[str, ndarray] = {
             "actions": rng.integers(0, 6, size=(n_timesteps, n_agents)),
@@ -100,7 +140,8 @@ def main() -> int:
         print(f"  Created trajectory with {n_timesteps} steps, {n_agents} agents")
     except Exception as e:
         print(f"  FAIL: Could not create trajectory - {e}")
-        traceback.print_exc()
+        if verbose:
+            traceback.print_exc()
         all_passed = False
         return 1
     print()
@@ -128,6 +169,8 @@ def main() -> int:
             print(f"  OK: {metric_name} -> {result_str}")
         except Exception as e:
             print(f"  FAIL: {metric_name} - {e}")
+            if verbose:
+                traceback.print_exc()
             all_passed = False
 
     # Test EmergenceReport (comprehensive)
@@ -138,6 +181,8 @@ def main() -> int:
         print(f"  OK: EmergenceReport with {7} metrics")
     except Exception as e:
         print(f"  FAIL: EmergenceReport - {e}")
+        if verbose:
+            traceback.print_exc()
         all_passed = False
     print()
 
@@ -171,7 +216,8 @@ def main() -> int:
         plt.close(fig)
     except Exception as e:
         print(f"  FAIL: Figure generation - {e}")
-        traceback.print_exc()
+        if verbose:
+            traceback.print_exc()
         all_passed = False
     print()
 
@@ -193,6 +239,8 @@ def main() -> int:
             all_passed = False
     except Exception as e:
         print(f"  FAIL: JSON serialization - {e}")
+        if verbose:
+            traceback.print_exc()
         all_passed = False
     print()
 
