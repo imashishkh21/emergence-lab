@@ -126,3 +126,21 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_baselines.py` — NEW: 17 tests in TestIPPO and TestIPPOImportability classes
 **Verification:** mypy clean, ruff clean, 17/17 IPPO tests pass, 923 total tests pass (1 skip)
 
+### US-007: ACO-Fixed Baseline (+ ACO-Hybrid Variant) ✓
+**Date:** 2026-02-03
+**What:** Implemented two ACO baselines for comparison — ACO-Fixed (no neural network, pure hardcoded pheromone rules) and ACO-Hybrid (NN for movement, hardcoded field writes). This isolates the value of LEARNING the write behavior vs hardcoded ACO rules.
+**Decisions:**
+- ACO parameters follow Dorigo & Stutzle (2004): alpha=1.0 (pheromone importance), beta=2.0 (heuristic importance), rho=0.5 (evaporation = decay_rate), Q=1.0 (deposit quantity = write_strength)
+- ACO-Fixed movement: p_ij = (tau_ij^alpha * eta_ij^beta) / sum (classic ACO formula)
+- Food heuristic (eta): 1/(1 + manhattan_distance_to_nearest_food)
+- Pheromone reading (tau): sum of field channels at each neighboring cell
+- Extra pheromone deposit (ACO_Q * 2.0) when agent collects food — reinforces successful paths
+- ACO-Hybrid: uses neural network for movement decisions, but field writes follow hardcoded ACO rules
+- Both return standardized result dict matching IPPO format
+- Evolution disabled in both variants (population constant)
+- Uses existing field infrastructure (same diffusion, decay dynamics)
+**Files changed:**
+- `src/baselines/aco_fixed.py` — NEW: aco_config(), run_aco_fixed_episode(), run_aco_hybrid_episode(), evaluate_aco_fixed(), evaluate_aco_hybrid(), create_aco_hybrid_network(), init_aco_hybrid_params(), internal functions for movement probabilities and food heuristics
+- `tests/test_baselines.py` — EXTENDED: 17 tests in TestACO + 2 tests in TestACOImportability
+**Verification:** mypy clean, ruff clean, 19/19 ACO tests pass, 942 total tests pass (1 skip)
+

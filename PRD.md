@@ -203,7 +203,7 @@ python -c "from src.baselines.ippo import ippo_config; print(ippo_config())"
 
 ---
 
-### US-007: ACO-Fixed Baseline (+ ACO-Hybrid Variant) [ ]
+### US-007: ACO-Fixed Baseline (+ ACO-Hybrid Variant) [x]
 
 **Task:** Implement two Ant Colony Optimization baselines. ACO-Fixed uses hardcoded pheromone rules (no neural network). ACO-Hybrid uses a neural network for movement but hardcoded field write rules. This isolates the value of LEARNING the write behavior.
 

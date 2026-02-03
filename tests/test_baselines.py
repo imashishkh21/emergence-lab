@@ -381,3 +381,369 @@ class TestIPPOImportability:
 
         assert "field" in config_str
         assert "evolution" in config_str
+
+
+class TestACO:
+    """Tests for the ACO baselines (ACO-Fixed and ACO-Hybrid)."""
+
+    def test_aco_config_creates_valid_config(self):
+        """aco_config() should return a valid Config object."""
+        from src.baselines.aco_fixed import aco_config
+
+        config = aco_config()
+
+        assert isinstance(config, Config)
+        # Field should be enabled with ACO parameters
+        assert config.field.write_strength > 0  # ACO_Q = 1.0
+        assert config.field.decay_rate == 0.5   # ACO_RHO = 0.5
+        # Evolution should be disabled
+        assert config.evolution.enabled is False
+
+    def test_aco_config_with_base_config(self):
+        """aco_config() should preserve non-field/evolution settings from base."""
+        from src.baselines.aco_fixed import aco_config
+
+        base = Config()
+        base.env.grid_size = 30
+        base.env.num_agents = 16
+        base.env.num_food = 20
+
+        config = aco_config(base)
+
+        # Preserved settings
+        assert config.env.grid_size == 30
+        assert config.env.num_agents == 16
+        assert config.env.num_food == 20
+        # Modified settings
+        assert config.field.decay_rate == 0.5
+        assert config.evolution.enabled is False
+
+    def test_aco_parameters_match_dorigo(self):
+        """ACO parameters should match Dorigo & Stutzle (2004)."""
+        from src.baselines.aco_fixed import ACO_ALPHA, ACO_BETA, ACO_Q, ACO_RHO
+
+        assert ACO_ALPHA == 1.0  # Pheromone importance
+        assert ACO_BETA == 2.0   # Heuristic importance
+        assert ACO_RHO == 0.5    # Evaporation rate
+        assert ACO_Q == 1.0      # Deposit quantity
+
+    def test_run_aco_fixed_episode_returns_correct_format(self):
+        """run_aco_fixed_episode() should return standardized result dict."""
+        from src.baselines.aco_fixed import aco_config, run_aco_fixed_episode
+
+        config = aco_config()
+        config.env.max_steps = 10  # Short episode for test
+        key = jax.random.PRNGKey(42)
+
+        result = run_aco_fixed_episode(config, key)
+
+        # Check required fields
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+
+        # Check types
+        assert isinstance(result["total_reward"], float)
+        assert isinstance(result["food_collected"], float)
+        assert isinstance(result["final_population"], int)
+        assert isinstance(result["per_agent_rewards"], list)
+
+        # Check per_agent_rewards length
+        assert len(result["per_agent_rewards"]) == config.env.num_agents
+
+    def test_run_aco_fixed_episode_population_stable(self):
+        """ACO-Fixed should maintain constant population (no deaths or births)."""
+        from src.baselines.aco_fixed import aco_config, run_aco_fixed_episode
+
+        config = aco_config()
+        config.env.max_steps = 50
+        config.env.num_agents = 8
+        config = aco_config(config)  # Reapply ACO settings
+
+        key = jax.random.PRNGKey(42)
+        result = run_aco_fixed_episode(config, key)
+
+        # Population should remain at initial value
+        assert result["final_population"] == config.env.num_agents
+
+    def test_run_aco_fixed_no_neural_network(self):
+        """ACO-Fixed should work without any neural network."""
+        from src.baselines.aco_fixed import aco_config, run_aco_fixed_episode
+
+        config = aco_config()
+        config.env.max_steps = 20
+        key = jax.random.PRNGKey(42)
+
+        # Should not raise any errors - no network required
+        result = run_aco_fixed_episode(config, key)
+        assert result["total_reward"] >= 0
+
+    def test_run_aco_fixed_uses_field(self):
+        """ACO-Fixed should use the field (pheromone) for decision making."""
+        from src.baselines.aco_fixed import aco_config
+        from src.environment.env import reset, step
+
+        config = aco_config()
+        config.env.max_steps = 20
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+
+        # Run a few steps - field should have non-zero values
+        for _ in range(10):
+            key, action_key = jax.random.split(key)
+            actions = jax.random.randint(action_key, (config.env.num_agents,), 0, 5)
+            state, _, done, _ = step(state, actions, config)
+            if done:
+                break
+
+        # Field should have values (due to agent writes and diffusion)
+        field_values = np.array(state.field_state.values)
+        assert np.max(field_values) > 0, "ACO should have active pheromone field"
+
+    def test_run_aco_hybrid_episode_returns_correct_format(self):
+        """run_aco_hybrid_episode() should return standardized result dict."""
+        from src.baselines.aco_fixed import (
+            aco_config,
+            create_aco_hybrid_network,
+            init_aco_hybrid_params,
+            run_aco_hybrid_episode,
+        )
+
+        config = aco_config()
+        config.env.max_steps = 10
+        network = create_aco_hybrid_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_aco_hybrid_params(network, config, key)
+
+        key, episode_key = jax.random.split(key)
+        result = run_aco_hybrid_episode(network, params, config, episode_key)
+
+        # Check required fields
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+
+        # Check types
+        assert isinstance(result["total_reward"], float)
+        assert isinstance(result["food_collected"], float)
+        assert isinstance(result["final_population"], int)
+        assert isinstance(result["per_agent_rewards"], list)
+
+    def test_run_aco_hybrid_population_stable(self):
+        """ACO-Hybrid should maintain constant population."""
+        from src.baselines.aco_fixed import (
+            aco_config,
+            create_aco_hybrid_network,
+            init_aco_hybrid_params,
+            run_aco_hybrid_episode,
+        )
+
+        config = aco_config()
+        config.env.max_steps = 50
+        config.env.num_agents = 8
+        config = aco_config(config)
+
+        network = create_aco_hybrid_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_aco_hybrid_params(network, config, key)
+
+        key, episode_key = jax.random.split(key)
+        result = run_aco_hybrid_episode(network, params, config, episode_key)
+
+        assert result["final_population"] == config.env.num_agents
+
+    def test_run_aco_hybrid_deterministic(self):
+        """run_aco_hybrid_episode() with deterministic=True should be consistent."""
+        from src.baselines.aco_fixed import (
+            aco_config,
+            create_aco_hybrid_network,
+            init_aco_hybrid_params,
+            run_aco_hybrid_episode,
+        )
+
+        config = aco_config()
+        config.env.max_steps = 20
+        network = create_aco_hybrid_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_aco_hybrid_params(network, config, key)
+
+        # Run deterministic episodes with same seed
+        result1 = run_aco_hybrid_episode(
+            network, params, config, jax.random.PRNGKey(0), deterministic=True
+        )
+        result2 = run_aco_hybrid_episode(
+            network, params, config, jax.random.PRNGKey(0), deterministic=True
+        )
+
+        assert result1["total_reward"] == result2["total_reward"]
+        assert result1["food_collected"] == result2["food_collected"]
+
+    def test_evaluate_aco_fixed_returns_correct_format(self):
+        """evaluate_aco_fixed() should return aggregated result dict."""
+        from src.baselines.aco_fixed import aco_config, evaluate_aco_fixed
+
+        config = aco_config()
+        config.env.max_steps = 10
+
+        result = evaluate_aco_fixed(config, n_episodes=3, seed=42)
+
+        # Check required fields
+        assert "total_reward" in result
+        assert "total_reward_std" in result
+        assert "food_collected" in result
+        assert "food_collected_std" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+        assert "episode_rewards" in result
+        assert "episode_food" in result
+        assert "n_episodes" in result
+
+        # Check shapes
+        assert len(result["episode_rewards"]) == 3
+        assert result["n_episodes"] == 3
+
+    def test_evaluate_aco_hybrid_returns_correct_format(self):
+        """evaluate_aco_hybrid() should return aggregated result dict."""
+        from src.baselines.aco_fixed import (
+            aco_config,
+            create_aco_hybrid_network,
+            evaluate_aco_hybrid,
+            init_aco_hybrid_params,
+        )
+
+        config = aco_config()
+        config.env.max_steps = 10
+        network = create_aco_hybrid_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_aco_hybrid_params(network, config, key)
+
+        result = evaluate_aco_hybrid(network, params, config, n_episodes=3, seed=42)
+
+        # Check required fields
+        assert "total_reward" in result
+        assert "total_reward_std" in result
+        assert "episode_rewards" in result
+        assert len(result["episode_rewards"]) == 3
+        assert result["n_episodes"] == 3
+
+    def test_evaluate_aco_fixed_reproducible_with_seed(self):
+        """evaluate_aco_fixed() with same seed should give same results."""
+        from src.baselines.aco_fixed import aco_config, evaluate_aco_fixed
+
+        config = aco_config()
+        config.env.max_steps = 10
+
+        result1 = evaluate_aco_fixed(config, n_episodes=3, seed=123)
+        result2 = evaluate_aco_fixed(config, n_episodes=3, seed=123)
+
+        assert result1["episode_rewards"] == result2["episode_rewards"]
+        assert result1["episode_food"] == result2["episode_food"]
+
+    def test_create_aco_hybrid_network(self):
+        """create_aco_hybrid_network() should return a valid ActorCritic."""
+        from src.agents.network import ActorCritic
+        from src.baselines.aco_fixed import aco_config, create_aco_hybrid_network
+
+        config = aco_config()
+        network = create_aco_hybrid_network(config)
+
+        assert isinstance(network, ActorCritic)
+        assert network.num_actions == 6
+
+    def test_init_aco_hybrid_params(self):
+        """init_aco_hybrid_params() should initialize valid network parameters."""
+        from src.baselines.aco_fixed import (
+            aco_config,
+            create_aco_hybrid_network,
+            init_aco_hybrid_params,
+        )
+
+        config = aco_config()
+        network = create_aco_hybrid_network(config)
+        key = jax.random.PRNGKey(42)
+
+        params = init_aco_hybrid_params(network, config, key)
+
+        assert params is not None
+        assert "params" in params
+
+    def test_aco_fixed_collects_food(self):
+        """ACO-Fixed agents should be able to collect food."""
+        from src.baselines.aco_fixed import aco_config, run_aco_fixed_episode
+
+        config = aco_config()
+        config.env.max_steps = 100
+        config.env.num_food = 50
+        config.env.num_agents = 8
+        config = aco_config(config)
+
+        key = jax.random.PRNGKey(42)
+        result = run_aco_fixed_episode(config, key)
+
+        # ACO should collect some food
+        assert result["food_collected"] >= 0.0
+
+    def test_aco_hybrid_collects_food(self):
+        """ACO-Hybrid agents should be able to collect food."""
+        from src.baselines.aco_fixed import (
+            aco_config,
+            create_aco_hybrid_network,
+            init_aco_hybrid_params,
+            run_aco_hybrid_episode,
+        )
+
+        config = aco_config()
+        config.env.max_steps = 100
+        config.env.num_food = 50
+        config.env.num_agents = 8
+        config = aco_config(config)
+
+        network = create_aco_hybrid_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_aco_hybrid_params(network, config, key)
+
+        key, episode_key = jax.random.split(key)
+        result = run_aco_hybrid_episode(network, params, config, episode_key)
+
+        assert result["food_collected"] >= 0.0
+
+
+class TestACOImportability:
+    """Tests for ACO module importability."""
+
+    def test_import_aco_module(self):
+        """aco_fixed module should be importable."""
+        from src.baselines import aco_fixed
+
+        assert aco_fixed is not None
+
+    def test_import_aco_functions(self):
+        """All public functions should be importable."""
+        from src.baselines.aco_fixed import (
+            ACO_ALPHA,
+            ACO_BETA,
+            ACO_Q,
+            ACO_RHO,
+            aco_config,
+            create_aco_hybrid_network,
+            evaluate_aco_fixed,
+            evaluate_aco_hybrid,
+            init_aco_hybrid_params,
+            run_aco_fixed_episode,
+            run_aco_hybrid_episode,
+        )
+
+        assert callable(aco_config)
+        assert callable(run_aco_fixed_episode)
+        assert callable(run_aco_hybrid_episode)
+        assert callable(evaluate_aco_fixed)
+        assert callable(evaluate_aco_hybrid)
+        assert callable(create_aco_hybrid_network)
+        assert callable(init_aco_hybrid_params)
+        assert ACO_ALPHA == 1.0
+        assert ACO_BETA == 2.0
+        assert ACO_RHO == 0.5
+        assert ACO_Q == 1.0
