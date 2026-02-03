@@ -252,7 +252,7 @@ python -c "from src.baselines.mappo import CentralizedCritic; print('OK')"
 
 ---
 
-### US-009: Experiment Harness and Multi-Seed Runner [ ]
+### US-009: Experiment Harness and Multi-Seed Runner [x]
 
 **Task:** Create a generic experiment harness that runs any method across N seeds with paired seed support and standardized results.
 
