@@ -305,7 +305,7 @@ python -c "from src.configs import Config; c = Config(); print('hidden_food enab
 
 ---
 
-### US-011: Statistical Reporting Module (rliable Integration) [ ]
+### US-011: Statistical Reporting Module (rliable Integration) [x]
 
 **Task:** Create a statistical reporting module using `rliable` for IQM + bootstrap CI, performance profiles, and probability of improvement. Wrap scipy stats tests for convenience.
 

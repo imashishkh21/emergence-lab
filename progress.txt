@@ -205,3 +205,24 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_hidden_food.py` — NEW: 18 tests covering config, disabled mode, enabled mode, reveal mechanics, collection, respawn, backward compatibility, integration with evolution/field
 **Verification:** mypy clean, ruff clean, 18/18 hidden food tests pass, 28/28 env tests pass (no regressions), 1034 total tests pass (1 skip)
 
+### US-011: Statistical Reporting Module (rliable Integration) ✓
+**Date:** 2026-02-03
+**What:** Created a comprehensive statistical reporting module using rliable for IQM + bootstrap CI, performance profiles, and probability of improvement. Wraps scipy stats tests for convenience.
+**Decisions:**
+- IQM uses rliable.metrics.aggregate_iqm when available, falls back to simple implementation otherwise
+- Bootstrap CI uses our own implementation (rliable.library has arch 8.0 compat issues) with percentile method
+- Performance profiles compute CDFs of normalized scores, returns AUC per method
+- Probability of improvement uses rliable when available, falls back to pairwise comparison U-statistic
+- HypothesisTestResult dataclass (renamed from TestResult to avoid pytest collection warning)
+- StatisticalReport dataclass: method_name, iqm, ci_lower, ci_upper, median, mean, std, n_seeds, scores
+- mann_whitney_test(): wrapper returning rank-biserial effect size
+- wilcoxon_test(): wrapper for paired samples with r = Z/sqrt(N) effect size
+- welch_t_test(): wrapper returning Cohen's d effect size
+- compare_methods(): comprehensive method comparison with rankings, pairwise tests, POI
+- MethodComparison dataclass aggregates all comparison results
+- All functions work without rliable installed (graceful fallback)
+**Files changed:**
+- `src/analysis/statistics.py` — NEW: IQMResult, StatisticalReport, HypothesisTestResult, MethodComparison, compute_iqm(), performance_profiles(), probability_of_improvement(), mann_whitney_test(), wilcoxon_test(), welch_t_test(), create_statistical_report(), compare_methods()
+- `tests/test_statistics.py` — NEW: 68 tests covering all dataclasses, functions, rliable integration, fallback implementations, edge cases
+**Verification:** mypy clean, ruff clean, 68/68 tests pass
+
