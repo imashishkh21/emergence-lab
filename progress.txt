@@ -89,3 +89,23 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_causal_emergence.py` — NEW: 54 tests covering all functions, edge cases, TPM building, MI computation, trajectory extraction, windowed analysis, tracker pattern
 **Verification:** mypy clean, ruff clean, 54/54 tests pass, 856 total tests pass
 
+### US-005: Surrogate Testing Framework ✓
+**Date:** 2026-02-03
+**What:** Created a reusable surrogate testing framework for statistical significance of all emergence metrics. Implements multiple shuffle methods and statistical tests.
+**Decisions:**
+- row_shuffle: breaks cross-agent coordination by shuffling agent dimension per timestep
+- column_shuffle: breaks temporal dependencies by permuting time axis
+- block_shuffle: preserves short-range structure, breaks long-range (shuffles blocks of timesteps)
+- bootstrap_ci: implemented BCa (bias-corrected and accelerated) method for accurate confidence intervals
+- mann_whitney_u: wrapper returning U-statistic, p-value, and rank-biserial effect size
+- wilcoxon_signed_rank: wrapper for paired samples with r effect size (Z/sqrt(N))
+- surrogate_test: generic function that takes any metric_fn and shuffle_fn, returns SurrogateResult
+- Renamed TestResult to StatisticalTestResult to avoid pytest collection warning
+- Added effect size interpretation functions (Cohen's d, Glass's delta, r)
+- Added compare_conditions() for pairwise comparisons across multiple conditions
+- Uses only numpy/scipy (no Phase 5 deps needed) — framework is universally usable
+**Files changed:**
+- `src/analysis/surrogates.py` — NEW: row_shuffle(), column_shuffle(), block_shuffle(), bootstrap_ci(), mann_whitney_u(), wilcoxon_signed_rank(), surrogate_test(), compute_cohens_d(), compute_glass_delta(), interpret_effect_size(), compare_conditions(), StatisticalTestResult, SurrogateResult
+- `tests/test_surrogates.py` — NEW: 50 tests covering all functions, edge cases, integration tests
+**Verification:** mypy clean, ruff clean, 50/50 tests pass
+

@@ -154,7 +154,7 @@ python -c "from src.analysis.causal_emergence import compute_effective_informati
 
 ---
 
-### US-005: Surrogate Testing Framework [ ]
+### US-005: Surrogate Testing Framework [x]
 
 **Task:** Create a reusable surrogate testing framework for statistical significance of all emergence metrics. Row shuffle breaks cross-agent coordination, column/block shuffle breaks temporal dependencies.
 
