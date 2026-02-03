@@ -578,11 +578,14 @@ train=TrainConfig(
 | 3 | 9 | 4.52 | 20 | ⚠️ Low pop |
 | 3 | 10 | 5.09 | 64 | 🎉 UTOPIA |
 | 3 | 11 | 5.33 | 64 | 🎉 UTOPIA |
-| 4 | 12 | - | - | ⬜ Pending |
-| 4 | 13 | - | - | ⬜ Pending |
-| 4 | 14 | - | - | ⬜ Pending |
+| 4 | 12 | 5.38 | 40 | 👍 Thriving |
+| 4 | 13 | 3.70 | 30 | 👍 Okay |
+| 4 | 14 | 5.24 | 48 | 👍 Thriving |
+| 5 | 15 | - | - | ⬜ Pending |
+| 5 | 16 | - | - | ⬜ Pending |
+| 5 | 17 | - | - | ⬜ Pending |
 
-**Running tally:** 7/12 UTOPIA (58%), 1 died, Mean reward (alive): 4.03
+**Running tally:** 7/15 UTOPIA (47%), 3 thriving, 4 struggled, 1 died. Survival: 93%
 
 ### Field OFF Results (30 seeds)
 
