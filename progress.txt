@@ -330,3 +330,18 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_paper_figures.py` — NEW: 44 tests covering all figure functions and utilities
 **Verification:** mypy clean, ruff clean, 44/44 tests pass
 
+### US-017: Publication Figures — Emergence Metrics ✓
+**Date:** 2026-02-03
+**What:** Added "holy shit" emergence visualization functions to paper_figures.py. Already implemented as part of US-016 for efficiency.
+**Decisions:**
+- plot_pid_synergy_heatmap(): agent-pair matrix with diagonal masked as N/A, diverging colormap (blue=positive synergy)
+- plot_o_information_trajectory(): O-info over steps with optional surrogate CI band, zero line boundary, synergy region shading
+- plot_causal_emergence_gap(): macro vs micro EI lines with shaded gap region, final gap annotation
+- plot_phase_transitions(): stacked subplots for multiple metrics sharing x-axis, vertical dashed lines at transition events with labels
+- All figures use same publication style as US-016 (font, colorblind palette, 300 DPI, PDF+PNG)
+- Baker et al. 2019 style for phase transitions (emergent phases detected by significant metric changes)
+**Files changed:**
+- (Already implemented in US-016's paper_figures.py)
+- Tests already cover all emergence figure functions (5 specific tests, 44 total)
+**Verification:** mypy clean, ruff clean, all 5 emergence figure tests pass
+

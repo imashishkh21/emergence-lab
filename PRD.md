@@ -467,7 +467,7 @@ python scripts/generate_paper_figures.py --results-dir results/ --output-dir fig
 
 ---
 
-### US-017: Publication Figures — Emergence Metrics [ ]
+### US-017: Publication Figures — Emergence Metrics [x]
 
 **Task:** Add the "holy shit" emergence visualization functions: PID synergy heatmaps, O-information trajectories, causal emergence gap, and phase transition annotations.
 
