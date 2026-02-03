@@ -247,3 +247,26 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_ablation_extended.py` — NEW: 25 tests covering all new conditions, helper functions, and integration
 **Verification:** mypy clean, ruff clean, 25/25 ablation extended tests pass, 1127/1127 total tests pass
 
+### US-013: Superlinear Scaling Experiment (Launch Script) ✓
+**Date:** 2026-02-03
+**What:** Created scaling analysis module and launch script for testing N = 1, 2, 4, 8, 16, 32 agents with 3 field conditions and 20 seeds to analyze superlinear scaling benefits from field-mediated coordination.
+**Decisions:**
+- ScalingResult dataclass: n_agents, field_condition, total_food, per_agent_food, efficiency, total_reward, episode_foods
+- ScalingAnalysis dataclass: aggregates results with power law fit (alpha, CI, R²) and per-N statistics
+- compute_per_agent_efficiency(): F_total(N) / (N * F_solo), values > 1.0 indicate coordination benefit
+- fit_power_law(): log(F_total) = alpha * log(N) + c via scipy.stats.linregress
+  - alpha > 1.0 => superlinear (field helps more with more agents)
+  - alpha = 1.0 => linear (no coordination benefit)
+  - alpha < 1.0 => sublinear (crowding hurts)
+- Bootstrap CI for alpha with edge case handling (skip failed regressions when all x values identical)
+- aggregate_scaling_results(): groups by n_agents, computes solo baseline, fits power law
+- compare_scaling_analyses(): ranks conditions by alpha, identifies superlinear conditions
+- Launch script: 6 N values × 3 conditions × 20 seeds × 10 episodes = 360 experiments per full run
+- Dry-run support, condition/N filtering, checkpoint loading
+- Reference: Hamann (2018), "Swarm Robotics: A Formal Approach"
+**Files changed:**
+- `src/analysis/scaling.py` — NEW: ScalingResult, ScalingAnalysis, compute_per_agent_efficiency(), fit_power_law(), compute_r_squared(), aggregate_scaling_results(), compare_scaling_analyses(), print_scaling_analysis(), print_scaling_comparison()
+- `scripts/run_scaling_experiment.py` — NEW: CLI for running scaling experiments with --dry-run, --conditions, --n-agents, --n-seeds, --n-episodes flags
+- `tests/test_scaling.py` — NEW: 46 tests covering all dataclasses, functions, edge cases (bootstrap with small datasets, two-point fits), print functions
+**Verification:** mypy clean, ruff clean, 46/46 tests pass, 1173/1173 total tests pass
+

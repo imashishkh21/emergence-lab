@@ -360,7 +360,7 @@ python scripts/run_stigmergy_ablation.py --dry-run --checkpoint checkpoints/para
 
 ---
 
-### US-013: Superlinear Scaling Experiment (Launch Script) [ ]
+### US-013: Superlinear Scaling Experiment (Launch Script) [x]
 
 **Task:** Create scaling analysis module and launch script. Test N = 1, 2, 4, 8, 16, 32 agents with 3 field conditions and 20 seeds. Compute per-agent efficiency and fit power law.
 
