@@ -13,6 +13,7 @@ This is a research project. Every code change should serve one question: *does t
 | **Phase 1: Digital Petri Dish** | COMPLETE | Agents learn to forage; field develops spatial structure; Normal > Zeroed > Random field in ablation |
 | **Phase 2: Evolutionary Pressure** | COMPLETE | Birth/death/reproduction working; population reaches equilibrium (32/32 maxed); 108 births + 108 deaths = perfect turnover; weight inheritance + mutation |
 | **Phase 3: Specialization Detection** | COMPLETE | Weight divergence tracking, behavioral clustering (K-means + silhouette), species detection, lineage-strategy correlation, specialization ablation (divergent > uniform > random) |
+| **Phase 5: Prove Emergence** | COMPLETE | Information-theoretic metrics (O-info, PID, Causal Emergence), baselines (IPPO, ACO, MAPPO), statistical reporting (rliable), publication figures, multi-seed experiments |
 
 **Key empirical finding**: Random field HURTS agents (585 < 600 food) — they learned to READ the field for information. The field is not noise; it carries signal.
 
@@ -71,6 +72,14 @@ python -m src.analysis.ablation --checkpoint checkpoints/params.pkl
 python scripts/run_ablation.py --iterations 100 --evolution     # Field x evolution 2x2
 python scripts/run_specialization_ablation.py --iterations 100  # Divergent vs uniform vs random weights
 python scripts/generate_specialization_report.py                # Full markdown report + PNGs
+
+# Phase 5 Analysis
+python scripts/compute_emergence_metrics.py --checkpoint <path> --output metrics.json
+python scripts/run_stigmergy_ablation.py --checkpoint <path> --dry-run
+python scripts/run_scaling_experiment.py --checkpoint <path> --dry-run
+python scripts/run_baselines_comparison.py --dry-run
+python scripts/generate_paper_figures.py --results-dir results/ --output-dir figures/
+python scripts/verify_phase5.py
 ```
 
 ## Architecture
@@ -120,8 +129,25 @@ src/
 │   ├── visualization.py        # 4 matplotlib plots: PCA/t-SNE clusters, divergence, field usage, score over time
 │   ├── field_metrics.py        # field_entropy(), field_structure(), field_food_mi()
 │   ├── emergence.py            # EmergenceTracker: rolling z-score phase transition detection
-│   ├── ablation.py             # 3 ablation types: field, evolution 2x2, specialization (divergent/uniform/random)
-│   └── lineage.py              # LineageTracker: birth/death records, family trees, dominant lineages
+│   ├── ablation.py             # 6 field conditions: normal, zeroed, random, frozen, no_field, write_only
+│   ├── lineage.py              # LineageTracker: birth/death records, family trees, dominant lineages
+│   ├── o_information.py        # O-information via hoi (Omega < 0 = synergy) [Phase 5]
+│   ├── pid_synergy.py          # PID synergy via dit (action + field → outcome) [Phase 5]
+│   ├── causal_emergence.py     # Hoel's EI + Rosas Psi (macro vs micro) [Phase 5]
+│   ├── surrogates.py           # Surrogate testing framework (row/col/block shuffle) [Phase 5]
+│   ├── information.py          # Transfer entropy (agent coordination) [Phase 5]
+│   ├── statistics.py           # rliable integration (IQM, bootstrap CI) [Phase 5]
+│   ├── scaling.py              # Superlinear scaling analysis [Phase 5]
+│   ├── paper_figures.py        # Publication figures (300 DPI, PDF+PNG) [Phase 5]
+│   └── emergence_report.py     # Unified metrics computation + JSON output [Phase 5]
+├── baselines/                  # [Phase 5]
+│   ├── ippo.py                 # Independent PPO (no field, shared params)
+│   ├── aco_fixed.py            # ACO-Fixed + ACO-Hybrid (hardcoded pheromone rules)
+│   └── mappo.py                # MAPPO (centralized critic, CTDE)
+├── experiments/                # [Phase 5]
+│   ├── runner.py               # Multi-seed harness + paired experiments
+│   ├── configs.py              # Environment configs (standard, hidden_resources, food_scarcity)
+│   └── baselines.py            # Baselines comparison runner
 └── utils/
     ├── logging.py              # W&B integration
     └── video.py                # Episode recording to MP4
