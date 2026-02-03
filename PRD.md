@@ -129,7 +129,7 @@ python -c "from src.analysis.pid_synergy import compute_interaction_information;
 
 ---
 
-### US-004: Causal Emergence (Effective Information + Rosas Psi) [ ]
+### US-004: Causal Emergence (Effective Information + Rosas Psi) [x]
 
 **Task:** Implement two complementary causal emergence measures: Hoel's Effective Information (EI) on micro vs macro transition probability matrices, and Rosas' Psi as a single scalar.
 

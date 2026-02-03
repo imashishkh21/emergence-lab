@@ -71,3 +71,21 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_pid_synergy.py` — NEW: 31 tests covering all functions, edge cases, XOR synergy, copy redundancy, surrogate testing
 **Verification:** mypy clean, ruff clean, 31/31 tests pass
 
+### US-004: Causal Emergence (Effective Information + Rosas Psi) ✓
+**Date:** 2026-02-03
+**What:** Implemented two complementary causal emergence measures: Hoel's Effective Information (EI) and Rosas' Psi. EI gap > 0 and Psi > 0 indicate causal emergence at the macro scale.
+**Decisions:**
+- Implemented custom TPM building with Laplace smoothing (no external dependencies beyond numpy/scipy)
+- EI = log2(N) - avg_row_entropy(TPM), following Hoel et al. 2013
+- Psi = I(V_t; V_{t+1}) - sum_i I(X_i,t; V_{t+1}), following Rosas et al. 2020
+- Discretization using quantile bins (default 4 bins, configurable)
+- Macro variable candidates: population_count, mean_field_intensity, total_food_collected, spatial_dispersion, field_entropy
+- extract_macro_variables() extracts all macro vars from trajectory dict
+- Windowed analysis: compute_windowed_causal_emergence() with configurable window size and overlap (default 50%)
+- CausalEmergenceTracker follows same pattern as TransferEntropyTracker with z-score phase transition detection
+- Tracks emergence_ratio: cumulative fraction of timesteps with both positive EI gap AND positive Psi
+**Files changed:**
+- `src/analysis/causal_emergence.py` — NEW: compute_effective_information(), compute_rosas_psi(), compute_causal_emergence_from_trajectory(), compute_windowed_causal_emergence(), extract_macro_variables(), discretize_to_bins(), build_tpm(), compute_tpm_entropy(), compute_mutual_information_discrete(), CausalEmergenceEvent, CausalEmergenceTracker
+- `tests/test_causal_emergence.py` — NEW: 54 tests covering all functions, edge cases, TPM building, MI computation, trajectory extraction, windowed analysis, tracker pattern
+**Verification:** mypy clean, ruff clean, 54/54 tests pass, 856 total tests pass
+
