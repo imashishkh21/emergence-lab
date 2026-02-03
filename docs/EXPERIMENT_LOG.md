@@ -529,6 +529,65 @@ Busy:       1/4 (25%)  — Seed 45
 
 ---
 
+---
+
+## Run #005: Multi-Seed Statistical Experiment (IN PROGRESS)
+
+**Date:** 2026-02-03
+**Platform:** Google Colab TPU v6e + High-RAM
+**Goal:** 30 seeds Field ON + 30 seeds Field OFF = 60 total for statistical significance
+
+### Config (PROVEN 64-AGENT)
+
+```python
+env=EnvConfig(
+    grid_size=32,
+    num_agents=16,
+    num_food=40,
+),
+evolution=EvolutionConfig(
+    enabled=True,
+    max_agents=64,
+    starting_energy=200,
+    food_energy=100,
+    energy_per_step=1,
+    reproduce_threshold=120,
+    reproduce_cost=40,
+    mutation_std=0.01,
+),
+train=TrainConfig(
+    total_steps=10_000_000,
+    num_envs=32,
+    num_steps=128,
+),
+```
+
+### Field ON Results (30 seeds)
+
+| Batch | Seed | Reward | Population | Status |
+|-------|------|--------|------------|--------|
+| 0 | 0 | 5.19 | 64 | 🎉 UTOPIA |
+| 0 | 1 | 5.38 | 64 | 🎉 UTOPIA |
+| 0 | 2 | 4.70 | 6 | ⚠️ Crashed |
+| 1 | 3 | 3.09 | 22 | ⚠️ Struggled |
+| 1 | 4 | 4.84 | 64 | 🎉 UTOPIA |
+| 1 | 5 | 5.50 | 64 | 🎉 UTOPIA |
+| 2 | 6 | - | - | ⬜ Pending |
+| 2 | 7 | - | - | ⬜ Pending |
+| 2 | 8 | - | - | ⬜ Pending |
+
+**Running tally:** 4/6 UTOPIA (67%), Mean reward: 4.45
+
+### Field OFF Results (30 seeds)
+
+| Batch | Seed | Reward | Population | Status |
+|-------|------|--------|------------|--------|
+| 0 | 0 | - | - | ⬜ Pending |
+| ... | ... | - | - | ⬜ Pending |
+
+---
+
 ## Changelog
 
 - **2026-02-03**: Created log after Run #001 failure. Documented harsh vs survival configs.
+- **2026-02-03**: Started multi-seed experiment (Run #005) with proven 64-agent config.
