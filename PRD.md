@@ -331,7 +331,7 @@ python -c "from src.analysis.statistics import compute_iqm, StatisticalReport; p
 
 ---
 
-### US-012: Stigmergy Ablation at Scale (Launch Script) [ ]
+### US-012: Stigmergy Ablation at Scale (Launch Script) [x]
 
 **Task:** Extend the existing ablation module with 3 new conditions (frozen field, no-field, write-only) and create a launch script for running all 6 conditions at scale with 20 seeds across 3 environment configs.
 

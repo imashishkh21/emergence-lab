@@ -226,3 +226,24 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_statistics.py` — NEW: 68 tests covering all dataclasses, functions, rliable integration, fallback implementations, edge cases
 **Verification:** mypy clean, ruff clean, 68/68 tests pass
 
+### US-012: Stigmergy Ablation at Scale (Launch Script) ✓
+**Date:** 2026-02-03
+**What:** Extended ablation module with 3 new field conditions and created launch script for running all 6 conditions at scale with 20 seeds across 3 environment configs.
+**Decisions:**
+- Extended FieldCondition Literal type to ExtendedFieldCondition with all 6 conditions
+- ALL_FIELD_CONDITIONS list for easy iteration over all conditions
+- `frozen`: saves initial field state (or from checkpoint) and restores it after each step, preventing any new writes
+- `no_field`: zeros out field portion of observations via `_zero_field_obs()` helper
+- `write_only`: agents write to field normally but read zeros (field obs zeroed)
+- New `_run_extended_episode_full()` handles all 6 conditions with optional frozen_field parameter
+- New `ExtendedAblationResult` dataclass with same structure as AblationResult
+- New `extended_ablation_test()` runs any subset of the 6 conditions
+- Launch script supports dry-run, condition filtering, env config filtering, and checkpoint milestones
+- Script aggregates per-seed results into final statistics (mean, std)
+- Output saved to timestamped directory with pickle files per env config
+**Files changed:**
+- `src/analysis/ablation.py` — EXTENDED: ExtendedFieldCondition type, ALL_FIELD_CONDITIONS list, _zero_field_obs(), _run_extended_episode_full(), ExtendedAblationResult, extended_ablation_test(), print_extended_ablation_results()
+- `scripts/run_stigmergy_ablation.py` — NEW: CLI for running 6 conditions × 20 seeds × 3 envs with dry-run support
+- `tests/test_ablation_extended.py` — NEW: 25 tests covering all new conditions, helper functions, and integration
+**Verification:** mypy clean, ruff clean, 25/25 ablation extended tests pass, 1127/1127 total tests pass
+

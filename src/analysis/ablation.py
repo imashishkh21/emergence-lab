@@ -1,9 +1,12 @@
 """Ablation test to evaluate whether the shared field and evolution matter.
 
-Tests field conditions:
+Tests field conditions (6 total for Phase 5):
     1. Normal: field operates normally (diffusion + decay + agent writes)
     2. Zeroed: field values are zeroed every step (agents see no field info)
     3. Random: field values are randomized every step (agents see noise)
+    4. Frozen: field initialized from checkpoint but never updated (preserves structure)
+    5. No-field: field completely removed from observations (zero-padded obs)
+    6. Write-only: agents write to field but read zeros (can they still benefit?)
 
 Evolution ablation compares 4 conditions (2x2 field x evolution):
     1. field + evolution: both active
@@ -34,7 +37,23 @@ from src.environment.obs import get_observations, obs_dim
 from src.environment.state import EnvState
 from src.field.field import FieldState, create_field
 
+# Original 3 conditions
 FieldCondition = Literal["normal", "zeroed", "random"]
+
+# Extended 6 conditions for Phase 5 stigmergy ablation
+ExtendedFieldCondition = Literal[
+    "normal",      # Field operates normally
+    "zeroed",      # Field zeroed every step
+    "random",      # Field randomized every step
+    "frozen",      # Field initialized but never updated (preserves structure, no new writes)
+    "no_field",    # Field removed from observations entirely (zero-padded field obs)
+    "write_only",  # Agents write to field but read zeros (tests write-side value)
+]
+
+# List of all 6 conditions for iteration
+ALL_FIELD_CONDITIONS: list[ExtendedFieldCondition] = [
+    "normal", "zeroed", "random", "frozen", "no_field", "write_only"
+]
 
 
 @dataclass
@@ -236,6 +255,289 @@ def _replace_field(state: EnvState, field_state: FieldState) -> EnvState:
         hidden_food_reveal_timer=state.hidden_food_reveal_timer,
         hidden_food_collected=state.hidden_food_collected,
     )
+
+
+def _zero_field_obs(obs: jnp.ndarray, config: Config) -> jnp.ndarray:
+    """Zero out the field observation portion of the observation vector.
+
+    For the 'no_field' condition: agents cannot read the field at all.
+    The observation vector structure is: [pos(2), energy(1), field(...), food(K*3)]
+
+    Args:
+        obs: Observation array of shape (max_agents, obs_dim).
+        config: Master configuration.
+
+    Returns:
+        Modified observation with field portion zeroed.
+    """
+    radius = config.env.observation_radius
+    patch_size = (2 * radius + 1) ** 2
+    field_dim = patch_size * config.field.num_channels
+
+    # Field starts at index 3 (after pos_x, pos_y, energy)
+    field_start = 3
+    field_end = field_start + field_dim
+
+    # Zero out field portion
+    obs_modified = obs.at[:, field_start:field_end].set(0.0)
+    return obs_modified
+
+
+def _run_extended_episode_full(
+    network: ActorCritic,
+    params: dict,
+    config: Config,
+    key: jax.Array,
+    condition: ExtendedFieldCondition,
+    evolution: bool = True,
+    frozen_field: FieldState | None = None,
+) -> _EpisodeStats:
+    """Run a single episode under an extended field condition.
+
+    Supports all 6 field conditions:
+        - normal: Field operates normally
+        - zeroed: Field zeroed every step
+        - random: Field randomized every step
+        - frozen: Field initialized from frozen_field, never updated
+        - no_field: Agents read zeros for field (zero-padded obs)
+        - write_only: Agents write to field but read zeros
+
+    Args:
+        network: ActorCritic network module.
+        params: Network parameters.
+        config: Master configuration.
+        key: PRNG key for environment reset.
+        condition: One of the 6 extended field conditions.
+        evolution: If False, disable evolution (keep energy high, no death/reproduction).
+        frozen_field: For 'frozen' condition, the field state to use throughout.
+
+    Returns:
+        Episode statistics including reward and population dynamics.
+    """
+    key, reset_key = jax.random.split(key)
+    state = reset(reset_key, config)
+    total_reward = 0.0
+    total_births = 0
+    total_deaths = 0
+    num_agents = config.env.num_agents
+
+    # For frozen condition, save initial field or use provided frozen field
+    if condition == "frozen":
+        if frozen_field is not None:
+            # Use provided frozen field
+            state = _replace_field(state, frozen_field)
+        # Save the initial field to restore after each step
+        initial_field = state.field_state
+
+    for t in range(config.env.max_steps):
+        # Apply field ablation BEFORE observation
+        if condition == "zeroed":
+            zero_field = create_field(
+                config.env.grid_size,
+                config.env.grid_size,
+                config.field.num_channels,
+            )
+            state = _replace_field(state, zero_field)
+        elif condition == "random":
+            key, noise_key = jax.random.split(key)
+            noise_values = jax.random.uniform(
+                noise_key,
+                shape=(config.env.grid_size, config.env.grid_size, config.field.num_channels),
+            )
+            random_field = FieldState(values=noise_values)
+            state = _replace_field(state, random_field)
+        elif condition == "frozen":
+            # Restore frozen field (undo any writes from previous step)
+            state = _replace_field(state, initial_field)
+
+        # When evolution is disabled, keep all agents at high energy
+        if not evolution:
+            state = _reset_energy(state, config)
+
+        # Get observations
+        obs = get_observations(state, config)
+
+        # For no_field and write_only: zero out field observations
+        if condition in ("no_field", "write_only"):
+            obs = _zero_field_obs(obs, config)
+
+        # Add batch dim: (1, max_agents, obs_dim)
+        obs_batched = obs[None, :, :]
+
+        # Get deterministic actions: (1, max_agents) -> (max_agents,)
+        actions = get_deterministic_actions(network, params, obs_batched)
+        actions = actions[0]
+
+        # When evolution is disabled, mask out reproduce actions
+        if not evolution:
+            actions = jnp.where(actions == 5, 0, actions)
+
+        # Step environment (agents will write to field during step)
+        state, rewards, done, info = step(state, actions, config)
+
+        # Sum rewards across agents for this step
+        total_reward += float(jnp.sum(rewards))
+        total_births += int(info["births_this_step"])
+        total_deaths += int(info["deaths_this_step"])
+
+        if bool(done):
+            break
+
+    final_population = int(jnp.sum(state.agent_alive.astype(jnp.int32)))
+    survival_rate = final_population / max(num_agents, 1)
+
+    return _EpisodeStats(
+        total_reward=total_reward,
+        final_population=final_population,
+        total_births=total_births,
+        total_deaths=total_deaths,
+        survival_rate=survival_rate,
+    )
+
+
+@dataclass
+class ExtendedAblationResult:
+    """Results from one extended ablation condition.
+
+    Attributes:
+        condition: Name of the ablation condition.
+        mean_reward: Mean total episode reward across episodes.
+        std_reward: Standard deviation of total episode rewards.
+        episode_rewards: Per-episode total rewards.
+        mean_food_collected: Mean food collected across episodes.
+        final_population: Mean final alive population across episodes.
+        total_births: Mean total births across episodes.
+        total_deaths: Mean total deaths across episodes.
+        survival_rate: Mean fraction of original agents still alive at end.
+    """
+    condition: str
+    mean_reward: float
+    std_reward: float
+    episode_rewards: list[float]
+    mean_food_collected: float = 0.0
+    final_population: float = 0.0
+    total_births: float = 0.0
+    total_deaths: float = 0.0
+    survival_rate: float = 0.0
+
+
+def extended_ablation_test(
+    network: ActorCritic,
+    params: dict,
+    config: Config,
+    num_episodes: int = 20,
+    seed: int = 0,
+    conditions: list[ExtendedFieldCondition] | None = None,
+    frozen_field: FieldState | None = None,
+) -> dict[str, ExtendedAblationResult]:
+    """Run extended ablation test comparing all 6 field conditions.
+
+    Tests 6 conditions:
+        1. normal: Field operates normally
+        2. zeroed: Field zeroed every step
+        3. random: Field randomized every step
+        4. frozen: Field initialized but never updated
+        5. no_field: Field removed from observations
+        6. write_only: Agents write to field but read zeros
+
+    Args:
+        network: ActorCritic network module.
+        params: Network parameters.
+        config: Master configuration.
+        num_episodes: Number of episodes per condition.
+        seed: Base random seed.
+        conditions: List of conditions to test (default: all 6).
+        frozen_field: For 'frozen' condition, optional initial field state.
+            If None and 'frozen' is tested, uses the field from reset.
+
+    Returns:
+        Dictionary mapping condition name to ExtendedAblationResult.
+    """
+    if conditions is None:
+        conditions = list(ALL_FIELD_CONDITIONS)
+
+    results: dict[str, ExtendedAblationResult] = {}
+
+    for condition in conditions:
+        stats_list: list[_EpisodeStats] = []
+        base_key = jax.random.PRNGKey(seed)
+
+        for ep in range(num_episodes):
+            ep_key = jax.random.fold_in(base_key, ep)
+            stats = _run_extended_episode_full(
+                network, params, config, ep_key, condition,
+                evolution=True, frozen_field=frozen_field,
+            )
+            stats_list.append(stats)
+
+        rewards = [s.total_reward for s in stats_list]
+        rewards_arr = np.array(rewards)
+        populations = np.array([s.final_population for s in stats_list])
+        births = np.array([s.total_births for s in stats_list])
+        deaths = np.array([s.total_deaths for s in stats_list])
+        survivals = np.array([s.survival_rate for s in stats_list])
+
+        results[condition] = ExtendedAblationResult(
+            condition=condition,
+            mean_reward=float(np.mean(rewards_arr)),
+            std_reward=float(np.std(rewards_arr)),
+            episode_rewards=list(rewards),
+            final_population=float(np.mean(populations)),
+            total_births=float(np.mean(births)),
+            total_deaths=float(np.mean(deaths)),
+            survival_rate=float(np.mean(survivals)),
+        )
+
+    return results
+
+
+def print_extended_ablation_results(
+    results: dict[str, ExtendedAblationResult],
+) -> None:
+    """Pretty-print extended ablation test results."""
+    print("=" * 90)
+    print("Extended Stigmergy Ablation Test Results (6 Conditions)")
+    print("=" * 90)
+    header = (
+        f"{'Condition':<12} {'Reward':>10} {'Std':>8} "
+        f"{'Pop':>6} {'Births':>8} {'Deaths':>8} {'Survival':>10}"
+    )
+    print(header)
+    print("-" * 90)
+
+    # Print in canonical order
+    condition_order = ["normal", "zeroed", "random", "frozen", "no_field", "write_only"]
+    for name in condition_order:
+        if name in results:
+            r = results[name]
+            print(
+                f"{r.condition:<12} {r.mean_reward:>10.2f} {r.std_reward:>8.2f} "
+                f"{r.final_population:>6.1f} {r.total_births:>8.1f} "
+                f"{r.total_deaths:>8.1f} {r.survival_rate:>9.1%}"
+            )
+    print("=" * 90)
+
+    # Key comparisons
+    print("\nKey Comparisons:")
+    if "normal" in results and "zeroed" in results:
+        diff = results["normal"].mean_reward - results["zeroed"].mean_reward
+        print(f"  Normal vs Zeroed:     {diff:+.2f} (field info helps: {diff > 0})")
+    if "normal" in results and "random" in results:
+        diff = results["normal"].mean_reward - results["random"].mean_reward
+        print(f"  Normal vs Random:     {diff:+.2f} (field is signal, not noise: {diff > 0})")
+    if "normal" in results and "frozen" in results:
+        diff = results["normal"].mean_reward - results["frozen"].mean_reward
+        print(f"  Normal vs Frozen:     {diff:+.2f} (dynamic field helps: {diff > 0})")
+    if "normal" in results and "no_field" in results:
+        diff = results["normal"].mean_reward - results["no_field"].mean_reward
+        print(f"  Normal vs No-Field:   {diff:+.2f} (reading field helps: {diff > 0})")
+    if "normal" in results and "write_only" in results:
+        diff = results["normal"].mean_reward - results["write_only"].mean_reward
+        print(f"  Normal vs Write-Only: {diff:+.2f} (reading matters: {diff > 0})")
+    if "write_only" in results and "no_field" in results:
+        wo = results["write_only"].mean_reward
+        nf = results["no_field"].mean_reward
+        print(f"  Write-Only vs No-Field: {wo - nf:+.2f} (indirect benefit from writes: {wo > nf})")
 
 
 def ablation_test(
