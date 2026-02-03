@@ -387,7 +387,7 @@ python scripts/run_scaling_experiment.py --dry-run
 
 ---
 
-### US-014: Baselines Comparison Experiment (Launch Script) [ ]
+### US-014: Baselines Comparison Experiment (Launch Script) [x]
 
 **Task:** Create the full baselines comparison: all 4 methods (Ours, IPPO, ACO-Fixed/Hybrid, MAPPO) across 3 env configs and 20 seeds with the same compute budget.
 

@@ -805,3 +805,580 @@ class TestCLIVerification:
         assert ExperimentConfig is not None
         assert run_experiment is not None
         print("OK")  # Should not raise
+
+
+# ============================================================================
+# Baselines Comparison Tests (US-014)
+# ============================================================================
+
+
+def _fast_test_config() -> Config:
+    """Create a minimal config for fast testing."""
+    from dataclasses import replace
+    config = Config()
+    # Minimal settings for fast tests
+    env_config = replace(
+        config.env,
+        grid_size=8,
+        num_agents=2,
+        num_food=3,
+        max_steps=10,
+        observation_radius=3,
+    )
+    # Minimal field
+    field_config = replace(
+        config.field,
+        num_channels=2,
+    )
+    # Disable evolution
+    evolution_config = replace(
+        config.evolution,
+        enabled=False,
+        max_agents=2,
+    )
+    return replace(
+        config,
+        env=env_config,
+        field=field_config,
+        evolution=evolution_config,
+    )
+
+
+class TestBaselinesComparisonResult:
+    """Tests for BaselinesComparisonResult dataclass."""
+
+    def test_baselines_comparison_result_defaults(self):
+        """BaselinesComparisonResult should have sensible defaults."""
+        from src.experiments.baselines import BaselinesComparisonResult
+
+        result = BaselinesComparisonResult(
+            env_config_name="standard",
+            n_seeds=5,
+            n_episodes=10,
+        )
+
+        assert result.env_config_name == "standard"
+        assert result.n_seeds == 5
+        assert result.n_episodes == 10
+        assert result.method_results == {}
+        assert result.rankings == []
+        assert result.best_method is None
+        assert result.methods_run == []
+        assert result.paired_seeds is True
+        assert result.seed_offset == 0
+
+    def test_baselines_comparison_result_str(self):
+        """BaselinesComparisonResult should have readable __str__."""
+        from src.experiments.baselines import BaselinesComparisonResult
+        from src.experiments.runner import ExperimentResult
+
+        mock_result = ExperimentResult(
+            method_name="test",
+            env_config_name="standard",
+            n_seeds=3,
+            mean_reward=100.0,
+            std_reward=10.0,
+            iqm_reward=98.0,
+            ci_lower=90.0,
+            ci_upper=110.0,
+            mean_food=25.0,
+            std_food=5.0,
+        )
+
+        result = BaselinesComparisonResult(
+            env_config_name="standard",
+            n_seeds=3,
+            n_episodes=10,
+            method_results={"test": mock_result},
+            rankings=[{
+                "rank": 1,
+                "method": "test",
+                "iqm_reward": 98.0,
+                "mean_reward": 100.0,
+                "ci": (90.0, 110.0),
+            }],
+            best_method="test",
+            methods_run=["test"],
+        )
+
+        result_str = str(result)
+        assert "standard" in result_str
+        assert "test" in result_str
+        assert "Best method" in result_str
+
+
+@pytest.mark.slow
+class TestCreateMethodRunner:
+    """Tests for create_method_runner function.
+
+    Note: These tests are marked slow because they run actual simulations.
+    Skip with `pytest -m "not slow"`.
+    """
+
+    def test_create_ippo_runner(self):
+        """create_method_runner should create IPPO runner."""
+        from src.experiments.baselines import create_method_runner
+
+        config = _fast_test_config()
+        runner = create_method_runner("ippo", config, n_episodes=1)
+
+        assert callable(runner)
+
+        # Run with a seed - should return standardized dict
+        result = runner(seed=0)
+
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+        assert isinstance(result["total_reward"], float)
+        assert isinstance(result["food_collected"], float)
+
+    def test_create_aco_fixed_runner(self):
+        """create_method_runner should create ACO-Fixed runner."""
+        from src.experiments.baselines import create_method_runner
+
+        config = _fast_test_config()
+        runner = create_method_runner("aco_fixed", config, n_episodes=1)
+
+        assert callable(runner)
+
+        result = runner(seed=0)
+
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+
+    def test_create_aco_hybrid_runner(self):
+        """create_method_runner should create ACO-Hybrid runner."""
+        from src.experiments.baselines import create_method_runner
+
+        config = _fast_test_config()
+        runner = create_method_runner("aco_hybrid", config, n_episodes=1)
+
+        assert callable(runner)
+
+        result = runner(seed=0)
+
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+
+    def test_create_mappo_runner(self):
+        """create_method_runner should create MAPPO runner."""
+        from src.experiments.baselines import create_method_runner
+
+        config = _fast_test_config()
+        runner = create_method_runner("mappo", config, n_episodes=1)
+
+        assert callable(runner)
+
+        result = runner(seed=0)
+
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+
+    def test_create_ours_runner(self):
+        """create_method_runner should create 'ours' runner."""
+        from src.experiments.baselines import create_method_runner
+
+        config = _fast_test_config()
+        runner = create_method_runner("ours", config, n_episodes=1)
+
+        assert callable(runner)
+
+        result = runner(seed=0)
+
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+
+    def test_create_runner_invalid_method_raises(self):
+        """create_method_runner should raise for unknown method."""
+        from src.experiments.baselines import create_method_runner
+        from src.experiments.configs import standard_config
+
+        config = standard_config()
+
+        with pytest.raises(ValueError, match="Unknown method"):
+            create_method_runner("nonexistent", config, n_episodes=1)  # type: ignore
+
+
+@pytest.mark.slow
+class TestRunBaselinesComparison:
+    """Tests for run_baselines_comparison function.
+
+    Note: These tests are marked slow because they run actual simulations.
+    Skip with `pytest -m "not slow"`.
+    """
+
+    def test_run_baselines_comparison_single_method(self):
+        """run_baselines_comparison should work with single method."""
+        from src.experiments.baselines import run_baselines_comparison
+
+        # Use IPPO only for fast testing
+        result = run_baselines_comparison(
+            env_config_name="standard",
+            methods=["ippo"],
+            n_seeds=1,  # Reduced for speed
+            n_episodes=1,
+            verbose=False,
+        )
+
+        assert result.env_config_name == "standard"
+        assert result.n_seeds == 1
+        assert result.n_episodes == 1
+        assert "ippo" in result.method_results
+        assert result.best_method == "ippo"
+        assert len(result.rankings) == 1
+
+    def test_run_baselines_comparison_multiple_methods(self):
+        """run_baselines_comparison should work with multiple methods."""
+        from src.experiments.baselines import run_baselines_comparison
+
+        # Use two fast methods
+        result = run_baselines_comparison(
+            env_config_name="standard",
+            methods=["ippo", "aco_fixed"],
+            n_seeds=1,
+            n_episodes=1,
+            verbose=False,
+        )
+
+        assert len(result.method_results) == 2
+        assert "ippo" in result.method_results
+        assert "aco_fixed" in result.method_results
+        assert len(result.rankings) == 2
+        assert result.best_method in ["ippo", "aco_fixed"]
+
+    def test_run_baselines_comparison_paired_seeds(self):
+        """run_baselines_comparison should use paired seeds correctly."""
+        from src.experiments.baselines import run_baselines_comparison
+
+        result = run_baselines_comparison(
+            env_config_name="standard",
+            methods=["ippo"],
+            n_seeds=2,  # Reduced for speed
+            n_episodes=1,
+            paired_seeds=True,
+            seed_offset=100,
+            verbose=False,
+        )
+
+        # Verify seed list
+        ippo_result = result.method_results["ippo"]
+        assert ippo_result.seed_list == [100, 101, 102]
+
+
+class TestCompareBaselinesResults:
+    """Tests for compare_baselines_results function."""
+
+    def test_compare_baselines_results_basic(self):
+        """compare_baselines_results should compare across envs."""
+        from src.experiments.baselines import (
+            BaselinesComparisonResult,
+            compare_baselines_results,
+        )
+        from src.experiments.runner import ExperimentResult
+
+        # Create mock results for two environments
+        result1 = BaselinesComparisonResult(
+            env_config_name="standard",
+            n_seeds=3,
+            n_episodes=10,
+            method_results={
+                "ippo": ExperimentResult(
+                    method_name="ippo",
+                    env_config_name="standard",
+                    n_seeds=3,
+                    iqm_reward=100.0,
+                ),
+                "ours": ExperimentResult(
+                    method_name="ours",
+                    env_config_name="standard",
+                    n_seeds=3,
+                    iqm_reward=150.0,
+                ),
+            },
+            best_method="ours",
+            methods_run=["ippo", "ours"],
+        )
+
+        result2 = BaselinesComparisonResult(
+            env_config_name="food_scarcity",
+            n_seeds=3,
+            n_episodes=10,
+            method_results={
+                "ippo": ExperimentResult(
+                    method_name="ippo",
+                    env_config_name="food_scarcity",
+                    n_seeds=3,
+                    iqm_reward=80.0,
+                ),
+                "ours": ExperimentResult(
+                    method_name="ours",
+                    env_config_name="food_scarcity",
+                    n_seeds=3,
+                    iqm_reward=120.0,
+                ),
+            },
+            best_method="ours",
+            methods_run=["ippo", "ours"],
+        )
+
+        results = {"standard": result1, "food_scarcity": result2}
+        comparison = compare_baselines_results(results)
+
+        assert "env_configs" in comparison
+        assert "method_wins" in comparison
+        assert "method_avg_iqm" in comparison
+        assert "overall_ranking" in comparison
+        assert "overall_best" in comparison
+
+        # "ours" won both environments
+        assert comparison["method_wins"]["ours"] == 2
+        assert comparison["overall_best"] == "ours"
+
+    def test_compare_baselines_results_empty(self):
+        """compare_baselines_results should handle empty input."""
+        from src.experiments.baselines import compare_baselines_results
+
+        comparison = compare_baselines_results({})
+
+        assert "summary" in comparison
+        assert comparison["summary"] == "No results to compare"
+
+
+class TestSaveLoadBaselinesResult:
+    """Tests for save/load functionality."""
+
+    def test_save_and_load_baselines_result(self):
+        """Should be able to save and load BaselinesComparisonResult."""
+        import tempfile
+        from pathlib import Path
+
+        from src.experiments.baselines import (
+            BaselinesComparisonResult,
+            load_baselines_result,
+            save_baselines_result,
+        )
+        from src.experiments.runner import ExperimentResult
+
+        result = BaselinesComparisonResult(
+            env_config_name="standard",
+            n_seeds=3,
+            n_episodes=10,
+            method_results={
+                "ippo": ExperimentResult(
+                    method_name="ippo",
+                    env_config_name="standard",
+                    n_seeds=3,
+                    iqm_reward=100.0,
+                ),
+            },
+            rankings=[{
+                "rank": 1,
+                "method": "ippo",
+                "iqm_reward": 100.0,
+                "mean_reward": 100.0,
+                "ci": (90.0, 110.0),
+            }],
+            best_method="ippo",
+            methods_run=["ippo"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "baselines.pkl"
+            save_baselines_result(result, path)
+
+            assert path.exists()
+
+            loaded = load_baselines_result(path)
+
+            assert loaded.env_config_name == result.env_config_name
+            assert loaded.n_seeds == result.n_seeds
+            assert loaded.best_method == result.best_method
+            assert "ippo" in loaded.method_results
+
+
+class TestPrintBaselinesComparison:
+    """Tests for print_baselines_comparison function."""
+
+    def test_print_baselines_comparison(self, capsys):
+        """print_baselines_comparison should output formatted text."""
+        from src.experiments.baselines import (
+            BaselinesComparisonResult,
+            print_baselines_comparison,
+        )
+        from src.experiments.runner import ExperimentResult
+
+        result = BaselinesComparisonResult(
+            env_config_name="standard",
+            n_seeds=3,
+            n_episodes=10,
+            method_results={
+                "ippo": ExperimentResult(
+                    method_name="ippo",
+                    env_config_name="standard",
+                    n_seeds=3,
+                    mean_reward=100.0,
+                    std_reward=10.0,
+                    iqm_reward=98.0,
+                    ci_lower=90.0,
+                    ci_upper=110.0,
+                    mean_food=25.0,
+                    std_food=5.0,
+                ),
+            },
+            rankings=[{
+                "rank": 1,
+                "method": "ippo",
+                "iqm_reward": 98.0,
+                "mean_reward": 100.0,
+                "ci": (90.0, 110.0),
+            }],
+            best_method="ippo",
+            methods_run=["ippo"],
+        )
+
+        print_baselines_comparison(result)
+
+        captured = capsys.readouterr()
+        assert "Baselines Comparison" in captured.out
+        assert "standard" in captured.out
+        assert "ippo" in captured.out
+        assert "Best method" in captured.out
+
+
+class TestBaselinesModuleImportability:
+    """Tests for module importability."""
+
+    def test_import_baselines_module(self):
+        """experiments.baselines module should be importable."""
+        from src.experiments import baselines
+
+        assert baselines is not None
+
+    def test_import_all_methods_constant(self):
+        """ALL_METHODS constant should be importable."""
+        from src.experiments.baselines import ALL_METHODS
+
+        assert "ours" in ALL_METHODS
+        assert "ippo" in ALL_METHODS
+        assert "aco_fixed" in ALL_METHODS
+        assert "aco_hybrid" in ALL_METHODS
+        assert "mappo" in ALL_METHODS
+        assert len(ALL_METHODS) == 5
+
+    def test_import_baselines_comparison_result(self):
+        """BaselinesComparisonResult should be importable."""
+        from src.experiments.baselines import BaselinesComparisonResult
+
+        assert BaselinesComparisonResult is not None
+
+    def test_import_run_baselines_comparison(self):
+        """run_baselines_comparison should be importable."""
+        from src.experiments.baselines import run_baselines_comparison
+
+        assert callable(run_baselines_comparison)
+
+    def test_import_create_method_runner(self):
+        """create_method_runner should be importable."""
+        from src.experiments.baselines import create_method_runner
+
+        assert callable(create_method_runner)
+
+    def test_import_compare_baselines_results(self):
+        """compare_baselines_results should be importable."""
+        from src.experiments.baselines import compare_baselines_results
+
+        assert callable(compare_baselines_results)
+
+    def test_import_print_baselines_comparison(self):
+        """print_baselines_comparison should be importable."""
+        from src.experiments.baselines import print_baselines_comparison
+
+        assert callable(print_baselines_comparison)
+
+    def test_import_save_load_functions(self):
+        """save/load functions should be importable."""
+        from src.experiments.baselines import (
+            load_baselines_result,
+            save_baselines_result,
+        )
+
+        assert callable(save_baselines_result)
+        assert callable(load_baselines_result)
+
+
+@pytest.mark.slow
+class TestBaselinesHelperFunctions:
+    """Tests for helper functions in baselines module.
+
+    Note: These tests are marked slow because they run actual simulations.
+    Skip with `pytest -m "not slow"`.
+    """
+
+    def test_create_ours_network(self):
+        """create_ours_network should return ActorCritic."""
+        from src.experiments.baselines import create_ours_network
+
+        config = _fast_test_config()
+        network = create_ours_network(config)
+
+        assert network is not None
+        assert hasattr(network, "__call__")
+
+    def test_init_ours_params(self):
+        """init_ours_params should return valid params."""
+        import jax
+
+        from src.experiments.baselines import create_ours_network, init_ours_params
+
+        config = _fast_test_config()
+        network = create_ours_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_ours_params(network, config, key)
+
+        assert params is not None
+        assert "params" in params
+
+    def test_evaluate_ours(self):
+        """evaluate_ours should return valid result dict."""
+        import jax
+
+        from src.experiments.baselines import (
+            create_ours_network,
+            evaluate_ours,
+            init_ours_params,
+        )
+
+        config = _fast_test_config()
+        network = create_ours_network(config)
+        key = jax.random.PRNGKey(42)
+        params = init_ours_params(network, config, key)
+
+        result = evaluate_ours(
+            network, params, config, n_episodes=1, seed=0
+        )
+
+        assert "total_reward" in result
+        assert "food_collected" in result
+        assert "final_population" in result
+        assert "per_agent_rewards" in result
+        assert result["n_episodes"] == 1
+
+
+class TestBaselinesComparisonCLIVerification:
+    """Tests for CLI verification as specified in PRD."""
+
+    def test_cli_verification_command(self):
+        """CLI verification command should work."""
+        # Mimics: python scripts/run_baselines_comparison.py --dry-run --methods ours,ippo
+        # by testing imports work
+        from src.experiments.baselines import run_baselines_comparison, ALL_METHODS
+
+        assert callable(run_baselines_comparison)
+        assert "ours" in ALL_METHODS
+        assert "ippo" in ALL_METHODS

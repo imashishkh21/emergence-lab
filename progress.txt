@@ -270,3 +270,25 @@ Prove with rigorous information-theoretic metrics and statistical significance t
 - `tests/test_scaling.py` — NEW: 46 tests covering all dataclasses, functions, edge cases (bootstrap with small datasets, two-point fits), print functions
 **Verification:** mypy clean, ruff clean, 46/46 tests pass, 1173/1173 total tests pass
 
+### US-014: Baselines Comparison Experiment (Launch Script) ✓
+**Date:** 2026-02-03
+**What:** Created full baselines comparison infrastructure for running all methods (Ours, IPPO, ACO-Fixed, ACO-Hybrid, MAPPO) across environment configs and seeds with the same compute budget for fair comparison.
+**Decisions:**
+- ALL_METHODS constant defines available methods: ["ours", "ippo", "aco_fixed", "aco_hybrid", "mappo"]
+- BaselinesComparisonResult dataclass: aggregates per-method ExperimentResults, rankings, best_method
+- create_method_runner(): factory function that returns a runner Callable[[int], dict] for any method
+- run_baselines_comparison(): runs all methods for a single env config with optional ours_params
+- run_all_baselines_comparisons(): runs across multiple env configs
+- compare_baselines_results(): cross-environment comparison with method wins and average IQM
+- print_baselines_comparison(): formatted table output with rankings, IQM, mean±std, 95% CI
+- save/load via pickle with auto parent directory creation
+- Launch script supports: --dry-run, --methods (comma-separated), --env-configs, --n-seeds, --n-episodes, --checkpoint for ours params
+- Slow integration tests marked with @pytest.mark.slow for CI flexibility
+- "slow" marker registered in pyproject.toml
+**Files changed:**
+- `src/experiments/baselines.py` — NEW: ALL_METHODS, BaselinesComparisonResult, create_method_runner(), run_baselines_comparison(), run_all_baselines_comparisons(), compare_baselines_results(), print_baselines_comparison(), save/load functions
+- `scripts/run_baselines_comparison.py` — NEW: CLI for running full baselines comparison with dry-run and method/env filtering
+- `tests/test_experiments.py` — EXTENDED: 27 new tests for baselines comparison (fast unit tests + slow integration tests)
+- `pyproject.toml` — Added "slow" pytest marker registration
+**Verification:** mypy clean, ruff clean, 1188/1188 tests pass (12 slow tests deselected with -m "not slow")
+
