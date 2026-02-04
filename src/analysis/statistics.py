@@ -598,9 +598,10 @@ def mann_whitney_test(
     u_stat = float(result.statistic)
     p_value = float(result.pvalue)
 
-    # Rank-biserial correlation: r = 1 - 2U/(n1*n2)
+    # Rank-biserial correlation: r = 2U/(n1*n2) - 1
+    # Positive r means x tends to be larger than y.
     max_u = n_x * n_y
-    rank_biserial = 1 - (2 * u_stat) / max_u if max_u > 0 else 0.0
+    rank_biserial = (2 * u_stat) / max_u - 1 if max_u > 0 else 0.0
 
     return HypothesisTestResult(
         test_name="Mann-Whitney U",
@@ -842,18 +843,22 @@ def compare_methods(
     alpha: float = 0.05,
     n_bootstrap: int = 10000,
     seed: int | None = None,
+    paired: bool = False,
 ) -> MethodComparison:
     """Compare multiple methods with comprehensive statistics.
 
     Computes IQM + CI for each method, runs pairwise statistical tests,
-    and generates rankings. Uses paired tests (Wilcoxon) when same
-    sample sizes, unpaired (Mann-Whitney) otherwise.
+    and generates rankings. Uses Mann-Whitney (unpaired) by default.
+    Set paired=True for Wilcoxon signed-rank (requires same sample sizes).
 
     Args:
         results_dict: Dict mapping method names to score arrays.
         alpha: Significance level for tests.
         n_bootstrap: Number of bootstrap samples.
         seed: Random seed for reproducibility.
+        paired: If True, use Wilcoxon signed-rank (paired test) when
+            sample sizes match. If False (default), always use
+            Mann-Whitney U (unpaired test).
 
     Returns:
         MethodComparison with reports, tests, and rankings.
@@ -898,8 +903,8 @@ def compare_methods(
             scores_a = reports[name_a].scores
             scores_b = reports[name_b].scores
 
-            # Use Wilcoxon for paired, Mann-Whitney for unpaired
-            if len(scores_a) == len(scores_b) and len(scores_a) > 0:
+            # Use Wilcoxon only when explicitly paired and same length
+            if paired and len(scores_a) == len(scores_b) and len(scores_a) > 0:
                 test_result = wilcoxon_test(scores_a, scores_b, alpha=alpha)
             else:
                 test_result = mann_whitney_test(scores_a, scores_b, alpha=alpha)
