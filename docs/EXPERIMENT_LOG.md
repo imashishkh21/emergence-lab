@@ -610,10 +610,144 @@ train=TrainConfig(
 
 ### Field OFF Results (30 seeds)
 
-| Batch | Seed | Reward | Population | Status |
-|-------|------|--------|------------|--------|
-| 0 | 0 | - | - | ⬜ Pending |
-| ... | ... | - | - | ⬜ Pending |
+| Metric | Value |
+|--------|-------|
+| Mean reward | 5.5162 +/- 0.1909 |
+| IQM | 5.5483 [5.4824, 5.6095] |
+| Min/Max reward | 4.7852 / 5.7281 |
+| CoV | 0.0346 |
+| Failed seeds | 0 |
+
+### Statistical Comparison: Field ON vs Field OFF
+
+| Metric | Field ON | Field OFF | Winner |
+|--------|----------|-----------|--------|
+| Training reward (mean) | 4.554 +/- 1.136 | **5.516 +/- 0.191** | Field OFF |
+| Training reward (IQM) | 4.838 | **5.548** | Field OFF |
+| Eval reward | 44,423 +/- 36,730 | **81,960 +/- 44,087** | Field OFF |
+| Eval population | 7.3 +/- 16.6 | **29.9 +/- 27.1** | Field OFF |
+| At max capacity | 2/30 | **10/30** | Field OFF |
+| Mean births | 17.3 | **69.9** | Field OFF |
+| Weight divergence | 0.0002 | 0.0000 | Negligible |
+| Failed seeds | 1 | **0** | Field OFF |
+| Variance (CoV) | 0.2494 | **0.0346** | Field OFF |
+
+### Hypothesis Tests
+
+| Test | Statistic | p-value | Effect Size |
+|------|-----------|---------|-------------|
+| Welch's t-test | - | **p < 0.001** | Cohen's d = 1.18 (LARGE) |
+| Mann-Whitney U | U = 834.0 | **p = 0.000000** | r = 0.85 |
+| P(Field OFF > ON) | **0.927** | - | - |
+| Sensitivity (excl. failed) | - | **p = 0.000004** | d = 1.47 |
+
+### ✅ RUN #005 COMPLETE
+
+**Conclusion:** Field OFF wins decisively on simple foraging. p < 0.001, Cohen's d = 1.18 (large effect). The shared field adds overhead without benefit when coordination is not required. Field ON has 7x more variance and unstable populations.
+
+**Key insight:** Weight divergence = 0.0000 for both conditions. PPO gradient sync overwrites all mutation-driven differentiation. Agents are identical clones regardless of field.
+
+**Saved to Drive:**
+- `analysis_results/field_on_vs_off_results.json`
+- `analysis_results/field_on_vs_off_results.pkl`
+- `analysis_results/comparison_report.md`
+- 5 publication-quality figures (PNG + PDF)
+
+---
+
+## Run #006: Hidden Food Coordination — Field ON vs Field OFF (IN PROGRESS)
+
+**Date:** 2026-02-04
+**Platform:** Google Colab TPU v6e + High-RAM
+**Goal:** Test if the field helps when coordination IS required (hidden food)
+
+### Why This Experiment
+
+Run #005 showed the field hurts on simple foraging. But simple foraging is an individual task — agents don't need each other. Hidden food REQUIRES K=3 agents within distance 3 to reveal invisible high-value food (5x energy). This is a coordination task where the field should help agents signal locations.
+
+### Config (same PROVEN 64-agent + hidden food enabled)
+
+```python
+# Same base config as Run #005, plus:
+env.hidden_food.enabled = True
+env.hidden_food.num_hidden = 3         # 3 invisible food items
+env.hidden_food.required_agents = 3    # Need 3 agents nearby
+env.hidden_food.reveal_distance = 3    # Chebyshev distance
+env.hidden_food.reveal_duration = 10   # Stays visible 10 steps
+env.hidden_food.hidden_food_value_multiplier = 5.0  # 500 energy per item
+```
+
+### Status
+
+| Condition | Batches | Seeds | Status |
+|-----------|---------|-------|--------|
+| Field ON | 10/10 | 30/30 | ✅ COMPLETE |
+| Field OFF | ~2/10 | ~6/30 | 🔄 Running |
+
+**Checkpoints:** `/content/drive/MyDrive/emergence-lab/hidden_food_field_on/` and `hidden_food_field_off/`
+
+**Observations so far:**
+- Field ON rewards: 3.5 → 5.2 over 10M steps (learning)
+- Field OFF batch 1 rewards: 6.15, 7.12, 7.25 (higher than Field ON early batches)
+- Early indication: Field OFF may win again, but need full data
+
+---
+
+## Run #007: Config Sweep — 34 Specialization Configurations (IN PROGRESS)
+
+**Date:** 2026-02-04
+**Platform:** Google Colab TPU v6e + High-RAM
+**Goal:** Find the best specialization settings before running the full experiment
+
+### Why This Experiment
+
+Weight divergence = 0.0000 everywhere. PPO kills all differentiation. We upgraded `parallel_train.py` with:
+- Per-agent action selection during evolve phases
+- Diversity bonus and niche pressure rewards
+- FREEZE_EVOLVE mode (alternate gradient + evolution phases)
+
+This sweep tests 34 configs at short runs (3 seeds, 5-15 iterations each) to find which settings actually produce weight divergence AND hidden food coordination.
+
+### Configs Being Tested
+
+| Group | Count | What Varies | Mode |
+|-------|-------|-------------|------|
+| A1: diversity_bonus | 5 | db=[0.0, 0.05, 0.1, 0.2, 0.5] | GRADIENT |
+| A3: mutation_std | 5 | ms=[0.005, 0.01, 0.02, 0.05, 0.1] | GRADIENT |
+| B: div x niche | 6 | db=[0.1, 0.2, 0.5] x np=[0.05, 0.1] | GRADIENT |
+| D1: FE ratio | 5 | 95/5, 90/10, 80/20, 60/40, 50/50 | FREEZE_EVOLVE |
+| D2: FE boost | 4 | boost=[2, 5, 10, 20] | FREEZE_EVOLVE |
+| E: FE + diversity | 4 | FE ratio x diversity combos | FREEZE_EVOLVE |
+| F: pure evolve | 3 | ms=[0.01, 0.05, 0.1] | EVOLVE |
+| G: baselines | 2 | field ON default, field OFF | GRADIENT |
+
+### Status
+
+- Progress: 11/34 configs complete
+- Elapsed: ~2.2 hours
+- ETA: ~4-5 more hours
+- Early finding: GRADIENT configs with diversity_bonus show HF=2.0 but divergence still 0.0000
+- FREEZE_EVOLVE configs (the interesting ones) haven't started yet
+
+**Results will be saved to:** `/content/drive/MyDrive/emergence-lab/config_sweep/`
+
+---
+
+## Experiment Queue (Updated)
+
+| # | Description | Config | Platform | Status |
+|---|-------------|--------|----------|--------|
+| 001 | Max training 1.6B steps | Standard | Kaggle P100 | ❌ FAILED (pop collapse) |
+| 002 | 64 agents, seed=42 | Survival | Colab TPU v5e | ✅ SUCCESS |
+| 003 | 64 agents, seed=43 | Survival | Colab TPU v5e | ✅ SUCCESS (BEST!) |
+| 004 | 64 agents, seed=44 | Survival | Colab TPU v5e | ✅ SUCCESS (UTOPIA!) |
+| 005 | 30+30 Field ON vs OFF (simple food) | Proven 64-agent | Colab TPU v6e | ✅ COMPLETE — Field OFF wins |
+| 006 | 30+30 Hidden Food ON vs OFF | Proven 64-agent + hidden food | Colab TPU v6e | 🔄 Running |
+| 007 | Config Sweep (34 configs) | Various specialization settings | Colab TPU v6e | 🔄 Running |
+| 008 | Specialization + Hidden Food (30 seeds) | Winner from #007 | Colab TPU v6e | ⬜ Waiting for #007 |
+| 009 | Field Ablation Mid-Run | TBD | TBD | ⬜ Planned |
+| 010 | Scaling Test (32/64/128 agents) | TBD | TBD | ⬜ Planned |
+| 011 | Visual Demo | TBD | TBD | ⬜ Planned |
 
 ---
 
@@ -621,3 +755,6 @@ train=TrainConfig(
 
 - **2026-02-03**: Created log after Run #001 failure. Documented harsh vs survival configs.
 - **2026-02-03**: Started multi-seed experiment (Run #005) with proven 64-agent config.
+- **2026-02-04**: Run #005 COMPLETE. Field OFF wins on simple foraging (p<0.001, d=1.18). All results saved to Drive.
+- **2026-02-04**: Started Run #006 (Hidden Food) and Run #007 (Config Sweep) in parallel on Colab.
+- **2026-02-04**: Upgraded parallel_train.py: per-agent action selection, diversity bonuses, FREEZE_EVOLVE mode. 1293 tests pass.
