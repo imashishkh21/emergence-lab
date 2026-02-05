@@ -72,8 +72,33 @@ fi
 echo ""
 echo "Step 2: Verifying API credentials..."
 KAGGLE_JSON="$HOME/.kaggle/kaggle.json"
-if [[ -f "$KAGGLE_JSON" ]]; then
+AUTH_METHOD=""
+
+if [[ -n "${KAGGLE_API_TOKEN:-}" ]]; then
+    # New token-based auth (KAGGLE_API_TOKEN env var)
+    echo "  Found: KAGGLE_API_TOKEN environment variable"
+    AUTH_METHOD="token"
+
+    if [[ -z "$USERNAME" ]]; then
+        echo "  WARNING: Cannot auto-detect username from API token"
+        echo "  Re-run with: ./scripts/kaggle_setup.sh --username YOUR_USERNAME"
+        exit 1
+    fi
+
+    echo "  Username: $USERNAME"
+
+    # Verify by listing kernels (quick API test)
+    if kaggle kernels list --mine --page-size 1 &>/dev/null; then
+        echo "  API connection verified."
+    else
+        echo "  WARNING: API test failed. Check your token at:"
+        echo "  https://www.kaggle.com/settings > API"
+    fi
+
+elif [[ -f "$KAGGLE_JSON" ]]; then
+    # Legacy JSON file auth
     echo "  Found: $KAGGLE_JSON"
+    AUTH_METHOD="json"
 
     # Check permissions
     PERMS=$(stat -f "%Lp" "$KAGGLE_JSON" 2>/dev/null || stat -c "%a" "$KAGGLE_JSON" 2>/dev/null)
@@ -103,15 +128,21 @@ if [[ -f "$KAGGLE_JSON" ]]; then
         echo "  https://www.kaggle.com/settings > API > Create New Token"
     fi
 else
-    echo "  ERROR: $KAGGLE_JSON not found!"
+    echo "  ERROR: No Kaggle credentials found!"
     echo ""
-    echo "  To set up Kaggle API credentials:"
+    echo "  Option A (recommended): Set KAGGLE_API_TOKEN environment variable"
     echo "  1. Go to https://www.kaggle.com/settings"
-    echo "  2. Scroll to 'API' section"
-    echo "  3. Click 'Create New Token'"
-    echo "  4. Save the downloaded kaggle.json to ~/.kaggle/"
-    echo "  5. Run: chmod 600 ~/.kaggle/kaggle.json"
-    echo "  6. Re-run this script"
+    echo "  2. Scroll to 'API' section, create a token"
+    echo "  3. Add to your shell profile:"
+    echo "     export KAGGLE_API_TOKEN=KGAT_your_token_here"
+    echo ""
+    echo "  Option B (legacy): Use kaggle.json file"
+    echo "  1. Go to https://www.kaggle.com/settings"
+    echo "  2. Click 'Create New Token' (downloads kaggle.json)"
+    echo "  3. Save to ~/.kaggle/kaggle.json"
+    echo "  4. Run: chmod 600 ~/.kaggle/kaggle.json"
+    echo ""
+    echo "  Then re-run this script."
     exit 1
 fi
 

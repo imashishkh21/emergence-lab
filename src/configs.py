@@ -178,10 +178,12 @@ class FreezeEvolveConfig:
       and mutation drive weight changes. Mutation is amplified by
       `evolve_mutation_boost` during this phase.
     """
-    gradient_steps: int = 10000
-    """Number of environment steps in each gradient training phase."""
-    evolve_steps: int = 1000
-    """Number of environment steps in each pure evolution phase."""
+    gradient_steps: int = 500000
+    """Number of agent-steps in each gradient training phase.
+    Same units as train.total_steps (num_envs * num_steps * max_agents per iteration)."""
+    evolve_steps: int = 100000
+    """Number of agent-steps in each pure evolution phase.
+    Same units as train.total_steps."""
     evolve_mutation_boost: float = 5.0
     """Multiplier applied to evolution.mutation_std during evolve phases.
     Higher = more aggressive mutation when gradients are frozen.

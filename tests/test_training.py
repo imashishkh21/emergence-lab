@@ -312,8 +312,8 @@ class TestFreezeEvolve:
         """Test FreezeEvolveConfig has expected defaults."""
         from src.configs import FreezeEvolveConfig
         fe = FreezeEvolveConfig()
-        assert fe.gradient_steps == 10000
-        assert fe.evolve_steps == 1000
+        assert fe.gradient_steps == 500000
+        assert fe.evolve_steps == 100000
         assert fe.evolve_mutation_boost == 5.0
 
     def test_config_has_training_mode(self):
@@ -321,8 +321,8 @@ class TestFreezeEvolve:
         from src.configs import Config, TrainingMode
         config = Config()
         assert config.train.training_mode == TrainingMode.GRADIENT
-        assert config.freeze_evolve.gradient_steps == 10000
-        assert config.freeze_evolve.evolve_steps == 1000
+        assert config.freeze_evolve.gradient_steps == 500000
+        assert config.freeze_evolve.evolve_steps == 100000
 
     def test_training_mode_configurable(self):
         """Test training_mode can be set on Config."""
