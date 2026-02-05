@@ -7,6 +7,7 @@ preservation, and edge cases.
 
 import os
 import pickle
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -90,9 +91,6 @@ def _make_full_state_dict() -> dict:
         },
     }
 
-
-# Needed for type hint above
-from typing import Any
 
 
 # ===========================================================================

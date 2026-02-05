@@ -94,6 +94,7 @@ class TestComputeOInformation:
         assert isinstance(o_info, float)
         assert np.isfinite(o_info)
 
+    @pytest.mark.skipif(not _hoi_available, reason="hoi not installed")
     def test_too_few_agents(self) -> None:
         """Test that fewer than 3 agents returns 0.0."""
         rng = np.random.default_rng(42)
@@ -108,6 +109,7 @@ class TestComputeOInformation:
         o_info = compute_o_information(features)
         assert o_info == 0.0
 
+    @pytest.mark.skipif(not _hoi_available, reason="hoi not installed")
     def test_too_few_samples(self) -> None:
         """Test that fewer than 10 samples returns 0.0."""
         rng = np.random.default_rng(42)
@@ -116,6 +118,7 @@ class TestComputeOInformation:
         o_info = compute_o_information(features)
         assert o_info == 0.0
 
+    @pytest.mark.skipif(not _hoi_available, reason="hoi not installed")
     def test_constant_features(self) -> None:
         """Test that constant features return 0.0."""
         features = np.ones((100, 4))
@@ -123,6 +126,7 @@ class TestComputeOInformation:
         o_info = compute_o_information(features)
         assert o_info == 0.0
 
+    @pytest.mark.skipif(not _hoi_available, reason="hoi not installed")
     def test_nan_inputs(self) -> None:
         """Test that NaN inputs return 0.0."""
         rng = np.random.default_rng(42)
@@ -132,6 +136,7 @@ class TestComputeOInformation:
         o_info = compute_o_information(features)
         assert o_info == 0.0
 
+    @pytest.mark.skipif(not _hoi_available, reason="hoi not installed")
     def test_1d_input(self) -> None:
         """Test that 1D input (single agent) returns 0.0."""
         rng = np.random.default_rng(42)
@@ -376,6 +381,7 @@ class TestOInformationTracker:
         expected_ratio = sum(1 for v in o_info_values if v < 0) / len(o_info_values)
         assert abs(summary["synergy_dominant_fraction"] - expected_ratio) < 1e-10
 
+    @pytest.mark.skipif(not _hoi_available, reason="hoi not installed")
     def test_handles_edge_case_features(self) -> None:
         """Test that tracker handles edge case features gracefully."""
         tracker = OInformationTracker()
