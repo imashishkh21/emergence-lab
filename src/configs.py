@@ -80,7 +80,7 @@ class NestConfig:
     radius: int = 2
     """Half-width of nest area. radius=2 gives a 5x5 nest."""
     food_sip_fraction: float = 0.05
-    """Fraction of food_energy given immediately on pickup (scout sip)."""
+    """Deprecated: no longer used. Crop refuel fills energy to max on pickup."""
     food_delivery_fraction: float = 0.95
     """Fraction of food_energy given on nest delivery."""
     pickup_reward_fraction: float = 0.1

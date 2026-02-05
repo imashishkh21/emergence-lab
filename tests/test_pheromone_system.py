@@ -97,16 +97,16 @@ class TestFoodCarrying:
         new_state, _, _, _ = step(state, actions, config)
         assert new_state.has_food[0], "Agent should have food after pickup"
 
-    def test_scout_sip_gives_5_percent_energy(self):
+    def test_crop_refuel_fills_energy_to_max(self):
         config = _make_config()
         state = self._place_agent_near_food(config)
-        initial_energy = float(state.agent_energy[0])
 
         actions = jnp.zeros(config.evolution.max_agents, dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
-        expected_sip = config.evolution.food_energy * config.nest.food_sip_fraction
-        expected_energy = initial_energy + expected_sip
+        # Crop refuel: energy fills to max_energy on pickup
+        # energy_per_step=0 in test config, so no drain
+        expected_energy = config.evolution.max_energy
         assert jnp.isclose(new_state.agent_energy[0], expected_energy, atol=0.1), (
             f"Expected {expected_energy}, got {float(new_state.agent_energy[0])}"
         )
@@ -120,7 +120,7 @@ class TestFoodCarrying:
 
         actions = jnp.zeros(config.evolution.max_agents, dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
-        # Energy should not increase (no sip)
+        # Energy should not increase (no refuel — already carrying)
         assert jnp.isclose(new_state.agent_energy[0], initial_energy, atol=0.1)
 
     def test_laden_cooldown_toggles(self):
@@ -608,9 +608,9 @@ class TestPheromoneIntegration:
         # Agent at (10,14), food at (10,15) is chebyshev dist 1 -> picked up
         assert int(state.agent_positions[0][1]) == nest_center + 4
         assert state.has_food[0], "Food should be picked up (adjacent on step 4)"
-        sip_energy = 110.0 + 50.0 * 0.05  # 112.5
-        assert jnp.isclose(state.agent_energy[0], sip_energy, atol=0.5), (
-            f"Sip energy: expected ~{sip_energy}, got {float(state.agent_energy[0])}"
+        # Crop refuel: energy fills to max_energy (300) on pickup
+        assert jnp.isclose(state.agent_energy[0], 300.0, atol=0.5), (
+            f"Crop refuel: expected ~300.0, got {float(state.agent_energy[0])}"
         )
         assert state.laden_cooldown[0], "Cooldown should be True after pickup toggle"
 

@@ -233,12 +233,11 @@ def step(
     pickup_mask = (food_per_agent > 0) & state.agent_alive & ~state.has_food
     has_food = jnp.where(pickup_mask, True, state.has_food)
 
-    # Scout sip: 5% of food_energy on pickup (instead of full energy)
-    sip_fraction = config.nest.food_sip_fraction  # 0.05
-    sip_energy = food_per_agent * food_energy_val * sip_fraction
+    # Crop refuel: fill energy to max on food pickup (biological: ant fills
+    # personal stomach at food source to fuel the return trip)
     energy_after_food = jnp.where(
-        state.agent_alive,
-        jnp.minimum(state.agent_energy + sip_energy, max_energy_val),
+        pickup_mask,
+        max_energy_val,
         state.agent_energy,
     )
 
@@ -461,10 +460,13 @@ def step(
     field_state = write_local(field_state, new_positions, recruit_values, cap=config.field.field_value_cap)
 
     # --- 8. Energy drain ---
-    # Subtract energy_per_step from alive agents (after food energy), clamp to 0
+    # Subtract energy_per_step from alive agents, but write steps are free
+    # (biological: pheromone deposit is chemically cheap, no locomotion cost)
+    is_write_step = write_phase  # laden agents in write phase don't move
+    energy_cost = jnp.where(is_write_step, 0.0, config.evolution.energy_per_step)
     energy_drain = jnp.where(
         state.agent_alive,
-        jnp.maximum(energy_after_food - config.evolution.energy_per_step, 0.0),
+        jnp.maximum(energy_after_food - energy_cost, 0.0),
         energy_after_food,
     )
     new_energy = energy_drain

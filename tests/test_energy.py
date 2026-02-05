@@ -342,9 +342,9 @@ class TestFoodEnergy:
         actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)  # stay
         new_state, rewards, _, _ = step(state, actions, config)
 
-        # Agent gets scout sip (5% of food_energy) minus energy_per_step drain
-        # 100 + 50*0.05 - 1 = 101.5
-        assert jnp.isclose(new_state.agent_energy[0], 101.5)
+        # Crop refuel: energy fills to max_energy (200) on pickup, minus drain
+        # 200 - 1 = 199.0
+        assert jnp.isclose(new_state.agent_energy[0], 199.0)
         # Reward is pickup_reward_fraction (10%) of food_energy
         assert jnp.isclose(rewards[0], 5.0)
 
@@ -368,8 +368,9 @@ class TestFoodEnergy:
         actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
         new_state, rewards, _, _ = step(state, actions, config)
 
-        # Energy: 180 + 50*0.05 = 182.5 (below cap), then drain: 182.5 - 1 = 181.5
-        assert jnp.isclose(new_state.agent_energy[0], 181.5)
+        # Crop refuel: energy fills to max_energy (200) on pickup, minus drain
+        # 200 - 1 = 199.0
+        assert jnp.isclose(new_state.agent_energy[0], 199.0)
         # Reward is pickup_reward_fraction (10%) of food_energy
         assert jnp.isclose(rewards[0], 5.0)
 
@@ -393,8 +394,8 @@ class TestFoodEnergy:
         actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
         new_state, rewards, _, _ = step(state, actions, config)
 
-        # Agent 0 gets scout sip: 100 + 50*0.05 - 1 = 101.5
-        assert jnp.isclose(new_state.agent_energy[0], 101.5)
+        # Agent 0 crop refuel: energy fills to max_energy (200), minus drain = 199
+        assert jnp.isclose(new_state.agent_energy[0], 199.0)
         # Agent 1 does NOT get food energy: 100 - 1 = 99
         assert jnp.isclose(new_state.agent_energy[1], 99.0)
         # Rewards are individual (pickup_reward_fraction = 10%)
@@ -448,8 +449,8 @@ class TestFoodEnergy:
         actions = jnp.zeros((config.env.num_agents,), dtype=jnp.int32)
         new_state, rewards, _, info = step(state, actions, config)
 
-        # Agent gets scout sip: 100 + 30*2*0.05 - 1 = 102.0
-        assert jnp.isclose(new_state.agent_energy[0], 102.0)
+        # Crop refuel: energy fills to max_energy (200), minus drain = 199
+        assert jnp.isclose(new_state.agent_energy[0], 199.0)
         # Reward: 2 food * 30 * 0.1 = 6.0
         assert jnp.isclose(rewards[0], 6.0)
         assert info["food_collected_this_step"] == 2
@@ -523,7 +524,7 @@ class TestFoodEnergy:
 
         new_state, rewards, _, _ = jit_step(state, actions)
 
-        # Scout sip: 100 + 50*0.05 - 1 = 101.5
-        assert jnp.isclose(new_state.agent_energy[0], 101.5)
+        # Crop refuel: energy fills to max_energy (200), minus drain = 199
+        assert jnp.isclose(new_state.agent_energy[0], 199.0)
         # Pickup reward: 50 * 0.1 = 5.0
         assert jnp.isclose(rewards[0], 5.0)
