@@ -76,6 +76,12 @@ class FieldConfig:
     diffusion_rate: float = 0.1
     decay_rate: float = 0.05
     write_strength: float = 1.0
+    write_mode: Literal["presence", "state_dependent"] = "presence"
+    """How agents write to the field:
+    - "presence": Fixed write_strength to all channels (default, original behavior).
+    - "state_dependent": Each channel encodes different agent state:
+      ch0=normalized_energy, ch1=just_ate_food, ch2=found_hidden_food,
+      ch3=ready_to_reproduce. Requires num_channels=4."""
 
 
 @dataclass

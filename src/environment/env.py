@@ -362,11 +362,23 @@ def step(
         decay_rate=config.field.decay_rate,
     )
 
-    # Only alive agents write their presence to the field
-    write_values = jnp.ones(
-        (max_agents, config.field.num_channels),
-        dtype=jnp.float32,
-    ) * config.field.write_strength
+    # Agents write to the field based on write_mode
+    if config.field.write_mode == "state_dependent":
+        # Each channel encodes different agent state (like ant pheromones)
+        max_energy_val = jnp.float32(config.evolution.max_energy)
+        reproduce_thresh = jnp.float32(config.evolution.reproduce_threshold)
+        ch0 = energy_after_food / max_energy_val                            # normalized energy (0-1)
+        ch1 = (energy_gained > 0).astype(jnp.float32)                      # just ate regular food
+        ch2 = (hidden_food_energy_gained > 0).astype(jnp.float32)          # found hidden food
+        ch3 = (energy_after_food >= reproduce_thresh).astype(jnp.float32)  # ready to reproduce
+        write_values = jnp.stack([ch0, ch1, ch2, ch3], axis=-1)            # (max_agents, 4)
+        write_values = write_values * config.field.write_strength
+    else:
+        # Default: fixed presence write to all channels
+        write_values = jnp.ones(
+            (max_agents, config.field.num_channels),
+            dtype=jnp.float32,
+        ) * config.field.write_strength
     # Zero out write values for dead agents
     write_values = write_values * state.agent_alive[:, None]
     field_state = write_local(field_state, new_positions, write_values)

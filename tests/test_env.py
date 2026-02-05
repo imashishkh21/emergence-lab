@@ -650,3 +650,95 @@ class TestFoodRespawn:
 
         assert new_state.food_positions.shape == (5, 2)
         assert new_state.food_collected.shape == (5,)
+
+
+class TestStateDependentFieldWrites:
+    """Tests for state-dependent field write mode."""
+
+    def test_state_dependent_field_values_differ_from_presence(self):
+        """State-dependent writes should produce different field values than presence mode."""
+        from src.configs import Config
+        from src.environment.env import reset, step
+
+        # Run one step with presence mode
+        config_p = Config()
+        config_p.env.grid_size = 10
+        config_p.env.num_agents = 4
+        config_p.env.num_food = 5
+        config_p.evolution.max_agents = 8
+        config_p.field.write_mode = "presence"
+        key = jax.random.PRNGKey(42)
+        state_p = reset(key, config_p)
+        actions = jnp.zeros((8,), dtype=jnp.int32)
+        new_p, _, _, _ = step(state_p, actions, config_p)
+
+        # Run one step with state_dependent mode (same seed, same actions)
+        config_s = Config()
+        config_s.env.grid_size = 10
+        config_s.env.num_agents = 4
+        config_s.env.num_food = 5
+        config_s.evolution.max_agents = 8
+        config_s.field.write_mode = "state_dependent"
+        state_s = reset(key, config_s)
+        new_s, _, _, _ = step(state_s, actions, config_s)
+
+        # Field values should differ between modes
+        field_p = new_p.field_state.values
+        field_s = new_s.field_state.values
+        assert not jnp.allclose(field_p, field_s), \
+            "State-dependent writes should produce different field values than presence mode"
+
+    def test_state_dependent_produces_varied_channel_values(self):
+        """State-dependent mode should write different values to different channels."""
+        from src.configs import Config
+        from src.environment.env import reset, step
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 4
+        config.env.num_food = 10
+        config.evolution.max_agents = 8
+        config.field.write_mode = "state_dependent"
+        key = jax.random.PRNGKey(99)
+        state = reset(key, config)
+
+        # Run several steps so agents collect food and energy changes
+        actions = jnp.zeros((8,), dtype=jnp.int32)
+        for _ in range(5):
+            state, _, _, _ = step(state, actions, config)
+
+        # Check that field has 4 channels
+        assert state.field_state.values.shape[2] == 4
+
+        # Channel 0 (energy) should have non-binary values (not just 0 and 1)
+        ch0_vals = state.field_state.values[:, :, 0]
+        nonzero_ch0 = ch0_vals[ch0_vals > 0]
+        if len(nonzero_ch0) > 0:
+            # Energy channel should have fractional values (0 < val < 1)
+            assert jnp.any(nonzero_ch0 < 0.99), \
+                "Channel 0 (energy) should have fractional values, not just 1.0"
+
+    def test_presence_mode_unchanged(self):
+        """Default presence mode should still write uniform values."""
+        from src.configs import Config
+        from src.environment.env import reset, step
+
+        config = Config()
+        config.env.grid_size = 10
+        config.env.num_agents = 4
+        config.env.num_food = 5
+        config.evolution.max_agents = 8
+        # Default write_mode is "presence"
+        assert config.field.write_mode == "presence"
+
+        key = jax.random.PRNGKey(42)
+        state = reset(key, config)
+        actions = jnp.zeros((8,), dtype=jnp.int32)
+        new_state, _, _, _ = step(state, actions, config)
+
+        # In presence mode, all non-zero field values at agent positions
+        # should be equal across channels (uniform write)
+        field_vals = new_state.field_state.values
+        for c in range(config.field.num_channels - 1):
+            assert jnp.allclose(field_vals[:, :, c], field_vals[:, :, c + 1]), \
+                f"Presence mode should write equal values to all channels"
