@@ -54,6 +54,9 @@ results/
 .coverage
 htmlcov/
 
+# Training data (large, not public yet)
+data/
+
 # Ralph
 progress.txt
 archive/
