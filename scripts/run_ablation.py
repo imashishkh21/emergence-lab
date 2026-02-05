@@ -139,7 +139,7 @@ def main() -> None:
 
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=6,
+        num_actions=config.agent.num_actions,
     )
 
     # Verify params with dummy forward pass

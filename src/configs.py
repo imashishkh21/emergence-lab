@@ -70,24 +70,57 @@ class EnvConfig:
 
 
 @dataclass
+class NestConfig:
+    """Nest mechanics for pheromone-based foraging.
+
+    Agents carry food back to a central nest for delivery. Reproduction
+    only happens inside the nest area. The compass provides noisy path
+    integration back to the nest.
+    """
+    radius: int = 2
+    """Half-width of nest area. radius=2 gives a 5x5 nest."""
+    food_sip_fraction: float = 0.05
+    """Fraction of food_energy given immediately on pickup (scout sip)."""
+    food_delivery_fraction: float = 0.95
+    """Fraction of food_energy given on nest delivery."""
+    pickup_reward_fraction: float = 0.1
+    """PPO reward fraction on food pickup (split signal)."""
+    delivery_reward_fraction: float = 0.9
+    """PPO reward fraction on nest delivery (split signal)."""
+    compass_noise_rate: float = 0.10
+    """Path integration error rate. Noise std = rate * distance / grid_size."""
+
+
+@dataclass
 class FieldConfig:
     """Shared field configuration."""
     num_channels: int = 4
     diffusion_rate: float = 0.1
     decay_rate: float = 0.05
-    write_strength: float = 1.0
-    write_mode: Literal["presence", "state_dependent"] = "presence"
-    """How agents write to the field:
-    - "presence": Fixed write_strength to all channels (default, original behavior).
-    - "state_dependent": Each channel encodes different agent state:
-      ch0=normalized_energy, ch1=just_ate_food, ch2=found_hidden_food,
-      ch3=ready_to_reproduce. Requires num_channels=4."""
+    field_obs_radius: int | None = None
+    """Radius of the local field patch agents observe. When None, defaults to
+    env.observation_radius (backward compatible). Set to a smaller value (e.g., 2)
+    to reduce the field observation dimension while keeping food observation range
+    unchanged. radius=2 gives 5x5x4=100 field dims instead of 11x11x4=484."""
+    channel_diffusion_rates: tuple[float, ...] | None = None
+    """Per-channel diffusion rates. When set, overrides diffusion_rate with
+    per-channel values. Length must equal num_channels.
+    Example: (0.5, 0.01, 0.0, 0.0) for recruitment/territory/reserved/reserved."""
+    channel_decay_rates: tuple[float, ...] | None = None
+    """Per-channel decay rates. When set, overrides decay_rate with per-channel
+    values. Length must equal num_channels.
+    Example: (0.05, 0.0001, 0.0, 0.0) for fast recruitment decay, near-permanent territory."""
+    field_value_cap: float = 1.0
+    """Maximum field value per cell per channel. Values are clipped after writes."""
+    territory_write_strength: float = 0.01
+    """Passive territory channel (ch1) write strength per step per agent."""
 
 
 @dataclass
 class AgentConfig:
     """Agent neural network configuration."""
     hidden_dims: tuple[int, ...] = (64, 64)
+    num_actions: int = 5  # 0=stay,1=up,2=down,3=left,4=right
     activation: Literal["relu", "tanh", "gelu"] = "tanh"
     layer_norm: bool = True
     agent_architecture: Literal["shared", "agent_heads"] = "shared"
@@ -224,6 +257,7 @@ class Config:
     specialization: SpecializationConfig = dataclass_field(default_factory=SpecializationConfig)
     freeze_evolve: FreezeEvolveConfig = dataclass_field(default_factory=FreezeEvolveConfig)
     archive: ArchiveConfig = dataclass_field(default_factory=ArchiveConfig)
+    nest: NestConfig = dataclass_field(default_factory=NestConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -235,9 +269,15 @@ class Config:
         if "hidden_dims" in agent_data:
             agent_data["hidden_dims"] = tuple(agent_data["hidden_dims"])
 
+        field_data = data.get("field", {})
+        if "channel_diffusion_rates" in field_data and field_data["channel_diffusion_rates"] is not None:
+            field_data["channel_diffusion_rates"] = tuple(field_data["channel_diffusion_rates"])
+        if "channel_decay_rates" in field_data and field_data["channel_decay_rates"] is not None:
+            field_data["channel_decay_rates"] = tuple(field_data["channel_decay_rates"])
+
         return cls(
             env=EnvConfig(**data.get("env", {})),
-            field=FieldConfig(**data.get("field", {})),
+            field=FieldConfig(**field_data),
             agent=AgentConfig(**agent_data),
             train=TrainConfig(**data.get("train", {})),
             log=LogConfig(**data.get("log", {})),
@@ -246,19 +286,26 @@ class Config:
             specialization=SpecializationConfig(**data.get("specialization", {})),
             freeze_evolve=FreezeEvolveConfig(**data.get("freeze_evolve", {})),
             archive=ArchiveConfig(**data.get("archive", {})),
+            nest=NestConfig(**data.get("nest", {})),
         )
 
     def to_yaml(self, path: str) -> None:
         """Save config to YAML file."""
         import dataclasses
 
-        def to_dict(obj: object) -> object:
-            if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-                return {k: to_dict(v) for k, v in dataclasses.asdict(obj).items()}
+        def _make_yaml_safe(obj: object) -> object:
+            """Recursively convert to YAML-safe types."""
+            if isinstance(obj, dict):
+                return {k: _make_yaml_safe(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_make_yaml_safe(v) for v in obj]
+            if isinstance(obj, Enum):
+                return obj.value
             return obj
 
+        raw = dataclasses.asdict(self)
         with open(path, 'w') as f:
-            yaml.dump(to_dict(self), f, default_flow_style=False)
+            yaml.dump(_make_yaml_safe(raw), f, default_flow_style=False)
 
 
 if __name__ == "__main__":

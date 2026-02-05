@@ -134,7 +134,7 @@ def create_ours_network(config: Config) -> ActorCritic:
     """
     return ActorCritic(
         hidden_dims=config.agent.hidden_dims,
-        num_actions=6,
+        num_actions=config.agent.num_actions,
         agent_embed_dim=config.agent.agent_embed_dim,
         n_agents=config.evolution.max_agents,
     )

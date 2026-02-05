@@ -5,20 +5,23 @@ import jax.numpy as jnp
 from src.field.field import FieldState
 
 
-def write_local(field: FieldState, positions: jnp.ndarray, values: jnp.ndarray) -> FieldState:
+def write_local(field: FieldState, positions: jnp.ndarray, values: jnp.ndarray, cap: float = 1.0) -> FieldState:
     """Write values to the field at agent positions.
 
-    Adds the given values at each agent's (row, col) position.
+    Adds the given values at each agent's (row, col) position and clips
+    the result to [0, cap].
 
     Args:
         field: Current field state.
         positions: Agent positions with shape (N, 2) as (row, col) integers.
         values: Values to write with shape (N, C) where C = num_channels.
+        cap: Maximum field value per cell per channel.
 
     Returns:
-        New FieldState with values added at agent positions.
+        New FieldState with values added at agent positions, clipped to [0, cap].
     """
     new_values = field.values.at[positions[:, 0], positions[:, 1]].add(values)
+    new_values = jnp.clip(new_values, 0.0, cap)
     return FieldState(values=new_values)
 
 

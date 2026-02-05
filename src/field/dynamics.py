@@ -5,15 +5,16 @@ import jax.numpy as jnp
 from src.field.field import FieldState
 
 
-def diffuse(field: FieldState, rate: float) -> FieldState:
+def diffuse(field: FieldState, rate: float | jnp.ndarray) -> FieldState:
     """Apply diffusion to the field using a 3x3 Gaussian-like blur.
 
     Blends the original field with a blurred version controlled by rate.
     rate=0 means no diffusion, rate=1 means full blur.
+    Accepts a scalar or per-channel array of shape (C,).
 
     Args:
         field: Current field state.
-        rate: Diffusion rate in [0, 1].
+        rate: Diffusion rate in [0, 1]. Scalar or (C,) array.
 
     Returns:
         New FieldState with diffused values.
@@ -43,12 +44,12 @@ def diffuse(field: FieldState, rate: float) -> FieldState:
     return FieldState(values=new_values)
 
 
-def decay(field: FieldState, rate: float) -> FieldState:
+def decay(field: FieldState, rate: float | jnp.ndarray) -> FieldState:
     """Apply exponential decay to field values.
 
     Args:
         field: Current field state.
-        rate: Decay rate in [0, 1]. Values are multiplied by (1 - rate).
+        rate: Decay rate in [0, 1]. Scalar or (C,) array.
 
     Returns:
         New FieldState with decayed values.
@@ -57,13 +58,13 @@ def decay(field: FieldState, rate: float) -> FieldState:
     return FieldState(values=new_values)
 
 
-def step_field(field: FieldState, diffusion_rate: float, decay_rate: float) -> FieldState:
+def step_field(field: FieldState, diffusion_rate: float | jnp.ndarray, decay_rate: float | jnp.ndarray) -> FieldState:
     """Apply one timestep of field dynamics: diffusion then decay.
 
     Args:
         field: Current field state.
-        diffusion_rate: Rate for diffusion blur.
-        decay_rate: Rate for value decay.
+        diffusion_rate: Rate for diffusion blur. Scalar or (C,) array.
+        decay_rate: Rate for value decay. Scalar or (C,) array.
 
     Returns:
         New FieldState after dynamics step.

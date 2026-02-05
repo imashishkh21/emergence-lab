@@ -212,7 +212,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(64, 64), num_actions=6, n_agents=n_agents
+            hidden_dims=(64, 64), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -225,7 +225,7 @@ class TestAgentSpecificHeads:
         # Forward pass with agent_id
         logits, value = network.apply(params, dummy_obs, agent_id)
 
-        assert logits.shape == (6,), f"Expected (6,), got {logits.shape}"
+        assert logits.shape == (5,), f"Expected (6,), got {logits.shape}"
         assert value.shape == (), f"Expected scalar, got {value.shape}"
 
     def test_different_agents_different_outputs(self):
@@ -234,7 +234,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -265,7 +265,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -296,7 +296,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -320,7 +320,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -346,7 +346,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 8
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -361,7 +361,7 @@ class TestAgentSpecificHeads:
         obs = jax.random.normal(key, (obs_dim,))
         for i in range(n_agents):
             logits, value = forward(obs, jnp.int32(i))
-            assert logits.shape == (6,)
+            assert logits.shape == (5,)
             assert value.shape == ()
 
     def test_vmap_over_agents(self):
@@ -370,7 +370,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -389,7 +389,7 @@ class TestAgentSpecificHeads:
         )
         logits, values = batched_apply(batch_obs, agent_ids)
 
-        assert logits.shape == (n_agents, 6)
+        assert logits.shape == (n_agents, 5)
         assert values.shape == (n_agents,)
 
     def test_gradients_flow_through_correct_head(self):
@@ -398,7 +398,7 @@ class TestAgentSpecificHeads:
 
         n_agents = 4
         network = AgentSpecificActorCritic(
-            hidden_dims=(32, 32), num_actions=6, n_agents=n_agents
+            hidden_dims=(32, 32), num_actions=5, n_agents=n_agents
         )
 
         key = jax.random.PRNGKey(42)
@@ -477,7 +477,7 @@ class TestAgentSpecificHeads:
 
         for hidden_dims in configs:
             network = AgentSpecificActorCritic(
-                hidden_dims=hidden_dims, num_actions=6, n_agents=n_agents
+                hidden_dims=hidden_dims, num_actions=5, n_agents=n_agents
             )
             params = network.init(key, jnp.zeros((obs_dim,)), jnp.int32(0))
 
@@ -485,7 +485,7 @@ class TestAgentSpecificHeads:
                 logits, value = network.apply(
                     params, jnp.zeros((obs_dim,)), jnp.int32(agent_id)
                 )
-                assert logits.shape == (6,)
+                assert logits.shape == (5,)
                 assert value.shape == ()
 
 
@@ -500,7 +500,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = ActorCritic(
             hidden_dims=(64, 64),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=embed_dim,
             n_agents=n_agents,
         )
@@ -513,7 +513,7 @@ class TestAgentEmbedding:
         params = network.init(key, dummy_obs, agent_id)
         logits, value = network.apply(params, dummy_obs, agent_id)
 
-        assert logits.shape == (6,)
+        assert logits.shape == (5,)
         assert value.shape == ()
 
     def test_embedding_creates_param(self):
@@ -524,7 +524,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = ActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=embed_dim,
             n_agents=n_agents,
         )
@@ -546,7 +546,7 @@ class TestAgentEmbedding:
         from src.agents.network import ActorCritic
 
         network = ActorCritic(
-            hidden_dims=(32, 32), num_actions=6, agent_embed_dim=0
+            hidden_dims=(32, 32), num_actions=5, agent_embed_dim=0
         )
 
         key = jax.random.PRNGKey(42)
@@ -566,7 +566,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = ActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=embed_dim,
             n_agents=n_agents,
         )
@@ -597,7 +597,7 @@ class TestAgentEmbedding:
 
         network = ActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=0,
         )
 
@@ -609,7 +609,7 @@ class TestAgentEmbedding:
 
         # Call without agent_id — should work fine
         logits, value = network.apply(params, dummy_obs)
-        assert logits.shape == (6,)
+        assert logits.shape == (5,)
         assert value.shape == ()
 
         # Also works with agent_id=None explicitly
@@ -624,7 +624,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = AgentSpecificActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             n_agents=n_agents,
             agent_embed_dim=embed_dim,
         )
@@ -642,7 +642,7 @@ class TestAgentEmbedding:
         # Forward pass for each agent
         for i in range(n_agents):
             logits, value = network.apply(params, dummy_obs, jnp.int32(i))
-            assert logits.shape == (6,)
+            assert logits.shape == (5,)
             assert value.shape == ()
 
     def test_embedding_jit_compatible(self):
@@ -653,7 +653,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = ActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=embed_dim,
             n_agents=n_agents,
         )
@@ -670,7 +670,7 @@ class TestAgentEmbedding:
         obs = jax.random.normal(key, (obs_dim,))
         for i in range(n_agents):
             logits, value = forward(obs, jnp.int32(i))
-            assert logits.shape == (6,)
+            assert logits.shape == (5,)
             assert value.shape == ()
 
     def test_embedding_vmap_over_agents(self):
@@ -681,7 +681,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = ActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=embed_dim,
             n_agents=n_agents,
         )
@@ -699,7 +699,7 @@ class TestAgentEmbedding:
         )
         logits, values = batched_apply(batch_obs, agent_ids)
 
-        assert logits.shape == (n_agents, 6)
+        assert logits.shape == (n_agents, 5)
         assert values.shape == (n_agents,)
 
     def test_embedding_gradients_flow(self):
@@ -710,7 +710,7 @@ class TestAgentEmbedding:
         embed_dim = 8
         network = ActorCritic(
             hidden_dims=(32, 32),
-            num_actions=6,
+            num_actions=5,
             agent_embed_dim=embed_dim,
             n_agents=n_agents,
         )

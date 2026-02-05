@@ -182,7 +182,7 @@ def create_train_state(config: Config, key: jax.Array) -> RunnerState:
 
     # Compute observation dimension and create network
     observation_dim = obs_dim(config)
-    num_actions = 6  # 0-4 movement + 5 reproduce
+    num_actions = config.agent.num_actions
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
@@ -247,7 +247,7 @@ def train_step(
         (new_runner_state, metrics) where metrics is a dict of scalar values.
     """
     vec_env = VecEnv(config)
-    num_actions = 6  # 0-4 movement + 5 reproduce
+    num_actions = config.agent.num_actions
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
@@ -535,7 +535,7 @@ def evolve_step(
         (new_runner_state, metrics) with rollout-level metrics only.
     """
     vec_env = VecEnv(config)
-    num_actions = 6
+    num_actions = config.agent.num_actions
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,

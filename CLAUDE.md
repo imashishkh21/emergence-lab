@@ -15,8 +15,9 @@ This is a research project. Every code change should serve one question: *does t
 | **Phase 3: Specialization Detection** | COMPLETE | Weight divergence tracking, behavioral clustering (K-means + silhouette), species detection, lineage-strategy correlation, specialization ablation (divergent > uniform > random) |
 | **Phase 4/4B: Infrastructure** | COMPLETE | Transfer entropy, division of labor, phase transition detection, dashboard, checkpointing, Kaggle training (9.8M steps) |
 | **Phase 5: Prove Emergence** | COMPLETE | Information-theoretic metrics (O-info, PID, Causal Emergence), baselines (IPPO, ACO, MAPPO), statistical reporting (rliable), publication figures, multi-seed experiments |
+| **Phase 6: Biological Pheromone System** | IN PROGRESS | Redesigned field based on 103 research sources; success-gated writes, gradient sensing, nest mechanics, food carry-back |
 
-**Key empirical finding**: Random field HURTS agents (585 < 600 food) — they learned to READ the field for information. The field is not noise; it carries signal.
+**Key empirical finding**: Random field HURTS agents (585 < 600 food) — they learned to READ the field for information. The field is not noise; it carries signal. This motivated a complete redesign based on ant biology research (see Phase 6).
 
 ## The Science
 
@@ -30,6 +31,11 @@ A shared learnable medium (stigmergy) between simple agents, combined with evolu
 - **Ant colony stigmergy**: pheromone trails encode collective knowledge about food sources
 - **Response threshold model**: individual insects have variable thresholds for responding to stimuli — some become field-readers, others field-writers
 - **NEAT speciation**: genomic distance + fitness sharing drives population diversity
+- **Central-place foraging**: nest → food → nest cycle (all reward comes from delivering food home)
+- **Success-gated pheromone deposition**: only laden ants lay recruitment trail (Ch0) — prevents noise from unladen agents
+- **Tropotaxis**: bilateral gradient sensing for trail following (4-directional field reads per channel)
+- **Path integration with noise**: compass degrades linearly with distance from nest, forcing reliance on pheromone trails far from home
+- **Dual-channel pheromone**: recruitment = volatile (high diffusion, fast decay), territory = persistent (low diffusion, near-permanent)
 
 ### Literature References
 - Mouret & Clune (2015) — MAP-Elites, Quality-Diversity
@@ -60,6 +66,8 @@ python -m src.training.train --train.resume-from checkpoints/params.pkl
 
 # Tests
 pytest tests/ -v                      # All tests (324 tests, ~60s timeout)
+# NOTE: pytest lives in the venv. Use `.venv/bin/pytest` or `source .venv/bin/activate` first.
+# Do NOT use bare `python -m pytest` or `python3 -m pytest` — they won't find the installed packages.
 pytest tests/test_specialization.py -v # Specialization tests (largest: ~2275 lines, 13 classes)
 pytest tests/test_integration.py -v    # End-to-end pipeline tests (needs more RAM)
 
@@ -88,33 +96,43 @@ python scripts/verify_phase5.py
 ### Core Simulation Loop (each timestep)
 
 ```
-1. Field diffuses (3x3 Gaussian, manual shifted sums) + decays     → dynamics.py
-2. Agents observe: position + energy + local field patch + K=5 food → obs.py
-3. ActorCritic → action logits + value estimate                     → network.py, policy.py
-4. Agents move (6 actions: stay/up/down/left/right/reproduce)       → env.py
-5. Agents write presence to field at their location                 → ops.py
-6. Food collected within Chebyshev distance 1 (individual reward)   → env.py
-7. Energy drains; agents at 0 energy die                            → env.py
-8. Agents above threshold reproduce; child gets mutated weights     → env.py, reproduction.py
+1. Field diffuses (per-channel rates) + decays (per-channel rates)                    → dynamics.py
+2. Agents observe: pos + energy + has_food + nest compass + field gradients            → obs.py
+   (4-dir per channel) + temporal derivative + K=5 food = 45 dims
+3. ActorCritic → action logits + value estimate                                       → network.py, policy.py
+4. Agents move (5 actions: stay/up/down/left/right).                                  → env.py
+   Laden agents alternate move/write (skip movement on write steps)
+5. Food pickup: adjacent uncollected food → has_food=True, 5% scout sip energy        → env.py
+6. Nest delivery: agent with has_food in nest area → has_food=False,                  → env.py
+   95% food_energy as reward
+7. Field writes: Ch0 recruitment written ONLY by laden agents on write steps.          → ops.py
+   Ch1 territory written passively by ALL agents (+territory_write_strength).
+   Cap to [0, field_value_cap]
+8. Energy drains; agents at 0 energy die (has_food cleared on death)                  → env.py
+9. Reproduction: automatic at nest when energy > threshold (no action needed)          → env.py, reproduction.py
 ```
+
+*Legacy note: The pre-Phase 6 loop used 6 actions (including explicit reproduce), 502-dim observations with a raw 11x11 field patch, and unconditional field writes by all agents. That system is superseded by the biological pheromone design above.*
 
 ### Module Map
 
 ```
 src/
-├── configs.py                  # 8 nested dataclasses: Config > Env/Field/Agent/Train/Log/Analysis/Evolution/Specialization
+├── configs.py                  # 9 nested dataclasses: Config > Env/Field/Agent/Train/Log/Analysis/Evolution/Specialization/Nest
 ├── environment/
-│   ├── state.py                # EnvState (flax.struct.dataclass): positions, food, field, energy, alive, lineage, agent_params
-│   ├── env.py                  # reset() + step() — 10-stage pipeline including reproduction via lax.scan
-│   ├── obs.py                  # get_observations() → (max_agents, 502) = 3 + 484 + 15
+│   ├── state.py                # EnvState (flax.struct.dataclass): positions, food, field, energy, alive, lineage, agent_params,
+│   │                           #   has_food, prev_field_at_pos, laden_cooldown
+│   ├── env.py                  # reset() + step() — 10-stage pipeline: movement, food pickup, nest delivery,
+│   │                           #   field writes (success-gated), energy drain, death, auto-reproduction at nest
+│   ├── obs.py                  # get_observations() → (max_agents, 45) = 2+1+1+2+20+4+15
 │   ├── vec_env.py              # VecEnv: jax.vmap over num_envs
 │   └── render.py               # RGB frame rendering (heatmap + agents + food)
 ├── field/
 │   ├── field.py                # FieldState: values (H, W, C) float32
-│   ├── dynamics.py             # diffuse() via shifted sums + decay()
-│   └── ops.py                  # read_local() + write_local() at agent positions
+│   ├── dynamics.py             # per-channel diffuse() + per-channel decay() via array broadcasting
+│   └── ops.py                  # read_local() + write_local() at agent positions, field value capping
 ├── agents/
-│   ├── network.py              # ActorCritic: shared MLP (LayerNorm + tanh) → 6-action actor + scalar critic
+│   ├── network.py              # ActorCritic: shared MLP (LayerNorm + tanh) → 5-action actor + scalar critic
 │   ├── policy.py               # sample_actions() vmapped over (num_envs, num_agents)
 │   └── reproduction.py         # mutate_params(), copy_agent_params(), per-layer mutation rates
 ├── training/
@@ -169,6 +187,10 @@ agent_parent_ids: (max_agents,) int32        # -1 if original
 next_agent_id: scalar int32
 agent_birth_step: (max_agents,) int32
 agent_params: pytree with (max_agents, ...) leaves  # per-agent network weights
+# Phase 6 (Biological Pheromone System) additions:
+has_food: (max_agents,) bool                 # carrying food back to nest
+prev_field_at_pos: (max_agents, num_channels) float32  # for temporal derivative in obs
+laden_cooldown: (max_agents,) bool           # move/write alternation for laden agents
 ```
 
 **`RunnerState`** (flax.struct.dataclass):
@@ -185,14 +207,16 @@ key: PRNG key
 | Context | Shape | Example |
 |---------|-------|---------|
 | Single env, per-agent | `(max_agents, ...)` | positions `(32, 2)` |
-| Batched across envs | `(num_envs, max_agents, ...)` | obs `(32, 32, 502)` |
+| Batched across envs | `(num_envs, max_agents, ...)` | obs `(32, 32, 45)` |
 | Rollout batch | `(num_steps, num_envs, max_agents, ...)` | rewards `(128, 32, 32)` |
-| Flattened for PPO | `(T * E * A, ...)` | `(131072, 502)` |
-| Minibatch | `(minibatch_size, ...)` | `(256, 502)` |
+| Flattened for PPO | `(T * E * A, ...)` | `(131072, 45)` |
+| Minibatch | `(minibatch_size, ...)` | `(256, 45)` |
 | Field | `(H, W, C)` | `(20, 20, 4)` |
-| Observation | `(max_agents, obs_dim)` | `(32, 502)` where 502 = 3 + 484 + 15 |
+| Observation | `(max_agents, obs_dim)` | `(32, 45)` where 45 = 2+1+1+2+20+4+15 |
 
-obs_dim breakdown: 3 (normalized x,y position + normalized energy) + (2*5+1)^2 * 4 (local field patch) + 5*3 (K=5 nearest food: rel_x, rel_y, available)
+obs_dim breakdown: 2 (normalized x,y position) + 1 (normalized energy) + 1 (has_food flag) + 2 (nest compass with distance-dependent noise) + 20 (field spatial: center+N+S+E+W per 4 channels) + 4 (field temporal: dC/dt per channel) + 15 (K=5 nearest food: rel_x, rel_y, available)
+
+*Legacy note: Pre-Phase 6 obs_dim was 502 = 3 (pos+energy) + 484 (11x11 field patch x 4ch) + 15 (food).*
 
 ## JAX Patterns (CRITICAL)
 
@@ -242,28 +266,38 @@ These patterns are non-negotiable. Violating them causes silent JIT failures or 
 
 ## What Needs to Happen Next
 
+### Phase 6 Immediate Priorities
+
+1. **Complete pheromone system implementation**: Steps 7-12 of the build plan (food carrying, nest delivery, nest reproduction, success-gated field writes, new observations, integration test). See `docs/plans/2026-02-05-biological-pheromone-system.md` for full spec.
+
+2. **Hyperparameter sweep**: 69-run sweep notebook is ready. Covers diffusion/decay rates, nest radius, food sip fraction, compass noise, territory write strength. Goal: find the config where field ON beats field OFF.
+
+3. **Full 10M step experiment**: Take the best config from the sweep and run a proper long training. This is where trail formation and foraging loops should emerge.
+
+4. **Pheromone system vs field-off baseline**: The moment of truth. If the biological pheromone system reverses the old result (field ON > field OFF), we have proof that the mechanism matters, not just the medium.
+
 ### Evidence Gaps (for the paper / investor demo)
 
-1. **Field ablation at scale**: The Normal > Zeroed > Random result needs to be reproduced at longer training runs (10M+ steps) with statistical significance. OOM issues on MacBook — needs the Mac Mini.
-
-2. **Visual "holy shit" moment**: Current rendering is basic (heatmap + dots). We need:
-   - Timelapse of field structure forming during training (the "aha" frame)
-   - Side-by-side: field vs no-field agent behavior
+1. **Visual "holy shit" moment**: Current rendering is basic (heatmap + dots). We need:
+   - Timelapse of recruitment trails forming during a foraging episode
+   - Side-by-side: pheromone system vs no-field agent behavior
    - Species visualization: color agents by cluster, show different movement patterns
-   - Field channel specialization visualization (each channel separately)
+   - Channel-separated visualization (recruitment trails vs territory map)
 
-3. **Stronger specialization signal**: Current specialization score may be low with default parameters. Need experiments with `diversity_bonus` and `niche_pressure` tuned to find the sweet spot.
+2. **Stronger specialization signal**: Need experiments with `diversity_bonus` and `niche_pressure` tuned to find the sweet spot under the new pheromone system.
 
-4. **Phase transition documentation**: The `EmergenceTracker` and `SpecializationTracker` detect sudden metric changes — we need to capture and visualize these "moments of emergence."
+3. **Phase transition documentation**: The `EmergenceTracker` and `SpecializationTracker` detect sudden metric changes — we need to capture and visualize these "moments of emergence."
 
-5. **Scaling experiments**: Does emergence get STRONGER with more agents? More field channels? Larger grid? This is the key demo narrative: "look what happens when you scale."
+4. **Scaling experiments**: Does emergence get STRONGER with more agents? More field channels? Larger grid? This is the key demo narrative: "look what happens when you scale."
 
-### Phase 4+ Ideas (from PRD)
+### Future Ideas (Phase 7+)
 
+- Channels 2-3: learned neural network writes (DIAL-style communication)
+- Food quality variation (higher quality = stronger pheromone)
+- Nest congestion mechanics (negative feedback when crowded)
+- Lane formation visualization
 - Multi-species interaction dynamics
 - Competitive/cooperative species relationships
-- Explicit communication between agents (beyond field)
-- Environment modification (nest building)
 - Predator-prey dynamics
 - Sexual reproduction (crossover)
 
@@ -306,9 +340,16 @@ Saved via pickle to `checkpoints/params.pkl` every `save_interval` steps.
 | `env.grid_size` | 20 | Arena size — larger = harder coordination |
 | `env.num_agents` | 8 | Starting population (grows to `max_agents` with evolution) |
 | `env.num_food` | 10 | Resource scarcity — fewer food = more competition |
-| `field.num_channels` | 4 | Field capacity — more channels = richer encoding |
-| `field.diffusion_rate` | 0.1 | How far field info spreads (higher = more global) |
-| `field.decay_rate` | 0.05 | How fast field info fades (higher = more ephemeral) |
+| `field.num_channels` | 4 | Field capacity — 4 channels: recruitment, territory, 2 reserved |
+| `field.channel_diffusion_rates` | (0.5, 0.01, 0.0, 0.0) | Per-channel diffusion — Ch0 spreads wide, Ch1 stays local |
+| `field.channel_decay_rates` | (0.05, 0.0001, 0.0, 0.0) | Per-channel decay — Ch0 fades fast, Ch1 near-permanent |
+| `field.territory_write_strength` | 0.01 | Passive territory deposit per agent per step (Ch1) |
+| `field.field_value_cap` | 1.0 | Maximum field value per cell (clamped after writes) |
+| `field.diffusion_rate` | 0.1 | Legacy fallback — used if channel_diffusion_rates not set |
+| `field.decay_rate` | 0.05 | Legacy fallback — used if channel_decay_rates not set |
+| `nest.radius` | 2 | Nest half-width (radius=2 gives 5x5 nest area) |
+| `nest.food_sip_fraction` | 0.05 | Immediate energy on food pickup (5% scout sip) |
+| `nest.compass_noise_rate` | 0.10 | Path integration error — 10% noise per grid_size distance |
 | `evolution.mutation_std` | 0.01 | Mutation intensity — higher = faster divergence, less stability |
 | `evolution.reproduce_threshold` | 150 | How hard it is to reproduce — higher = more selective |
 | `evolution.max_agents` | 32 | Population cap (also array dimension for JAX) |

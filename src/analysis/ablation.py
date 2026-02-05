@@ -174,10 +174,6 @@ def _run_episode_full(
         actions = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]
 
-        # When evolution is disabled, mask out reproduce actions
-        if not evolution:
-            actions = jnp.where(actions == 5, 0, actions)
-
         # Step environment
         state, rewards, done, info = step(state, actions, config)
 
@@ -202,66 +198,33 @@ def _run_episode_full(
 
 
 def _reset_energy(state: EnvState, config: Config) -> EnvState:
-    """Reset alive agents' energy to starting_energy to prevent death/reproduction.
+    """Reset alive agents' energy to prevent death/reproduction.
 
     This effectively disables evolution by keeping energy at a fixed level
-    that is above 0 (no death) but below reproduce_threshold (no reproduction).
+    that is above 0 (no death) but far below reproduce_threshold (no reproduction).
+    Energy is set to half the reproduce_threshold to ensure even with food
+    collection and nest delivery in a single step, agents cannot reach the threshold.
     """
-    # Set energy to starting_energy for alive agents (below reproduce_threshold)
+    safe_energy = jnp.float32(config.evolution.reproduce_threshold * 0.3)
     fixed_energy = jnp.where(
         state.agent_alive,
-        jnp.float32(config.evolution.starting_energy),
+        safe_energy,
         state.agent_energy,
     )
-    return EnvState(
-        agent_positions=state.agent_positions,
-        food_positions=state.food_positions,
-        food_collected=state.food_collected,
-        field_state=state.field_state,
-        step=state.step,
-        key=state.key,
-        agent_energy=fixed_energy,
-        agent_alive=state.agent_alive,
-        agent_ids=state.agent_ids,
-        agent_parent_ids=state.agent_parent_ids,
-        next_agent_id=state.next_agent_id,
-        agent_birth_step=state.agent_birth_step,
-        agent_params=state.agent_params,
-        hidden_food_positions=state.hidden_food_positions,
-        hidden_food_revealed=state.hidden_food_revealed,
-        hidden_food_reveal_timer=state.hidden_food_reveal_timer,
-        hidden_food_collected=state.hidden_food_collected,
-    )
+    return state.replace(agent_energy=fixed_energy)
 
 
 def _replace_field(state: EnvState, field_state: FieldState) -> EnvState:
     """Return a copy of state with a replaced field_state."""
-    return EnvState(
-        agent_positions=state.agent_positions,
-        food_positions=state.food_positions,
-        food_collected=state.food_collected,
-        field_state=field_state,
-        step=state.step,
-        key=state.key,
-        agent_energy=state.agent_energy,
-        agent_alive=state.agent_alive,
-        agent_ids=state.agent_ids,
-        agent_parent_ids=state.agent_parent_ids,
-        next_agent_id=state.next_agent_id,
-        agent_birth_step=state.agent_birth_step,
-        agent_params=state.agent_params,
-        hidden_food_positions=state.hidden_food_positions,
-        hidden_food_revealed=state.hidden_food_revealed,
-        hidden_food_reveal_timer=state.hidden_food_reveal_timer,
-        hidden_food_collected=state.hidden_food_collected,
-    )
+    return state.replace(field_state=field_state)
 
 
 def _zero_field_obs(obs: jnp.ndarray, config: Config) -> jnp.ndarray:
     """Zero out the field observation portion of the observation vector.
 
     For the 'no_field' condition: agents cannot read the field at all.
-    The observation vector structure is: [pos(2), energy(1), field(...), food(K*3)]
+    Observation layout: [pos(2), energy(1), has_food(1), compass(2),
+                         field_spatial(5*C), field_temporal(C), food(K*3)]
 
     Args:
         obs: Observation array of shape (max_agents, obs_dim).
@@ -270,12 +233,13 @@ def _zero_field_obs(obs: jnp.ndarray, config: Config) -> jnp.ndarray:
     Returns:
         Modified observation with field portion zeroed.
     """
-    radius = config.env.observation_radius
-    patch_size = (2 * radius + 1) ** 2
-    field_dim = patch_size * config.field.num_channels
+    num_ch = config.field.num_channels
+    field_spatial_dim = 5 * num_ch
+    field_temporal_dim = num_ch
+    field_dim = field_spatial_dim + field_temporal_dim
 
-    # Field starts at index 3 (after pos_x, pos_y, energy)
-    field_start = 3
+    # Field starts after pos(2) + energy(1) + has_food(1) + compass(2) = 6
+    field_start = 6
     field_end = field_start + field_dim
 
     # Zero out field portion
@@ -367,10 +331,6 @@ def _run_extended_episode_full(
         # Get deterministic actions: (1, max_agents) -> (max_agents,)
         actions = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]
-
-        # When evolution is disabled, mask out reproduce actions
-        if not evolution:
-            actions = jnp.where(actions == 5, 0, actions)
 
         # Step environment (agents will write to field during step)
         state, rewards, done, info = step(state, actions, config)
@@ -816,25 +776,7 @@ def _make_random_params(
 
 def _replace_agent_params(state: EnvState, agent_params: Any) -> EnvState:
     """Return a copy of state with replaced agent_params."""
-    return EnvState(
-        agent_positions=state.agent_positions,
-        food_positions=state.food_positions,
-        food_collected=state.food_collected,
-        field_state=state.field_state,
-        step=state.step,
-        key=state.key,
-        agent_energy=state.agent_energy,
-        agent_alive=state.agent_alive,
-        agent_ids=state.agent_ids,
-        agent_parent_ids=state.agent_parent_ids,
-        next_agent_id=state.next_agent_id,
-        agent_birth_step=state.agent_birth_step,
-        agent_params=agent_params,
-        hidden_food_positions=state.hidden_food_positions,
-        hidden_food_revealed=state.hidden_food_revealed,
-        hidden_food_reveal_timer=state.hidden_food_reveal_timer,
-        hidden_food_collected=state.hidden_food_collected,
-    )
+    return state.replace(agent_params=agent_params)
 
 
 WeightCondition = Literal["divergent", "uniform", "random_weights"]
@@ -1104,7 +1046,7 @@ def main() -> None:
     observation_dim = obs_dim(config)
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=6,
+        num_actions=config.agent.num_actions,
     )
 
     # Verify params by running a dummy forward pass

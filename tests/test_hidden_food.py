@@ -11,7 +11,6 @@ import pytest
 
 from src.configs import Config, HiddenFoodConfig
 from src.environment.env import reset, step
-from src.environment.state import EnvState
 
 
 class TestHiddenFoodConfig:
@@ -207,25 +206,7 @@ class TestHiddenFoodReveal:
         # This proves the reveal/collection cycle works
         hf_pos = state.hidden_food_positions[0]
         new_agent_positions = state.agent_positions.at[0].set(hf_pos)
-        state = EnvState(
-            agent_positions=new_agent_positions,
-            food_positions=state.food_positions,
-            food_collected=state.food_collected,
-            field_state=state.field_state,
-            step=state.step,
-            key=state.key,
-            agent_energy=state.agent_energy,
-            agent_alive=state.agent_alive,
-            agent_ids=state.agent_ids,
-            agent_parent_ids=state.agent_parent_ids,
-            next_agent_id=state.next_agent_id,
-            agent_birth_step=state.agent_birth_step,
-            agent_params=state.agent_params,
-            hidden_food_positions=state.hidden_food_positions,
-            hidden_food_revealed=state.hidden_food_revealed,
-            hidden_food_reveal_timer=state.hidden_food_reveal_timer,
-            hidden_food_collected=state.hidden_food_collected,
-        )
+        state = state.replace(agent_positions=new_agent_positions)
 
         # Take a step (stay action)
         actions = jnp.zeros((easy_reveal_config.evolution.max_agents,), dtype=jnp.int32)
@@ -247,25 +228,7 @@ class TestHiddenFoodReveal:
         nearby_pos = jnp.array([hf_pos[0] + 2, hf_pos[1]])  # 2 cells away (Chebyshev)
         nearby_pos = jnp.clip(nearby_pos, 0, easy_reveal_config.env.grid_size - 1)
         new_agent_positions = state.agent_positions.at[0].set(nearby_pos)
-        state = EnvState(
-            agent_positions=new_agent_positions,
-            food_positions=state.food_positions,
-            food_collected=state.food_collected,
-            field_state=state.field_state,
-            step=state.step,
-            key=state.key,
-            agent_energy=state.agent_energy,
-            agent_alive=state.agent_alive,
-            agent_ids=state.agent_ids,
-            agent_parent_ids=state.agent_parent_ids,
-            next_agent_id=state.next_agent_id,
-            agent_birth_step=state.agent_birth_step,
-            agent_params=state.agent_params,
-            hidden_food_positions=state.hidden_food_positions,
-            hidden_food_revealed=state.hidden_food_revealed,
-            hidden_food_reveal_timer=state.hidden_food_reveal_timer,
-            hidden_food_collected=state.hidden_food_collected,
-        )
+        state = state.replace(agent_positions=new_agent_positions)
 
         # Take a step (stay action)
         actions = jnp.zeros((easy_reveal_config.evolution.max_agents,), dtype=jnp.int32)
@@ -371,24 +334,9 @@ class TestHiddenFoodCollection:
         initial_energy = 50.0
         new_energy = state.agent_energy.at[0].set(initial_energy)
 
-        state = EnvState(
+        state = state.replace(
             agent_positions=new_agent_positions,
-            food_positions=state.food_positions,
-            food_collected=state.food_collected,
-            field_state=state.field_state,
-            step=state.step,
-            key=state.key,
             agent_energy=new_energy,
-            agent_alive=state.agent_alive,
-            agent_ids=state.agent_ids,
-            agent_parent_ids=state.agent_parent_ids,
-            next_agent_id=state.next_agent_id,
-            agent_birth_step=state.agent_birth_step,
-            agent_params=state.agent_params,
-            hidden_food_positions=state.hidden_food_positions,
-            hidden_food_revealed=state.hidden_food_revealed,
-            hidden_food_reveal_timer=state.hidden_food_reveal_timer,
-            hidden_food_collected=state.hidden_food_collected,
         )
 
         # Step to reveal and potentially collect
@@ -447,43 +395,10 @@ class TestHiddenFoodRespawn:
         key = jax.random.PRNGKey(789)
         state = reset(key, respawn_config)
 
-        # Manually set revealed with timer
-        state = EnvState(
-            agent_positions=state.agent_positions,
-            food_positions=state.food_positions,
-            food_collected=state.food_collected,
-            field_state=state.field_state,
-            step=state.step,
-            key=state.key,
-            agent_energy=state.agent_energy,
-            agent_alive=state.agent_alive,
-            agent_ids=state.agent_ids,
-            agent_parent_ids=state.agent_parent_ids,
-            next_agent_id=state.next_agent_id,
-            agent_birth_step=state.agent_birth_step,
-            agent_params=state.agent_params,
-            hidden_food_positions=state.hidden_food_positions,
-            hidden_food_revealed=jnp.array([True]),
-            hidden_food_reveal_timer=jnp.array([3], dtype=jnp.int32),
-            hidden_food_collected=state.hidden_food_collected,
-        )
-
-        # Place agents far from hidden food so it's not continuously revealed
+        # Manually set revealed with timer, place agents far from hidden food
         far_positions = jnp.zeros_like(state.agent_positions)
-        state = EnvState(
+        state = state.replace(
             agent_positions=far_positions,
-            food_positions=state.food_positions,
-            food_collected=state.food_collected,
-            field_state=state.field_state,
-            step=state.step,
-            key=state.key,
-            agent_energy=state.agent_energy,
-            agent_alive=state.agent_alive,
-            agent_ids=state.agent_ids,
-            agent_parent_ids=state.agent_parent_ids,
-            next_agent_id=state.next_agent_id,
-            agent_birth_step=state.agent_birth_step,
-            agent_params=state.agent_params,
             hidden_food_positions=jnp.array([[9, 9]]),  # Far corner
             hidden_food_revealed=jnp.array([True]),
             hidden_food_reveal_timer=jnp.array([3], dtype=jnp.int32),
@@ -623,7 +538,6 @@ class TestHiddenFoodIntegration:
                 num_channels=4,
                 diffusion_rate=0.1,
                 decay_rate=0.05,
-                write_strength=1.0,
             ),
             agent=config.agent,
             train=config.train,

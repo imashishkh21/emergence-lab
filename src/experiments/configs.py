@@ -51,7 +51,6 @@ def standard_config(base_config: Config | None = None) -> Config:
         num_channels=4,
         diffusion_rate=0.1,
         decay_rate=0.05,
-        write_strength=1.0,
     )
 
     # Enable evolution with balanced parameters

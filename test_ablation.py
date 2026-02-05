@@ -9,6 +9,6 @@ config.evolution.enabled = False
 with open("checkpoints/params.pkl", "rb") as f:
     params = pickle.load(f)
 
-network = ActorCritic(hidden_dims=(64,64), num_actions=6)
+network = ActorCritic(hidden_dims=(64,64), num_actions=config.agent.num_actions)
 results = ablation_test(network, params, config, num_episodes=5)
 print_ablation_results(results)

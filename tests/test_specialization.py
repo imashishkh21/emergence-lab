@@ -271,9 +271,9 @@ class TestBehaviorFeatures:
         """An agent with perfectly uniform actions should have entropy ~1."""
         from src.analysis.specialization import extract_behavior_features
 
-        # Create actions that are exactly uniform (6 actions, 600 steps)
-        actions = np.tile(np.arange(6), 100).reshape(-1, 1)  # (600, 1)
-        traj = self._make_trajectory(num_steps=600, num_agents=1, actions=actions)
+        # Create actions that are exactly uniform (5 actions, 500 steps)
+        actions = np.tile(np.arange(5), 100).reshape(-1, 1)  # (500, 1)
+        traj = self._make_trajectory(num_steps=500, num_agents=1, actions=actions)
         features = extract_behavior_features(traj)
         # Entropy should be close to 1.0 (normalized)
         assert features[0, 0] == pytest.approx(1.0, abs=0.01)
@@ -327,18 +327,15 @@ class TestBehaviorFeatures:
         assert features[0, 3] == pytest.approx(2.0, abs=1e-6)
         assert features[1, 3] == pytest.approx(0.0, abs=1e-6)
 
-    def test_reproduction_rate_from_actions(self):
-        """Without births key, reproduction rate inferred from action 5."""
+    def test_reproduction_rate_without_births_key(self):
+        """Without births key, reproduction rate should be 0.0."""
         from src.analysis.specialization import extract_behavior_features
 
         actions = np.zeros((100, 1), dtype=int)
-        actions[10, 0] = 5
-        actions[20, 0] = 5
-        actions[30, 0] = 5  # 3 reproduce actions
         traj = self._make_trajectory(num_steps=100, num_agents=1, actions=actions)
         features = extract_behavior_features(traj)
-        # 3 reproduce actions / 100 steps * 100 = 3.0
-        assert features[0, 3] == pytest.approx(3.0, abs=1e-6)
+        # Without births data, reproduction rate is 0.0
+        assert features[0, 3] == pytest.approx(0.0, abs=1e-6)
 
     def test_mean_energy(self):
         """Mean energy should be the average energy while alive."""
@@ -362,17 +359,16 @@ class TestBehaviorFeatures:
         assert features[0, 5] == pytest.approx(10.0 / 100.0, abs=1e-6)
 
     def test_stay_fraction(self):
-        """Stay fraction should count actions 0 and 5."""
+        """Stay fraction should count only action 0."""
         from src.analysis.specialization import extract_behavior_features
 
         actions = np.zeros((100, 1), dtype=int)
         actions[:50, 0] = 0  # 50 stay actions
-        actions[50:60, 0] = 5  # 10 reproduce (also stays)
-        actions[60:, 0] = 1  # 40 up actions
+        actions[50:, 0] = 1  # 50 up actions
         traj = self._make_trajectory(num_steps=100, num_agents=1, actions=actions)
         features = extract_behavior_features(traj)
-        # 60 stay-type actions / 100 = 0.6
-        assert features[0, 6] == pytest.approx(0.6, abs=1e-6)
+        # 50 stay actions / 100 = 0.5
+        assert features[0, 6] == pytest.approx(0.5, abs=1e-6)
 
     def test_partial_alive_mask(self):
         """Features should only consider steps where agent is alive."""
@@ -794,7 +790,7 @@ class TestTrajectoryRecording:
 
         network = ActorCritic(
             hidden_dims=config.agent.hidden_dims,
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
 
         # Initialize params
@@ -837,7 +833,7 @@ class TestTrajectoryRecording:
 
         network = ActorCritic(
             hidden_dims=config.agent.hidden_dims,
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(99)
         key, init_key = jax.random.split(key)
@@ -868,7 +864,7 @@ class TestTrajectoryRecording:
 
         network = ActorCritic(
             hidden_dims=config.agent.hidden_dims,
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(7)
         key, init_key = jax.random.split(key)
@@ -898,7 +894,7 @@ class TestTrajectoryRecording:
 
         network = ActorCritic(
             hidden_dims=config.agent.hidden_dims,
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(123)
         key, init_key = jax.random.split(key)
@@ -926,7 +922,7 @@ class TestTrajectoryRecording:
 
         network = ActorCritic(
             hidden_dims=config.agent.hidden_dims,
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(55)
         key, init_key = jax.random.split(key)

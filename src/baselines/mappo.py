@@ -5,7 +5,7 @@ This baseline implements CTDE (Centralized Training, Decentralized Execution):
 - Centralized critic: Value function takes concatenated observations of ALL agents
 
 Key characteristics:
-    - Field disabled: write_strength=0, decay_rate=1.0 (no field communication)
+    - Field disabled: decay_rate=1.0 (no field communication)
     - Evolution disabled: population stays at initial num_agents
     - Shared actor weights: all agents use the same actor policy
     - Centralized critic: value function sees all agents' observations
@@ -142,10 +142,9 @@ def mappo_config(base_config: Config | None = None) -> Config:
     if base_config is None:
         base_config = Config()
 
-    # Disable field: agents write nothing, field decays instantly
+    # Disable field: field decays instantly
     field_config = replace(
         base_config.field,
-        write_strength=0.0,
         decay_rate=1.0,  # Full decay each step = field is always zeros
     )
 
@@ -182,7 +181,7 @@ def create_mappo_network(config: Config) -> ActorCritic:
     """
     return ActorCritic(
         hidden_dims=config.agent.hidden_dims,
-        num_actions=6,
+        num_actions=config.agent.num_actions,
         agent_embed_dim=config.agent.agent_embed_dim,
         n_agents=config.env.num_agents,
     )

@@ -16,7 +16,7 @@ ACO Parameters (Dorigo & Stutzle 2004):
     alpha = 1.0  (pheromone importance)
     beta = 2.0   (heuristic importance - distance to food)
     rho = 0.5    (evaporation rate - mapped to field decay_rate)
-    Q = 1.0      (deposit quantity - mapped to write_strength)
+    Q = 1.0      (deposit quantity)
 
 Formula for movement probability:
     p_ij = (tau_ij^alpha * eta_ij^beta) / sum_k (tau_ik^alpha * eta_ik^beta)
@@ -64,10 +64,8 @@ def aco_config(base_config: Config | None = None) -> Config:
 
     # Enable field with ACO parameters
     # rho (evaporation) maps to decay_rate
-    # Q (deposit) maps to write_strength
     field_config = replace(
         base_config.field,
-        write_strength=ACO_Q,
         decay_rate=ACO_RHO,  # 50% evaporation per step
         diffusion_rate=0.1,  # Some spreading like real pheromone
     )
@@ -438,9 +436,6 @@ def run_aco_hybrid_episode(
         # Remove batch dimension
         actions = actions[0]  # (max_agents,)
 
-        # Prevent reproduce action (action=5) - ACO doesn't support reproduction
-        actions = jnp.where(actions == 5, 0, actions)
-
         # Record food state before step
         prev_food_collected = np.array(state.food_collected)
 
@@ -615,7 +610,7 @@ def create_aco_hybrid_network(config: Config) -> ActorCritic:
     """
     return ActorCritic(
         hidden_dims=config.agent.hidden_dims,
-        num_actions=6,  # Movement actions + reproduce (though reproduce is blocked)
+        num_actions=config.agent.num_actions,
         agent_embed_dim=config.agent.agent_embed_dim,
         n_agents=config.env.num_agents,
     )

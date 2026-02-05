@@ -226,7 +226,7 @@ def create_single_seed_state(
 
     # Compute observation dimension and create network
     observation_dim = obs_dim(config)
-    num_actions = 6  # 0-4 movement + 5 reproduce
+    num_actions = config.agent.num_actions
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
@@ -283,7 +283,7 @@ def single_seed_train_step(
         (new_runner_state, metrics) tuple.
     """
     vec_env = VecEnv(config)
-    num_actions = 6
+    num_actions = config.agent.num_actions
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
@@ -581,7 +581,7 @@ def single_seed_evolve_step(
         (new_runner_state, metrics) tuple.
     """
     vec_env = VecEnv(config)
-    num_actions = 6
+    num_actions = config.agent.num_actions
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,

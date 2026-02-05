@@ -57,11 +57,13 @@ class TestZeroFieldObs:
         obs = jnp.ones((max_agents, observation_dim))
         modified = _zero_field_obs(obs, config)
 
-        # Field starts at index 3 (after pos_x, pos_y, energy)
-        radius = config.env.observation_radius
-        patch_size = (2 * radius + 1) ** 2
-        field_dim = patch_size * config.field.num_channels
-        field_start = 3
+        # New observation layout:
+        # pos(2) + energy(1) + has_food(1) + compass(2) + field_spatial(5*C) + field_temporal(C) + food(K*3)
+        num_ch = config.field.num_channels
+        field_spatial_dim = 5 * num_ch
+        field_temporal_dim = num_ch
+        field_dim = field_spatial_dim + field_temporal_dim
+        field_start = 6  # after pos(2) + energy(1) + has_food(1) + compass(2)
         field_end = field_start + field_dim
 
         # Check field portion is zeroed
@@ -69,8 +71,8 @@ class TestZeroFieldObs:
         assert jnp.allclose(field_portion, 0.0)
 
         # Check non-field portions are preserved
-        pos_energy_portion = modified[:, :3]
-        assert jnp.allclose(pos_energy_portion, 1.0)
+        pre_field_portion = modified[:, :field_start]
+        assert jnp.allclose(pre_field_portion, 1.0)
 
         food_portion = modified[:, field_end:]
         assert jnp.allclose(food_portion, 1.0)
@@ -113,7 +115,7 @@ class TestExtendedEpisodeFull:
         observation_dim = obs_dim(config)
         network = ActorCritic(
             hidden_dims=(32,),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
 
         key = jax.random.PRNGKey(0)
@@ -291,7 +293,7 @@ class TestExtendedAblationTest:
         observation_dim = obs_dim(config)
         network = ActorCritic(
             hidden_dims=(16,),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
 
         key = jax.random.PRNGKey(0)
@@ -414,7 +416,6 @@ class TestFieldConditionBehavior:
             ),
             field=base_config.field.__class__(
                 num_channels=2,
-                write_strength=1.0,
                 decay_rate=0.0,  # No decay for easier testing
                 diffusion_rate=0.0,  # No diffusion for easier testing
             ),
@@ -439,7 +440,7 @@ class TestFieldConditionBehavior:
 
         # The frozen field should be used throughout the episode
         # This is a behavioral expectation, tested via the run function working
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=config.agent.num_actions)
         observation_dim = obs_dim(config)
         params = network.init(key, jnp.zeros((observation_dim,)))
 
@@ -459,11 +460,13 @@ class TestFieldConditionBehavior:
         obs = get_observations(state, config)
         modified_obs = _zero_field_obs(obs, config)
 
-        # Get field observation indices
-        radius = config.env.observation_radius
-        patch_size = (2 * radius + 1) ** 2
-        field_dim = patch_size * config.field.num_channels
-        field_start = 3
+        # New observation layout:
+        # pos(2) + energy(1) + has_food(1) + compass(2) + field_spatial(5*C) + field_temporal(C) + food(K*3)
+        num_ch = config.field.num_channels
+        field_spatial_dim = 5 * num_ch
+        field_temporal_dim = num_ch
+        field_dim = field_spatial_dim + field_temporal_dim
+        field_start = 6  # after pos(2) + energy(1) + has_food(1) + compass(2)
         field_end = field_start + field_dim
 
         # Field portion should be zeroed

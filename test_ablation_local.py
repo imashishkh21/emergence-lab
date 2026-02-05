@@ -26,7 +26,7 @@ def main():
 
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=6,
+        num_actions=config.agent.num_actions,
     )
 
     print("Running ablation test (5 episodes per condition, evolution disabled)...")

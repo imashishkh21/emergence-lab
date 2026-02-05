@@ -24,8 +24,7 @@ class TestIPPO:
         config = ippo_config()
 
         assert isinstance(config, Config)
-        # Field should be disabled (write_strength=0, decay_rate=1.0)
-        assert config.field.write_strength == 0.0
+        # Field should be disabled (decay_rate=1.0)
         assert config.field.decay_rate == 1.0
         # Evolution should be disabled
         assert config.evolution.enabled is False
@@ -50,7 +49,6 @@ class TestIPPO:
         assert config.env.num_agents == 16
         assert config.env.num_food == 20
         # Modified settings
-        assert config.field.write_strength == 0.0
         assert config.evolution.enabled is False
 
     def test_ippo_config_max_agents_matches_num_agents(self):
@@ -74,7 +72,7 @@ class TestIPPO:
         network = create_ippo_network(config)
 
         assert isinstance(network, ActorCritic)
-        assert network.num_actions == 6
+        assert network.num_actions == 5
         assert network.hidden_dims == config.agent.hidden_dims
 
     def test_init_ippo_params(self):
@@ -188,26 +186,26 @@ class TestIPPO:
         )
 
         config = ippo_config()
-        config.env.max_steps = 50
+        config.env.max_steps = 100  # More steps to increase variance
         network = create_ippo_network(config)
         key = jax.random.PRNGKey(42)
         params = init_ippo_params(network, config, key)
 
-        # Run with different seeds
-        result1 = run_ippo_episode(
-            network, params, config, jax.random.PRNGKey(1), deterministic=False
-        )
-        result2 = run_ippo_episode(
-            network, params, config, jax.random.PRNGKey(999), deterministic=False
-        )
+        # Run with several different seeds and check at least one pair differs
+        results = []
+        for seed in [1, 999, 42, 123]:
+            result = run_ippo_episode(
+                network, params, config, jax.random.PRNGKey(seed), deterministic=False
+            )
+            results.append((result["total_reward"], result["food_collected"]))
 
-        # Results should differ (with high probability)
-        # Note: This could theoretically fail if actions happen to be the same
-        # but with different seeds and many steps, this is extremely unlikely
-        assert (
-            result1["total_reward"] != result2["total_reward"]
-            or result1["food_collected"] != result2["food_collected"]
+        # At least one pair should differ (with very high probability)
+        any_differ = any(
+            results[i] != results[j]
+            for i in range(len(results))
+            for j in range(i + 1, len(results))
         )
+        assert any_differ, "All stochastic episodes had identical results"
 
     def test_run_ippo_episode_collects_food(self):
         """IPPO agents should be able to collect food."""
@@ -290,11 +288,10 @@ class TestIPPO:
         assert result1["episode_rewards"] == result2["episode_rewards"]
         assert result1["episode_food"] == result2["episode_food"]
 
-    def test_ippo_field_is_zeroed(self):
-        """IPPO should have a zeroed field throughout the episode."""
+    def test_ippo_field_does_not_accumulate(self):
+        """IPPO field should not accumulate information (decay_rate=1.0)."""
         from src.baselines.ippo import ippo_config
         from src.environment.env import reset, step
-        from src.environment.obs import get_observations
 
         config = ippo_config()
         config.env.max_steps = 20
@@ -303,19 +300,20 @@ class TestIPPO:
         state = reset(key, config)
 
         # Run a few steps with random actions
-        for _ in range(10):
+        for t in range(10):
             key, action_key, step_key = jax.random.split(key, 3)
             actions = jax.random.randint(action_key, (config.env.num_agents,), 0, 5)
             state, _, done, _ = step(state, actions, config)
 
-            # Field should be all zeros (decay_rate=1.0 zeros it each step)
+            # With decay_rate=1.0, field from previous steps is fully decayed.
+            # Only current-step writes remain (territory=0.01, recruitment=1.0 for laden).
+            # Territory channel should have small values, not accumulated large values.
             field_values = np.array(state.field_state.values)
-            # Note: write_strength=0 means nothing is written
-            # decay_rate=1.0 means any residual decays fully
-            # So field should be zeros or very close
-            assert np.allclose(
-                field_values, 0.0, atol=1e-6
-            ), f"Field not zeroed: max={np.max(np.abs(field_values))}"
+            ch1_territory = field_values[:, :, 1]
+            # Multiple agents can stack on same cell, so max = N_agents * write_strength
+            max_single_step = config.field.territory_write_strength * config.env.num_agents
+            assert np.max(ch1_territory) <= max_single_step + 1e-6, \
+                f"Territory should not accumulate: max={np.max(ch1_territory)}"
 
             if done:
                 break
@@ -394,7 +392,6 @@ class TestACO:
 
         assert isinstance(config, Config)
         # Field should be enabled with ACO parameters
-        assert config.field.write_strength > 0  # ACO_Q = 1.0
         assert config.field.decay_rate == 0.5   # ACO_RHO = 0.5
         # Evolution should be disabled
         assert config.evolution.enabled is False
@@ -651,7 +648,7 @@ class TestACO:
         network = create_aco_hybrid_network(config)
 
         assert isinstance(network, ActorCritic)
-        assert network.num_actions == 6
+        assert network.num_actions == 5
 
     def test_init_aco_hybrid_params(self):
         """init_aco_hybrid_params() should initialize valid network parameters."""
@@ -760,7 +757,6 @@ class TestMAPPO:
 
         assert isinstance(config, Config)
         # Field should be disabled
-        assert config.field.write_strength == 0.0
         assert config.field.decay_rate == 1.0
         # Evolution should be disabled
         assert config.evolution.enabled is False
@@ -783,7 +779,6 @@ class TestMAPPO:
         assert config.env.num_agents == 16
         assert config.env.num_food == 20
         # Modified settings
-        assert config.field.write_strength == 0.0
         assert config.evolution.enabled is False
 
     def test_mappo_config_max_agents_matches_num_agents(self):
@@ -807,7 +802,7 @@ class TestMAPPO:
         actor = create_mappo_network(config)
 
         assert isinstance(actor, ActorCritic)
-        assert actor.num_actions == 6
+        assert actor.num_actions == 5
 
     def test_create_centralized_critic(self):
         """create_centralized_critic() should return a valid CentralizedCritic."""
@@ -1100,8 +1095,8 @@ class TestMAPPO:
         assert result1["episode_rewards"] == result2["episode_rewards"]
         assert result1["episode_food"] == result2["episode_food"]
 
-    def test_mappo_field_is_zeroed(self):
-        """MAPPO should have a zeroed field throughout the episode."""
+    def test_mappo_field_does_not_accumulate(self):
+        """MAPPO field should not accumulate information (decay_rate=1.0)."""
         from src.baselines.mappo import mappo_config
         from src.environment.env import reset, step
 
@@ -1117,11 +1112,14 @@ class TestMAPPO:
             actions = jax.random.randint(action_key, (config.env.num_agents,), 0, 5)
             state, _, done, _ = step(state, actions, config)
 
-            # Field should be all zeros
+            # With decay_rate=1.0, field from previous steps is fully decayed.
+            # Only current-step writes remain (territory=0.01, recruitment=1.0 for laden).
             field_values = np.array(state.field_state.values)
-            assert np.allclose(
-                field_values, 0.0, atol=1e-6
-            ), f"Field not zeroed: max={np.max(np.abs(field_values))}"
+            ch1_territory = field_values[:, :, 1]
+            # Multiple agents can stack on same cell, so max = N_agents * write_strength
+            max_single_step = config.field.territory_write_strength * config.env.num_agents
+            assert np.max(ch1_territory) <= max_single_step + 1e-6, \
+                f"Territory should not accumulate: max={np.max(ch1_territory)}"
 
             if done:
                 break

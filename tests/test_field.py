@@ -145,15 +145,15 @@ class TestFieldOps:
         
         field = create_field(20, 20, 4)
         
-        # Write a value
+        # Write a value (within default cap of 1.0)
         positions = jnp.array([[10, 10]])
-        write_values = jnp.ones((1, 4)) * 5.0
+        write_values = jnp.ones((1, 4)) * 0.5
         field = write_local(field, positions, write_values)
-        
+
         # Read at same position
         read_values = read_local(field, positions, radius=0)
-        
-        assert jnp.allclose(read_values[0], 5.0)
+
+        assert jnp.allclose(read_values[0], 0.5)
     
     def test_read_local_with_radius(self):
         """Test reading local field values with neighborhood."""

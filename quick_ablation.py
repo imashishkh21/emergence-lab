@@ -47,7 +47,7 @@ config.evolution.enabled = False  # Disable for speed
 with open("checkpoints/params.pkl", "rb") as f:
     params = pickle.load(f)
 
-network = ActorCritic(hidden_dims=(64, 64), num_actions=6)
+network = ActorCritic(hidden_dims=(64, 64), num_actions=config.agent.num_actions)
 
 # Test each condition
 print("Running quick ablation (3 episodes each)...")

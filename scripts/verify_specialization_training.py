@@ -82,7 +82,8 @@ def verify_layer_mutation_rates() -> None:
     print("3. Verifying per-layer mutation rates...")
 
     from src.agents.network import ActorCritic
-    network = ActorCritic(hidden_dims=(32, 32), num_actions=6)
+    config = Config()
+    network = ActorCritic(hidden_dims=(32, 32), num_actions=config.agent.num_actions)
     key = jax.random.PRNGKey(42)
     dummy_obs = jnp.zeros((50,))
     params = network.init(key, dummy_obs)

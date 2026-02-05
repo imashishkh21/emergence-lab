@@ -87,7 +87,7 @@ def create_network(config: Config) -> ActorCritic:
     """
     return ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=6,
+        num_actions=config.agent.num_actions,
     )
 
 

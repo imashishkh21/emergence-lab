@@ -7,8 +7,6 @@ from src.agents.network import ActorCritic
 from src.agents.reproduction import copy_agent_params, mutate_agent_params, mutate_params
 from src.configs import Config
 from src.environment.env import reset, step
-from src.environment.state import EnvState
-from src.field.field import create_field
 
 
 def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
@@ -18,8 +16,10 @@ def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
     config.env.num_food = num_food
     num_agents = len(agent_pos)
     config.env.num_agents = num_agents
-    grid_size = config.env.grid_size
     key = jax.random.PRNGKey(0)
+
+    # Create a full state via reset(), then override the fields we need
+    state = reset(key, config)
 
     agent_positions = jnp.zeros((max_agents, 2), dtype=jnp.int32)
     agent_positions = agent_positions.at[:num_agents].set(
@@ -28,10 +28,6 @@ def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
 
     food_positions = jnp.array(food_pos, dtype=jnp.int32)
     food_collected = jnp.zeros((num_food,), dtype=jnp.bool_)
-
-    field_state = create_field(
-        height=grid_size, width=grid_size, channels=config.field.num_channels
-    )
 
     if energy is None:
         energy_vals = jnp.float32(config.evolution.starting_energy)
@@ -58,13 +54,11 @@ def _make_state_with_positions(config, agent_pos, food_pos, energy=None):
     agent_birth_step = jnp.full((max_agents,), -1, dtype=jnp.int32)
     agent_birth_step = agent_birth_step.at[:num_agents].set(0)
 
-    return EnvState(
+    return state.replace(
         agent_positions=agent_positions,
         food_positions=food_positions,
         food_collected=food_collected,
-        field_state=field_state,
         step=jnp.int32(0),
-        key=key,
         agent_energy=agent_energy,
         agent_alive=agent_alive,
         agent_ids=agent_ids,
@@ -78,7 +72,7 @@ class TestReproductionAction:
     """Tests for US-007: Reproduction action."""
 
     def test_reproduce_action_exists(self):
-        """Test that action 5 (reproduce) is valid and agent stays in place."""
+        """Test that agent below reproduce threshold does not auto-reproduce."""
         config = Config()
         config.env.grid_size = 20
         config.evolution.starting_energy = 100
@@ -92,11 +86,11 @@ class TestReproductionAction:
             food_pos=[[19, 19]],  # Far away
         )
 
-        # Action 5 = reproduce (but threshold too high, so no spawn)
-        actions = jnp.array([5], dtype=jnp.int32)
+        # Threshold too high (200 > starting energy 100), so no auto-reproduction
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
-        # Agent should stay in place (reproduce = stay)
+        # Agent should stay in place (action 0 = stay)
         assert jnp.all(new_state.agent_positions[0] == jnp.array([5, 5]))
 
     def test_reproduce_deducts_energy(self):
@@ -112,12 +106,12 @@ class TestReproductionAction:
 
         state = _make_state_with_positions(
             config,
-            agent_pos=[[5, 5]],
+            agent_pos=[[10, 10]],  # Must be in nest area for reproduction
             food_pos=[[19, 19]],
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # Parent energy should be 160 - 80 = 80
@@ -143,7 +137,7 @@ class TestReproductionAction:
             energy=[100.0],  # Below threshold of 150
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # Energy should be unchanged (no drain, no reproduction)
@@ -170,7 +164,7 @@ class TestReproductionAction:
             energy=[200.0, 200.0],
         )
 
-        actions = jnp.array([5, 0], dtype=jnp.int32)
+        actions = jnp.array([0, 0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # Energy should be unchanged — reproduction failed
@@ -197,7 +191,7 @@ class TestReproductionAction:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # A birth should have occurred
@@ -214,8 +208,8 @@ class TestReproductionAction:
         # next_agent_id should have incremented
         assert new_state.next_agent_id == 2
 
-    def test_reproduce_offspring_near_parent(self):
-        """Test that offspring spawns near parent position."""
+    def test_reproduce_offspring_spawns_in_nest(self):
+        """Test that offspring spawns within the nest area."""
         config = Config()
         config.env.grid_size = 20
         config.evolution.starting_energy = 160
@@ -232,17 +226,20 @@ class TestReproductionAction:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
-        # Offspring should be within 1 cell of parent (offset is -1 to 1)
-        parent_pos = new_state.agent_positions[0]
+        # Offspring should be within the nest area
+        nest_center = config.env.grid_size // 2
+        nest_radius = config.nest.radius
         child_pos = new_state.agent_positions[1]
-        dist = jnp.abs(parent_pos - child_pos)
-        assert jnp.all(dist <= 1), f"Child at {child_pos} too far from parent at {parent_pos}"
+        dr = jnp.abs(child_pos[0] - nest_center)
+        dc = jnp.abs(child_pos[1] - nest_center)
+        assert dr <= nest_radius, f"Child row {child_pos[0]} outside nest"
+        assert dc <= nest_radius, f"Child col {child_pos[1]} outside nest"
 
     def test_reproduce_dead_agent_cannot_reproduce(self):
-        """Test that dead agents cannot reproduce even with action 5."""
+        """Test that dead agents cannot reproduce even with sufficient energy."""
         config = Config()
         config.env.grid_size = 20
         config.evolution.starting_energy = 200
@@ -263,14 +260,14 @@ class TestReproductionAction:
         new_alive = state.agent_alive.at[0].set(False)
         state = state.replace(agent_alive=new_alive)
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # No births — agent is dead
         assert info["births_this_step"] == 0
 
-    def test_reproduce_no_action_5_no_birth(self):
-        """Test that agents choosing non-reproduce actions don't trigger reproduction."""
+    def test_auto_reproduce_triggers_with_sufficient_energy(self):
+        """Test that auto-reproduction triggers when energy >= threshold."""
         config = Config()
         config.env.grid_size = 20
         config.evolution.starting_energy = 200
@@ -287,14 +284,14 @@ class TestReproductionAction:
             energy=[200.0],
         )
 
-        # Action 0 = stay, not reproduce
+        # Any action triggers reproduction if energy >= threshold
         actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
-        # No births
-        assert info["births_this_step"] == 0
-        # Energy unchanged
-        assert jnp.isclose(new_state.agent_energy[0], 200.0)
+        # Auto-reproduction should happen
+        assert info["births_this_step"] == 1
+        # Parent energy: 200 - 80 = 120
+        assert jnp.isclose(new_state.agent_energy[0], 120.0)
 
     def test_reproduce_multiple_agents(self):
         """Test that multiple agents can reproduce in the same step."""
@@ -309,13 +306,13 @@ class TestReproductionAction:
 
         state = _make_state_with_positions(
             config,
-            agent_pos=[[5, 5], [15, 15]],
+            agent_pos=[[10, 10], [10, 11]],  # Both in nest area
             food_pos=[[19, 19]],
             energy=[160.0, 160.0],
         )
 
         # Both agents reproduce
-        actions = jnp.array([5, 5], dtype=jnp.int32)
+        actions = jnp.array([0, 0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # Two births should have occurred
@@ -345,7 +342,7 @@ class TestReproductionAction:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
 
         @jax.jit
         def jit_step(s, a):
@@ -375,7 +372,7 @@ class TestReproductionAction:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         # Energy drain happens before reproduction check:
@@ -401,13 +398,13 @@ class TestSpawn:
         # 2 agents alive at slots 0 and 1; slots 2-7 are free
         state = _make_state_with_positions(
             config,
-            agent_pos=[[5, 5], [15, 15]],
+            agent_pos=[[10, 10], [10, 11]],  # Both in nest area
             food_pos=[[19, 19]],
             energy=[160.0, 100.0],
         )
 
         # Only agent 0 reproduces (agent 1 below threshold)
-        actions = jnp.array([5, 0], dtype=jnp.int32)
+        actions = jnp.array([0, 0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         assert info["births_this_step"] == 1
@@ -416,8 +413,8 @@ class TestSpawn:
         # Slots 3-7 should still be empty
         assert not jnp.any(new_state.agent_alive[3:])
 
-    def test_spawn_position_adjacent_to_parent(self):
-        """Offspring position is within 1 cell (random adjacent) of parent."""
+    def test_spawn_position_in_nest(self):
+        """Offspring position is within the nest area."""
         config = Config()
         config.env.grid_size = 20
         config.evolution.starting_energy = 160
@@ -434,16 +431,19 @@ class TestSpawn:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
-        parent_pos = new_state.agent_positions[0]
+        nest_center = config.env.grid_size // 2
+        nest_radius = config.nest.radius
         child_pos = new_state.agent_positions[1]
-        dist = jnp.abs(parent_pos - child_pos)
-        assert jnp.all(dist <= 1), f"Child {child_pos} not adjacent to parent {parent_pos}"
+        dr = jnp.abs(child_pos[0] - nest_center)
+        dc = jnp.abs(child_pos[1] - nest_center)
+        assert dr <= nest_radius, f"Child row {child_pos[0]} outside nest"
+        assert dc <= nest_radius, f"Child col {child_pos[1]} outside nest"
 
-    def test_spawn_position_clipped_to_grid(self):
-        """Offspring position is clipped to grid boundaries when parent is at edge."""
+    def test_spawn_position_within_grid(self):
+        """Offspring position is always within grid boundaries."""
         config = Config()
         config.env.grid_size = 20
         config.evolution.starting_energy = 160
@@ -453,15 +453,14 @@ class TestSpawn:
         config.evolution.reproduce_cost = 80
         config.evolution.max_agents = 4
 
-        # Parent at corner (0, 0) — offspring can't go negative
         state = _make_state_with_positions(
             config,
-            agent_pos=[[0, 0]],
+            agent_pos=[[10, 10]],  # In nest area
             food_pos=[[19, 19]],
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
         child_pos = new_state.agent_positions[1]
@@ -486,7 +485,7 @@ class TestSpawn:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
         assert jnp.isclose(new_state.agent_energy[1], 80.0)
@@ -509,7 +508,7 @@ class TestSpawn:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
         assert new_state.agent_alive[1]
@@ -534,7 +533,7 @@ class TestSpawn:
         # next_agent_id starts at 1 (num_agents=1)
         assert state.next_agent_id == 1
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
         # Offspring ID should be 1 (the value of next_agent_id before birth)
@@ -560,7 +559,7 @@ class TestSpawn:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, _ = step(state, actions, config)
 
         # Parent is agent 0 with ID 0
@@ -580,7 +579,7 @@ class TestSpawn:
         # 3 agents: agent 1 is dead (slot reusable)
         state = _make_state_with_positions(
             config,
-            agent_pos=[[5, 5], [10, 10], [15, 15]],
+            agent_pos=[[10, 10], [10, 11], [10, 12]],  # All in nest area
             food_pos=[[19, 19]],
             energy=[160.0, 50.0, 100.0],
         )
@@ -590,7 +589,7 @@ class TestSpawn:
         state = state.replace(agent_alive=new_alive, agent_energy=new_energy)
 
         # Agent 0 reproduces
-        actions = jnp.array([5, 0, 0], dtype=jnp.int32)
+        actions = jnp.array([0, 0, 0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         assert info["births_this_step"] == 1
@@ -620,7 +619,7 @@ class TestSpawn:
         )
 
         # Gen 1: agent 0 reproduces -> offspring at slot 1
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         state, _, _, info = step(state, actions, config)
         assert info["births_this_step"] == 1
         assert state.agent_alive[1]
@@ -630,7 +629,7 @@ class TestSpawn:
         state = state.replace(agent_energy=new_energy)
 
         # Gen 2: offspring (slot 1) reproduces -> grandchild at slot 2
-        actions_gen2 = jnp.array([0, 5], dtype=jnp.int32)
+        actions_gen2 = jnp.array([0, 0], dtype=jnp.int32)
         state, _, _, info = step(state, actions_gen2, config)
         assert info["births_this_step"] == 1
         assert state.agent_alive[2]
@@ -655,7 +654,7 @@ class TestSpawn:
             energy=[160.0],
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
 
         @jax.jit
         def jit_step(s, a):
@@ -692,9 +691,11 @@ def _make_state_with_params(config, agent_pos, food_pos, energy, network, key):
     config.env.num_food = num_food
     num_agents = len(agent_pos)
     config.env.num_agents = num_agents
-    grid_size = config.env.grid_size
 
     k1, k2 = jax.random.split(key)
+
+    # Create a full state via reset(), then override the fields we need
+    state = reset(k2, config)
 
     agent_positions = jnp.zeros((max_agents, 2), dtype=jnp.int32)
     agent_positions = agent_positions.at[:num_agents].set(
@@ -703,10 +704,6 @@ def _make_state_with_params(config, agent_pos, food_pos, energy, network, key):
 
     food_positions = jnp.array(food_pos, dtype=jnp.int32)
     food_collected = jnp.zeros((num_food,), dtype=jnp.bool_)
-
-    field_state = create_field(
-        height=grid_size, width=grid_size, channels=config.field.num_channels
-    )
 
     energy_vals = jnp.array(energy, dtype=jnp.float32)
     agent_energy = jnp.zeros((max_agents,), dtype=jnp.float32)
@@ -728,13 +725,11 @@ def _make_state_with_params(config, agent_pos, food_pos, energy, network, key):
 
     agent_params = _make_per_agent_params(config, network, k1)
 
-    return EnvState(
+    return state.replace(
         agent_positions=agent_positions,
         food_positions=food_positions,
         food_collected=food_collected,
-        field_state=field_state,
         step=jnp.int32(0),
-        key=k2,
         agent_energy=agent_energy,
         agent_alive=agent_alive,
         agent_ids=agent_ids,
@@ -751,7 +746,7 @@ class TestInheritance:
     def test_mutate_params_adds_noise(self):
         """mutate_params adds Gaussian noise to all leaves."""
         key = jax.random.PRNGKey(0)
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=5)
         dummy_obs = jnp.zeros((10,))
         params = network.init(key, dummy_obs)
 
@@ -768,7 +763,7 @@ class TestInheritance:
     def test_mutate_params_zero_std_no_change(self):
         """mutate_params with std=0 returns identical params."""
         key = jax.random.PRNGKey(0)
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=5)
         dummy_obs = jnp.zeros((10,))
         params = network.init(key, dummy_obs)
 
@@ -784,7 +779,7 @@ class TestInheritance:
         config = Config()
         config.env.grid_size = 10
         config.evolution.max_agents = 4
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=config.agent.num_actions)
         key = jax.random.PRNGKey(0)
 
         per_agent = _make_per_agent_params(config, network, key)
@@ -807,7 +802,7 @@ class TestInheritance:
         config = Config()
         config.env.grid_size = 10
         config.evolution.max_agents = 4
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=config.agent.num_actions)
         key = jax.random.PRNGKey(0)
 
         per_agent = _make_per_agent_params(config, network, key)
@@ -846,7 +841,7 @@ class TestInheritance:
         config.evolution.max_agents = 4
         config.evolution.mutation_std = 0.01
 
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=config.agent.num_actions)
         key = jax.random.PRNGKey(0)
 
         state = _make_state_with_params(
@@ -858,7 +853,7 @@ class TestInheritance:
             key=key,
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         assert info["births_this_step"] == 1
@@ -894,7 +889,7 @@ class TestInheritance:
         )
 
         assert state.agent_params is None
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         new_state, _, _, info = step(state, actions, config)
 
         assert info["births_this_step"] == 1
@@ -912,7 +907,7 @@ class TestInheritance:
         config.evolution.max_agents = 4
         config.evolution.mutation_std = 0.01
 
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=config.agent.num_actions)
         key = jax.random.PRNGKey(0)
 
         state = _make_state_with_params(
@@ -924,7 +919,7 @@ class TestInheritance:
             key=key,
         )
 
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
 
         @jax.jit
         def jit_step(s, a):
@@ -957,7 +952,7 @@ class TestInheritance:
         config.evolution.max_agents = 8
         config.evolution.mutation_std = 0.01
 
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=config.agent.num_actions)
         key = jax.random.PRNGKey(0)
 
         state = _make_state_with_params(
@@ -970,7 +965,7 @@ class TestInheritance:
         )
 
         # Gen 1: agent 0 reproduces -> offspring at slot 1
-        actions = jnp.array([5], dtype=jnp.int32)
+        actions = jnp.array([0], dtype=jnp.int32)
         state, _, _, info = step(state, actions, config)
         assert info["births_this_step"] == 1
 
@@ -979,7 +974,7 @@ class TestInheritance:
         state = state.replace(agent_energy=new_energy)
 
         # Gen 2: offspring (slot 1) reproduces -> grandchild at slot 2
-        actions_gen2 = jnp.array([0, 5], dtype=jnp.int32)
+        actions_gen2 = jnp.array([0, 0], dtype=jnp.int32)
         state, _, _, info = step(state, actions_gen2, config)
         assert info["births_this_step"] == 1
 
@@ -1004,7 +999,7 @@ class TestInheritance:
     def test_mutate_params_jit_compatible(self):
         """mutate_params works under JIT."""
         key = jax.random.PRNGKey(0)
-        network = ActorCritic(hidden_dims=(16,), num_actions=6)
+        network = ActorCritic(hidden_dims=(16,), num_actions=5)
         dummy_obs = jnp.zeros((10,))
         params = network.init(key, dummy_obs)
 

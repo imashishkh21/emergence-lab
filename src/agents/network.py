@@ -22,7 +22,7 @@ class ActorCritic(nn.Module):
     """
 
     hidden_dims: Sequence[int] = (64, 64)
-    num_actions: int = 6
+    num_actions: int = 5
     agent_embed_dim: int = 0
     n_agents: int = 32
 
@@ -98,7 +98,7 @@ class AgentSpecificActorCritic(nn.Module):
     """
 
     hidden_dims: Sequence[int] = (64, 64)
-    num_actions: int = 6
+    num_actions: int = 5
     n_agents: int = 32
     agent_embed_dim: int = 0
 

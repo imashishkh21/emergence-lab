@@ -108,7 +108,7 @@ class TestIntegration:
         # ---- 3. Evaluate with deterministic policy ----
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         eval_key = jax.random.PRNGKey(99)
         eval_state = reset(eval_key, config)
@@ -228,7 +228,7 @@ class TestIntegration:
 
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
 
         frames = record_episode(network, runner_state.params, config, jax.random.PRNGKey(0))
@@ -270,7 +270,7 @@ class TestPhase2Integration:
 
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(42)
         dummy_obs = jnp.zeros((obs_dim_val(config),))
@@ -359,7 +359,7 @@ class TestPhase2Integration:
 
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(7)
         dummy_obs = jnp.zeros((obs_dim_val(config),))
@@ -384,9 +384,9 @@ class TestPhase2Integration:
         for t in range(config.env.max_steps):
             obs = get_observations(state, config)
             obs_batched = obs[None, :, :]
-            # Force reproduce action for all alive agents to encourage births
+            # Use stay action — reproduction is automatic when in nest + enough energy
             max_agents = config.evolution.max_agents
-            actions = jnp.full((max_agents,), 5, dtype=jnp.int32)
+            actions = jnp.full((max_agents,), 0, dtype=jnp.int32)
             state, rewards, done, info = step(state, actions, config)
 
             births = int(info["births_this_step"])
@@ -458,7 +458,7 @@ class TestPhase2Integration:
 
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(42)
         dummy_obs = jnp.zeros((obs_dim_val(config),))
@@ -539,7 +539,7 @@ class TestPhase2Integration:
 
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         key = jax.random.PRNGKey(42)
         dummy_obs = jnp.zeros((obs_dim_val(config),))
@@ -650,7 +650,7 @@ class TestPhase3Integration:
         # ---- 3. Record trajectory from trained model ----
         network = ActorCritic(
             hidden_dims=tuple(config.agent.hidden_dims),
-            num_actions=6,
+            num_actions=config.agent.num_actions,
         )
         traj_key = jax.random.PRNGKey(99)
         trajectory = record_episode(

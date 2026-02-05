@@ -733,6 +733,118 @@ This sweep tests 34 configs at short runs (3 seeds, 5-15 iterations each) to fin
 
 ---
 
+## Run #007: Hidden Food Coordination Analysis (COMPLETE — Field OFF Wins Again)
+
+**Date:** 2026-02-05
+**Platform:** Google Colab
+**Duration:** 30 seeds per condition, 10M steps each (60 total runs)
+**Goal:** Determine if the shared field enables coordination on a task that REQUIRES multi-agent cooperation (hidden food revelation)
+
+### Why This Experiment
+
+Run #005 showed the field hurts on simple foraging — but simple foraging is an individual task. Hidden food requires K=3 agents within Chebyshev distance 3 to reveal invisible high-value items (5x energy = 500). If the field carries coordination signal, this is where it should show up: agents need to converge on the same location simultaneously.
+
+### Config
+
+```python
+# Base: proven 64-agent survival config
+env=EnvConfig(
+    grid_size=32,
+    num_agents=16,        # Start with 16, grow to 64
+    num_food=40,
+),
+evolution=EvolutionConfig(
+    enabled=True,
+    max_agents=64,
+    starting_energy=200,
+    food_energy=100,
+    energy_per_step=1,
+    reproduce_threshold=120,
+    reproduce_cost=40,
+    mutation_std=0.01,
+),
+train=TrainConfig(
+    total_steps=10_000_000,
+    num_envs=32,
+    num_steps=128,
+),
+
+# Hidden food settings
+env.hidden_food.enabled = True
+env.hidden_food.num_hidden = 3         # 3 invisible food items
+env.hidden_food.required_agents = 3    # Need 3 agents nearby to reveal
+env.hidden_food.reveal_distance = 3    # Chebyshev distance
+env.hidden_food.hidden_food_value_multiplier = 5.0  # 500 energy per item
+
+# Field ON condition
+field.diffusion_rate = 0.1
+field.decay_rate = 0.05
+field.write_strength = 1.0
+
+# Field OFF condition
+field.diffusion_rate = 0.0
+field.decay_rate = 1.0
+field.write_strength = 0.0
+```
+
+**Eval:** 1 episode per seed, 500 steps
+
+### Hidden Food Coordination Results
+
+| Metric | Field ON | Field OFF | Test | p-value | Effect |
+|--------|----------|-----------|------|---------|--------|
+| Hidden food revealed | 3.00 +/- 3.27 | 1.90 +/- 2.19 | Welch t=1.532 | p=0.132 | d=0.395 |
+| Hidden food collected | 2.33 +/- 2.72 | 2.07 +/- 1.95 | Welch t=0.437 | p=0.664 | d=0.113 |
+
+**Neither metric is statistically significant.** The field does not help agents coordinate to reveal or collect hidden food.
+
+### Performance Results
+
+| Metric | Field ON | Field OFF | Winner |
+|--------|----------|-----------|--------|
+| Regular food collected | 315.2 +/- 224.5 | **391.6 +/- 278.6** | Field OFF |
+| Total eval reward | 32,687 | **40,197** | Field OFF |
+| Final population | 2.7 +/- 4.7 | **5.1 +/- 6.7** | Field OFF |
+| Training reward (IQM) | 5.00 [4.38, 5.57] | **6.78 [6.64, 6.92]** | Field OFF |
+
+**Field OFF wins on every performance metric**, consistent with Run #005.
+
+### Weight Divergence
+
+| Metric | Field ON | Field OFF | Test | p-value | Effect |
+|--------|----------|-----------|------|---------|--------|
+| Weight divergence | 0.0004 +/- 0.0010 | 0.0000 | Welch | p=0.024 | d=0.614 (SIGNIFICANT) |
+
+Field ON creates measurable weight divergence (specialization), but this divergence is **purposeless** — it does not translate to better food collection or population sustainability.
+
+### Key Findings
+
+1. **Field does NOT enable coordination:** Hidden food revealed and collected are statistically indistinguishable between conditions (p=0.132, p=0.664)
+2. **Field OFF wins everywhere:** Regular food, total reward, population, training reward — all favor Field OFF
+3. **Specialization without purpose:** Field ON produces significant weight divergence (p=0.024, d=0.614) but this differentiation provides no performance benefit
+4. **Low populations in both conditions:** Final populations of 2.7 and 5.1 suggest the hidden food config is harsh, but Field OFF still survives better
+
+### Interpretation
+
+The old field system cannot be fixed by parameter tuning. The core problems are architectural:
+- **484 dimensions of noise** in the observation (local field patch overwhelms useful signal)
+- **Constant writes** (every agent writes every step, no selectivity)
+- **No trail geometry** (field diffuses uniformly, no directional information)
+
+This confirms the need for a biological pheromone system rebuild — one with discrete pheromone types, active deposition decisions, and trail-following geometry that actually mimics ant colony stigmergy.
+
+### Data
+
+- **Saved to:** `/content/drive/MyDrive/emergence-lab/hidden_food_analysis_results/`
+
+### Lessons Learned
+
+> The shared field does not help even when the task explicitly requires multi-agent coordination.
+> Weight divergence (specialization) can emerge without being adaptive — differentiation is not the same as division of labor.
+> The observation-based field design (484 dims, constant writes, no trail geometry) is fundamentally incapable of supporting stigmergic coordination. A ground-up pheromone system rebuild is needed.
+
+---
+
 ## Experiment Queue (Updated)
 
 | # | Description | Config | Platform | Status |

@@ -236,6 +236,7 @@ class BehavioralArchive:
 def extract_descriptors(
     trajectory: dict[str, np.ndarray],
     alive_mask: np.ndarray | None = None,
+    num_actions: int = 5,
 ) -> np.ndarray:
     """Extract 2D behavioral descriptors from a trajectory.
 
@@ -263,7 +264,6 @@ def extract_descriptors(
     actions = np.asarray(trajectory["actions"])           # (T, A)
     alive = np.asarray(trajectory["alive_mask"])           # (T, A)
     num_steps, num_agents = actions.shape
-    num_actions = 6  # stay, up, down, left, right, reproduce
 
     descriptors = np.zeros((num_agents, 2), dtype=np.float64)
 

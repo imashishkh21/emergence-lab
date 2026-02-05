@@ -105,7 +105,7 @@ def compute_weight_divergence(
     }
 
 
-def _movement_entropy(actions: np.ndarray, num_actions: int = 6) -> float:
+def _movement_entropy(actions: np.ndarray, num_actions: int = 5) -> float:
     """Compute entropy of an agent's action distribution.
 
     Higher entropy = more random/exploratory movement.
@@ -183,7 +183,7 @@ def extract_behavior_features(trajectory: dict[str, np.ndarray]) -> np.ndarray:
             [3] reproduction_rate     - reproductions per 100 alive steps
             [4] mean_energy           - average energy while alive
             [5] exploration_ratio     - unique cells / total steps
-            [6] action_stay_fraction  - fraction of stay actions (action 0 or 5)
+            [6] action_stay_fraction  - fraction of stay actions (action 0)
     """
     actions = np.asarray(trajectory["actions"])       # (T, A)
     positions = np.asarray(trajectory["positions"])    # (T, A, 2)
@@ -225,9 +225,8 @@ def extract_behavior_features(trajectory: dict[str, np.ndarray]) -> np.ndarray:
             agent_births = births[alive_steps, a]
             features[a, 3] = float(np.sum(agent_births)) / n_alive * 100.0
         else:
-            # Infer from action 5 (reproduce)
-            reproduce_actions = (agent_actions == 5).sum()
-            features[a, 3] = float(reproduce_actions) / n_alive * 100.0
+            # Cannot infer reproduction without birth data
+            features[a, 3] = 0.0
 
         # [4] Mean energy
         features[a, 4] = float(np.mean(agent_energy))
@@ -235,8 +234,8 @@ def extract_behavior_features(trajectory: dict[str, np.ndarray]) -> np.ndarray:
         # [5] Exploration ratio
         features[a, 5] = _exploration_ratio(agent_positions)
 
-        # [6] Stay fraction (actions 0=stay or 5=reproduce, both don't move)
-        stay_actions = ((agent_actions == 0) | (agent_actions == 5)).sum()
+        # [6] Stay fraction (action 0=stay)
+        stay_actions = (agent_actions == 0).sum()
         features[a, 6] = float(stay_actions) / n_alive
 
     return features

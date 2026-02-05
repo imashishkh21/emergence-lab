@@ -52,6 +52,10 @@ class EnvState:
     next_agent_id: jnp.ndarray     # scalar int
     agent_birth_step: jnp.ndarray  # (max_agents,) int
     agent_params: Any = None       # per-agent params pytree, (max_agents, ...)
+    # Pheromone system fields
+    has_food: jnp.ndarray | None = None              # (max_agents,) bool
+    prev_field_at_pos: jnp.ndarray | None = None     # (max_agents, num_channels) float32
+    laden_cooldown: jnp.ndarray | None = None        # (max_agents,) bool
     # Hidden food fields (None when hidden_food.enabled=False)
     hidden_food_positions: jnp.ndarray | None = None    # (num_hidden, 2)
     hidden_food_revealed: jnp.ndarray | None = None     # (num_hidden,) bool
@@ -139,6 +143,11 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
         hidden_food_reveal_timer = jnp.zeros((num_hidden,), dtype=jnp.int32)
         hidden_food_collected = jnp.zeros((num_hidden,), dtype=jnp.bool_)
 
+    # Pheromone system fields
+    has_food = jnp.zeros((max_agents,), dtype=jnp.bool_)
+    prev_field_at_pos = jnp.zeros((max_agents, config.field.num_channels), dtype=jnp.float32)
+    laden_cooldown = jnp.zeros((max_agents,), dtype=jnp.bool_)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -152,6 +161,9 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
         agent_parent_ids=agent_parent_ids,
         next_agent_id=next_agent_id,
         agent_birth_step=agent_birth_step,
+        has_food=has_food,
+        prev_field_at_pos=prev_field_at_pos,
+        laden_cooldown=laden_cooldown,
         hidden_food_positions=hidden_food_positions,
         hidden_food_revealed=hidden_food_revealed,
         hidden_food_reveal_timer=hidden_food_reveal_timer,

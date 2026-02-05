@@ -453,7 +453,7 @@ def main() -> None:
     # Create network
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
-        num_actions=6,
+        num_actions=config.agent.num_actions,
     )
     # Verify params
     observation_dim = obs_dim(config)

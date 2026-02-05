@@ -5,7 +5,7 @@ no shared communication medium (field zeroed) and no evolution (population
 remains constant). This represents "no communication at all" lower bound.
 
 Key characteristics:
-    - Field disabled: write_strength=0, decay_rate=1.0 (zeroes out field instantly)
+    - Field disabled: decay_rate=1.0 (zeroes out field instantly)
     - Evolution disabled: population stays at initial num_agents
     - Shared parameters: all agents use the same policy weights
     - Individual rewards: each agent optimizes for its own food collection
@@ -28,7 +28,7 @@ from src.environment.obs import get_observations, obs_dim
 def ippo_config(base_config: Config | None = None) -> Config:
     """Create a config for IPPO baseline.
 
-    IPPO disables the field (write_strength=0, decay_rate=1.0) and evolution.
+    IPPO disables the field (decay_rate=1.0) and evolution.
     Agents still observe the field (zeros) to maintain observation shape
     compatibility, but the field provides no information.
 
@@ -41,10 +41,9 @@ def ippo_config(base_config: Config | None = None) -> Config:
     if base_config is None:
         base_config = Config()
 
-    # Disable field: agents write nothing, and any residual decays instantly
+    # Disable field: any residual decays instantly
     field_config = replace(
         base_config.field,
-        write_strength=0.0,
         decay_rate=1.0,  # Full decay each step = field is always zeros
     )
 
@@ -224,7 +223,7 @@ def create_ippo_network(config: Config) -> ActorCritic:
     """
     return ActorCritic(
         hidden_dims=config.agent.hidden_dims,
-        num_actions=6,  # stay, up, down, left, right, reproduce (though reproduce won't work)
+        num_actions=config.agent.num_actions,
         agent_embed_dim=config.agent.agent_embed_dim,
         n_agents=config.env.num_agents,
     )
