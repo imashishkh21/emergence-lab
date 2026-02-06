@@ -1125,5 +1125,35 @@ patch_scaling_enabled: bool = False  # Toggle for A/B experiments
 
 ---
 
+## Validation Results (2026-02-06)
+
+### Quick Comparison: Patch Scaling ON vs OFF
+
+**Config:** 3 seeds, ~1.8M steps, Grid 32x32, 64 max agents, Ch1 OFF
+
+| Condition | Reward | Population |
+|-----------|--------|------------|
+| Patch Scaling ON | 0.335 ± 0.022 | 4.0 ± 1.3 |
+| Patch Scaling OFF | 0.253 ± 0.026 | 3.8 ± 0.6 |
+| **Difference** | **+33%** | ~same |
+
+### Interpretation
+
+- **Reward improved 33%** with patch scaling enabled
+- Population similar in both conditions (~4 agents from starting 16)
+- Training stable, no crashes, consistent across all seeds
+- This is a positive early signal that the coordination economics fix is working
+
+### Checkpoints Saved
+
+- `patch_scaling_validation/batch_0/` - Scaling ON (seeds 0, 1, 2)
+- `patch_scaling_OFF_comparison/batch_0/` - Scaling OFF (seeds 0, 1, 2)
+
+### Awaiting ChatGPT Analysis
+
+Results sent to ChatGPT for interpretation and next steps guidance.
+
+---
+
 *Document generated: 2026-02-06*
 *Next step: Implement patch scaling, run 3-seed validation, then full 8×30 experiment*
