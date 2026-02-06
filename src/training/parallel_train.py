@@ -230,6 +230,8 @@ def create_single_seed_state(
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
+        adaptive_gate=config.field.adaptive_gate,
+        num_field_channels=config.field.num_channels,
     )
 
     # Initialize network parameters
@@ -287,6 +289,8 @@ def single_seed_train_step(
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
+        adaptive_gate=config.field.adaptive_gate,
+        num_field_channels=config.field.num_channels,
     )
     optimizer = optax.chain(
         optax.clip_by_global_norm(config.train.max_grad_norm),
@@ -585,6 +589,8 @@ def single_seed_evolve_step(
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
+        adaptive_gate=config.field.adaptive_gate,
+        num_field_channels=config.field.num_channels,
     )
 
     # Collect rollout using PER-AGENT PARAMS
