@@ -56,6 +56,8 @@ class EnvState:
     has_food: jnp.ndarray | None = None              # (max_agents,) bool
     prev_field_at_pos: jnp.ndarray | None = None     # (max_agents, num_channels) float32
     laden_cooldown: jnp.ndarray | None = None        # (max_agents,) bool
+    # Adaptive field gate: per-agent bias for gate sigmoid (evolved via mutation)
+    agent_gate_bias: jnp.ndarray | None = None       # (max_agents, num_channels) float32
     # Hidden food fields (None when hidden_food.enabled=False)
     hidden_food_positions: jnp.ndarray | None = None    # (num_hidden, 2)
     hidden_food_revealed: jnp.ndarray | None = None     # (num_hidden,) bool
@@ -148,6 +150,11 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
     prev_field_at_pos = jnp.zeros((max_agents, config.field.num_channels), dtype=jnp.float32)
     laden_cooldown = jnp.zeros((max_agents,), dtype=jnp.bool_)
 
+    # Adaptive field gate: per-agent bias (initialized to 0 = neutral gate)
+    agent_gate_bias = None
+    if config.field.adaptive_gate:
+        agent_gate_bias = jnp.zeros((max_agents, config.field.num_channels), dtype=jnp.float32)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -164,6 +171,7 @@ def create_env_state(key: jax.Array, config: "src.configs.Config") -> EnvState: 
         has_food=has_food,
         prev_field_at_pos=prev_field_at_pos,
         laden_cooldown=laden_cooldown,
+        agent_gate_bias=agent_gate_bias,
         hidden_food_positions=hidden_food_positions,
         hidden_food_revealed=hidden_food_revealed,
         hidden_food_reveal_timer=hidden_food_reveal_timer,

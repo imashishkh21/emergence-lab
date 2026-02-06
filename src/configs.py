@@ -114,6 +114,16 @@ class FieldConfig:
     """Maximum field value per cell per channel. Values are clipped after writes."""
     territory_write_strength: float = 0.01
     """Passive territory channel (ch1) write strength per step per agent."""
+    adaptive_gate: bool = False
+    """Enable learnable per-channel gate that modulates field observation influence.
+    When True, agents learn WHEN to use the field via a sigmoid gate (0-1 per channel).
+    Gate weights are shared (PPO-trained), gate bias is per-agent (evolved)."""
+    gate_sparsity_penalty: float = 0.0
+    """L1 penalty on gate values to encourage sparse field usage. Added to PPO loss.
+    Higher values push gates toward 0 (ignore field). 0.0 = disabled."""
+    gate_bias_mutation_std: float = 0.02
+    """Mutation standard deviation for per-agent gate bias during reproduction.
+    Higher values allow faster evolution of field usage preferences."""
 
 
 @dataclass

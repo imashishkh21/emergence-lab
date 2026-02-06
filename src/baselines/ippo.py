@@ -114,9 +114,9 @@ def run_ippo_episode(
         if deterministic:
             from src.agents.policy import get_deterministic_actions
 
-            actions = get_deterministic_actions(network, params, obs)
+            actions, _gate = get_deterministic_actions(network, params, obs)
         else:
-            actions, _, _, _ = sample_actions(network, params, obs, action_key)
+            actions, _, _, _, _gate = sample_actions(network, params, obs, action_key)
 
         # Remove batch dimension
         actions = actions[0]  # (max_agents,)

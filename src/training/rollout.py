@@ -68,8 +68,11 @@ def collect_rollout(
 
         # Sample actions from current observations
         key, action_key = jax.random.split(rs.key)
-        actions, log_probs, values, _entropy = sample_actions(
-            network, rs.params, rs.last_obs, action_key
+
+        # Pass gate_bias if adaptive gate is enabled
+        gate_bias = rs.env_state.agent_gate_bias  # None or (num_envs, max_agents, C)
+        actions, log_probs, values, _entropy, gate = sample_actions(
+            network, rs.params, rs.last_obs, action_key, gate_bias
         )
 
         # Step the environment
@@ -91,6 +94,7 @@ def collect_rollout(
             'alive_mask': alive_mask,
             'births_this_step': info['births_this_step'],  # (num_envs,)
             'deaths_this_step': info['deaths_this_step'],  # (num_envs,)
+            'gate': gate,  # (num_envs, max_agents, num_channels)
         }
 
         # Update runner state

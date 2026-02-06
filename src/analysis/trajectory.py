@@ -178,11 +178,11 @@ def record_episode(
         if deterministic:
             from src.agents.policy import get_deterministic_actions
 
-            actions = get_deterministic_actions(network, params, obs_batched)
+            actions, _gate = get_deterministic_actions(network, params, obs_batched)
             actions = actions[0]  # remove batch dim
         else:
             key, action_key = jax.random.split(key)
-            actions, _log_probs, _values, _entropy = sample_actions(
+            actions, _log_probs, _values, _entropy, _gate = sample_actions(
                 network, params, obs_batched, action_key
             )
             actions = actions[0]  # remove batch dim

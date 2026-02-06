@@ -26,7 +26,8 @@ def run_episode(network, params, config, key, field_mode="normal"):
         
         obs = get_observations(state, config)
         obs_batched = obs[None, :, :]
-        actions = get_deterministic_actions(network, params, obs_batched)[0]
+        actions, _gate = get_deterministic_actions(network, params, obs_batched)
+        actions = actions[0]  # remove batch dimension
         
         # Only take actions for alive agents
         num_agents = config.env.num_agents

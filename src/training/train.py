@@ -186,6 +186,8 @@ def create_train_state(config: Config, key: jax.Array) -> RunnerState:
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
+        adaptive_gate=config.field.adaptive_gate,
+        num_field_channels=config.field.num_channels,
     )
 
     # Initialize network parameters
@@ -251,6 +253,8 @@ def train_step(
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
+        adaptive_gate=config.field.adaptive_gate,
+        num_field_channels=config.field.num_channels,
     )
     optimizer = optax.chain(
         optax.clip_by_global_norm(config.train.max_grad_norm),
@@ -273,8 +277,9 @@ def train_step(
     # We need value of the final state for GAE computation
     # Use sample_actions to get the value (we ignore the sampled action)
     key, bootstrap_key = jax.random.split(runner_state.key)
-    _, _, bootstrap_values, _ = sample_actions(
-        network, runner_state.params, runner_state.last_obs, bootstrap_key
+    gate_bias = runner_state.env_state.agent_gate_bias  # None or (num_envs, max_agents, C)
+    _, _, bootstrap_values, _, _ = sample_actions(
+        network, runner_state.params, runner_state.last_obs, bootstrap_key, gate_bias
     )
     # bootstrap_values: (num_envs, max_agents)
 
@@ -474,6 +479,25 @@ def train_step(
     )
     metrics['oldest_agent_age'] = jnp.max(agent_ages)
 
+    # --- Gate metrics (when adaptive gate is enabled) ---
+    if config.field.adaptive_gate:
+        # batch['gate']: (T, num_envs, max_agents, num_channels)
+        gate_values = batch['gate']
+        # Compute mean gate per channel (across alive agents only)
+        gate_alive_mask = alive_f[..., None]  # (T, num_envs, max_agents, 1)
+        gate_masked = gate_values * gate_alive_mask
+        gate_alive_count = jnp.maximum(jnp.sum(gate_alive_mask), 1.0)
+        mean_gate_per_channel = jnp.sum(gate_masked, axis=(0, 1, 2)) / gate_alive_count
+        # Log mean gate per channel
+        for ch_idx in range(config.field.num_channels):
+            metrics[f'gate/channel_{ch_idx}_mean'] = mean_gate_per_channel[ch_idx]
+        # Overall mean gate (average across channels)
+        metrics['gate/mean'] = jnp.mean(mean_gate_per_channel)
+        # Gate sparsity: fraction of gates < 0.1 (effectively closed)
+        # gate_alive_mask: (T, num_envs, max_agents, 1) broadcasts over channels
+        gate_closed = (gate_values < 0.1).astype(jnp.float32) * gate_alive_mask
+        metrics['gate/sparsity'] = jnp.sum(gate_closed) / (gate_alive_count * config.field.num_channels)
+
     # Sync per-agent params: broadcast updated shared params to all alive agents
     env_state = runner_state.env_state
     if env_state.agent_params is not None:
@@ -539,6 +563,8 @@ def evolve_step(
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
+        adaptive_gate=config.field.adaptive_gate,
+        num_field_channels=config.field.num_channels,
     )
 
     # Collect rollout (agents act, environment evolves)
@@ -578,6 +604,19 @@ def evolve_step(
         jnp.int32(0),
     )
     metrics['oldest_agent_age'] = jnp.max(agent_ages)
+
+    # --- Gate metrics (when adaptive gate is enabled) ---
+    if config.field.adaptive_gate:
+        gate_values = batch['gate']
+        gate_alive_mask = alive_f[..., None]
+        gate_masked = gate_values * gate_alive_mask
+        gate_alive_count = jnp.maximum(jnp.sum(gate_alive_mask), 1.0)
+        mean_gate_per_channel = jnp.sum(gate_masked, axis=(0, 1, 2)) / gate_alive_count
+        for ch_idx in range(config.field.num_channels):
+            metrics[f'gate/channel_{ch_idx}_mean'] = mean_gate_per_channel[ch_idx]
+        metrics['gate/mean'] = jnp.mean(mean_gate_per_channel)
+        gate_closed = (gate_values < 0.1).astype(jnp.float32) * gate_alive_mask[..., 0]
+        metrics['gate/sparsity'] = jnp.sum(gate_closed) / (gate_alive_count * config.field.num_channels)
 
     # Set zero placeholders for gradient metrics (so logging doesn't break)
     metrics['total_loss'] = jnp.float32(0.0)
@@ -627,6 +666,8 @@ def train(config: Config) -> RunnerState:
         print(f"Checkpoint save interval: every {config.log.save_interval} steps")
         print(f"Checkpoint dir: {config.log.checkpoint_dir}")
     print(f"Field channels: {config.field.num_channels}")
+    if config.field.adaptive_gate:
+        print(f"Adaptive gate: enabled (sparsity_penalty={config.field.gate_sparsity_penalty})")
     print(f"Num envs: {config.train.num_envs}")
     print(f"Total steps: {config.train.total_steps}")
     print(f"Steps per rollout: {config.train.num_steps}")

@@ -298,7 +298,7 @@ def single_seed_train_step(
 
     # Compute bootstrap value
     key, bootstrap_key = jax.random.split(runner_state.key)
-    _, _, bootstrap_values, _ = sample_actions(
+    _, _, bootstrap_values, _, _gate = sample_actions(
         network, runner_state.params, runner_state.last_obs, bootstrap_key
     )
 

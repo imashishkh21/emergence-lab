@@ -49,8 +49,9 @@ def record_episode(
         # Add batch dimension for policy: (1, num_agents, obs_dim)
         obs_batched = obs[None, :, :]
 
-        # Get deterministic actions: (1, num_agents) -> (num_agents,)
-        actions = get_deterministic_actions(network, params, obs_batched)
+        # Get deterministic actions: returns (actions, gate) tuple
+        # actions shape: (1, num_agents) -> (num_agents,)
+        actions, _gate = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]  # remove batch dim
 
         # Step environment

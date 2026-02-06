@@ -124,6 +124,11 @@ def reset(key: jax.Array, config: Config) -> EnvState:
     prev_field_at_pos = jnp.zeros((max_agents, config.field.num_channels), dtype=jnp.float32)
     laden_cooldown = jnp.zeros((max_agents,), dtype=jnp.bool_)
 
+    # Adaptive field gate: per-agent bias (initialized to 0 = neutral gate)
+    agent_gate_bias = None
+    if config.field.adaptive_gate:
+        agent_gate_bias = jnp.zeros((max_agents, config.field.num_channels), dtype=jnp.float32)
+
     return EnvState(
         agent_positions=agent_positions,
         food_positions=food_positions,
@@ -140,6 +145,7 @@ def reset(key: jax.Array, config: Config) -> EnvState:
         has_food=has_food,
         prev_field_at_pos=prev_field_at_pos,
         laden_cooldown=laden_cooldown,
+        agent_gate_bias=agent_gate_bias,
         hidden_food_positions=hidden_food_positions,
         hidden_food_revealed=hidden_food_revealed,
         hidden_food_reveal_timer=hidden_food_reveal_timer,
@@ -499,6 +505,8 @@ def step(
 
     has_agent_params = state.agent_params is not None
     mutation_std = config.evolution.mutation_std
+    has_gate_bias = state.agent_gate_bias is not None
+    gate_bias_mutation_std = config.field.gate_bias_mutation_std
 
     # Pre-compute per-leaf mutation rates if layer-specific rates are configured
     layer_rates = getattr(config.specialization, 'layer_mutation_rates', None)
@@ -517,7 +525,7 @@ def step(
     if has_agent_params:
         def _process_reproductions(carry, agent_idx):
             """Process one agent's reproduction attempt sequentially (with params)."""
-            alive, energy, ids, parent_ids, positions, next_id, key, ag_params, birth_steps = carry
+            alive, energy, ids, parent_ids, positions, next_id, key, ag_params, birth_steps, gate_bias = carry
 
             eligible = (
                 can_reproduce[agent_idx]
@@ -530,7 +538,7 @@ def step(
             new_energy_val = jnp.where(eligible, energy[agent_idx] - reproduce_cost, energy[agent_idx])
             energy = energy.at[agent_idx].set(new_energy_val)
 
-            key, spawn_key, mutate_key = jax.random.split(key, 3)
+            key, spawn_key, mutate_key, gate_mutate_key = jax.random.split(key, 4)
             child_pos = jax.random.randint(spawn_key, (2,), nest_spawn_min, nest_spawn_max + 1)
 
             alive = jnp.where(eligible, alive.at[free_slot].set(True), alive)
@@ -556,19 +564,37 @@ def step(
                 mutated,
             )
 
-            return (alive, energy, ids, parent_ids, positions, next_id, key, ag_params, birth_steps), eligible
+            # Mutate gate bias if enabled: copy parent + add noise
+            if has_gate_bias:
+                parent_gate_bias = gate_bias[agent_idx]
+                gate_noise = gate_bias_mutation_std * jax.random.normal(
+                    gate_mutate_key, parent_gate_bias.shape
+                )
+                child_gate_bias = parent_gate_bias + gate_noise
+                gate_bias = jnp.where(
+                    eligible,
+                    gate_bias.at[free_slot].set(child_gate_bias),
+                    gate_bias,
+                )
+
+            return (alive, energy, ids, parent_ids, positions, next_id, key, ag_params, birth_steps, gate_bias), eligible
 
         repro_key, post_repro_key = jax.random.split(remaining_key)
 
+        # Initialize gate_bias for carry (use state value or dummy)
+        init_gate_bias = state.agent_gate_bias if has_gate_bias else jnp.zeros((max_agents, config.field.num_channels))
+
         init_carry = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
-                      new_positions, state.next_agent_id, repro_key, state.agent_params, state.agent_birth_step)
-        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_agent_params, new_birth_steps), births_per_agent = (
+                      new_positions, state.next_agent_id, repro_key, state.agent_params, state.agent_birth_step, init_gate_bias)
+        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_agent_params, new_birth_steps, new_gate_bias), births_per_agent = (
             jax.lax.scan(_process_reproductions, init_carry, jnp.arange(max_agents))
         )
+        # Only keep gate_bias if it was originally enabled
+        new_gate_bias = new_gate_bias if has_gate_bias else None
     else:
         def _process_reproductions_no_params(carry, agent_idx):
             """Process one agent's reproduction attempt sequentially (no params)."""
-            alive, energy, ids, parent_ids, positions, next_id, key, birth_steps = carry
+            alive, energy, ids, parent_ids, positions, next_id, key, birth_steps, gate_bias = carry
 
             eligible = (
                 can_reproduce[agent_idx]
@@ -581,7 +607,7 @@ def step(
             new_energy_val = jnp.where(eligible, energy[agent_idx] - reproduce_cost, energy[agent_idx])
             energy = energy.at[agent_idx].set(new_energy_val)
 
-            key, spawn_key = jax.random.split(key)
+            key, spawn_key, gate_mutate_key = jax.random.split(key, 3)
             child_pos = jax.random.randint(spawn_key, (2,), nest_spawn_min, nest_spawn_max + 1)
 
             alive = jnp.where(eligible, alive.at[free_slot].set(True), alive)
@@ -592,16 +618,34 @@ def step(
             birth_steps = jnp.where(eligible, birth_steps.at[free_slot].set(current_step), birth_steps)
             next_id = jnp.where(eligible, next_id + 1, next_id)
 
-            return (alive, energy, ids, parent_ids, positions, next_id, key, birth_steps), eligible
+            # Mutate gate bias if enabled: copy parent + add noise
+            if has_gate_bias:
+                parent_gate_bias = gate_bias[agent_idx]
+                gate_noise = gate_bias_mutation_std * jax.random.normal(
+                    gate_mutate_key, parent_gate_bias.shape
+                )
+                child_gate_bias = parent_gate_bias + gate_noise
+                gate_bias = jnp.where(
+                    eligible,
+                    gate_bias.at[free_slot].set(child_gate_bias),
+                    gate_bias,
+                )
+
+            return (alive, energy, ids, parent_ids, positions, next_id, key, birth_steps, gate_bias), eligible
 
         repro_key, post_repro_key = jax.random.split(remaining_key)
 
+        # Initialize gate_bias for carry (use state value or dummy)
+        init_gate_bias_np = state.agent_gate_bias if has_gate_bias else jnp.zeros((max_agents, config.field.num_channels))
+
         init_carry_np = (new_alive, new_energy, state.agent_ids, state.agent_parent_ids,
-                         new_positions, state.next_agent_id, repro_key, state.agent_birth_step)
-        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_birth_steps), births_per_agent = (
+                         new_positions, state.next_agent_id, repro_key, state.agent_birth_step, init_gate_bias_np)
+        (new_alive, new_energy, new_ids, new_parent_ids, new_positions, new_next_id, _, new_birth_steps, new_gate_bias), births_per_agent = (
             jax.lax.scan(_process_reproductions_no_params, init_carry_np, jnp.arange(max_agents))
         )
         new_agent_params = None
+        # Only keep gate_bias if it was originally enabled
+        new_gate_bias = new_gate_bias if has_gate_bias else None
 
     birth_count = jnp.sum(births_per_agent.astype(jnp.int32))
     new_key = post_repro_key
@@ -630,6 +674,7 @@ def step(
         has_food=has_food,
         prev_field_at_pos=field_state.values[new_positions[:, 0], new_positions[:, 1]],
         laden_cooldown=laden_cooldown,
+        agent_gate_bias=new_gate_bias,
         hidden_food_positions=hidden_food_positions,
         hidden_food_revealed=hidden_food_revealed,
         hidden_food_reveal_timer=hidden_food_reveal_timer,

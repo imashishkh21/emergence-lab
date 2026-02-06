@@ -30,11 +30,12 @@ class TestNetwork:
         params = network.init(key, dummy_obs)
         
         # Forward pass
-        logits, value = network.apply(params, dummy_obs)
-        
+        logits, value, gate = network.apply(params, dummy_obs)
+
         # Check shapes
         assert logits.shape == (5,)  # 5 actions
         assert value.shape == ()  # scalar value
+        assert gate.shape == (config.field.num_channels,)  # gate values
     
     def test_network_batched(self):
         """Test that network works with batched inputs."""
@@ -51,10 +52,11 @@ class TestNetwork:
         
         # Batched forward pass using vmap
         batched_apply = jax.vmap(network.apply, in_axes=(None, 0))
-        logits, values = batched_apply(params, dummy_obs)
-        
+        logits, values, gates = batched_apply(params, dummy_obs)
+
         assert logits.shape == (32, 5)
         assert values.shape == (32,)
+        assert gates.shape == (32, 4)  # default num_field_channels
     
     def test_network_initialization(self):
         """Test that initialization follows orthogonal scheme."""
@@ -92,10 +94,11 @@ class TestNetwork:
         for hidden_dims in configs:
             network = ActorCritic(hidden_dims=hidden_dims, num_actions=5)
             params = network.init(key, jnp.zeros((obs_dim,)))
-            logits, value = network.apply(params, jnp.zeros((obs_dim,)))
-            
+            logits, value, gate = network.apply(params, jnp.zeros((obs_dim,)))
+
             assert logits.shape == (5,)
             assert value.shape == ()
+            assert gate.shape == (4,)  # default num_field_channels
 
 
 class TestActionSampling:
@@ -122,15 +125,16 @@ class TestActionSampling:
         # Batch of observations: (num_envs, num_agents, obs_dim)
         obs = jax.random.normal(sample_key, (num_envs, num_agents, obs_dim))
         
-        actions, log_probs, values, entropy = sample_actions(
+        actions, log_probs, values, entropy, gate = sample_actions(
             network, params, obs, sample_key
         )
-        
+
         # Check shapes
         assert actions.shape == (num_envs, num_agents)
         assert log_probs.shape == (num_envs, num_agents)
         assert values.shape == (num_envs, num_agents)
         assert entropy.shape == (num_envs, num_agents)
+        assert gate.shape == (num_envs, num_agents, 4)  # default num_field_channels
         
         # Actions should be valid (0-4)
         assert jnp.all(actions >= 0)
@@ -150,9 +154,10 @@ class TestActionSampling:
         obs = jax.random.normal(key, (4, 2, obs_dim))  # 4 envs, 2 agents
         
         # Get deterministic actions
-        actions = get_deterministic_actions(network, params, obs)
-        
+        actions, gate = get_deterministic_actions(network, params, obs)
+
         assert actions.shape == (4, 2)
+        assert gate.shape == (4, 2, 4)  # default num_field_channels
         assert jnp.all(actions >= 0)
         assert jnp.all(actions < 5)
     
@@ -173,7 +178,7 @@ class TestActionSampling:
         all_actions = []
         for i in range(10):
             sample_key = jax.random.PRNGKey(i)
-            actions, _, _, _ = sample_actions(network, params, obs, sample_key)
+            actions, _, _, _, _gate = sample_actions(network, params, obs, sample_key)
             all_actions.append(actions)
         
         all_actions = jnp.stack(all_actions)
@@ -196,11 +201,12 @@ class TestActionSampling:
         @jax.jit
         def jit_sample(obs, key):
             return sample_actions(network, params, obs, key)
-        
+
         obs = jax.random.normal(key, (4, 2, obs_dim))
-        actions, log_probs, values, entropy = jit_sample(obs, key)
+        actions, log_probs, values, entropy, gate = jit_sample(obs, key)
 
         assert actions.shape == (4, 2)
+        assert gate.shape == (4, 2, 4)  # default num_field_channels
 
 
 class TestAgentSpecificHeads:
@@ -222,10 +228,10 @@ class TestAgentSpecificHeads:
 
         params = network.init(key, dummy_obs, agent_id)
 
-        # Forward pass with agent_id
+        # Forward pass with agent_id (AgentSpecificActorCritic returns 2 values)
         logits, value = network.apply(params, dummy_obs, agent_id)
 
-        assert logits.shape == (5,), f"Expected (6,), got {logits.shape}"
+        assert logits.shape == (5,), f"Expected (5,), got {logits.shape}"
         assert value.shape == (), f"Expected scalar, got {value.shape}"
 
     def test_different_agents_different_outputs(self):
@@ -242,7 +248,7 @@ class TestAgentSpecificHeads:
         dummy_obs = jnp.ones((obs_dim,))  # Non-zero input for differentiation
         params = network.init(key, dummy_obs, jnp.int32(0))
 
-        # Get outputs for each agent
+        # Get outputs for each agent (AgentSpecificActorCritic returns 2 values)
         outputs = []
         for i in range(n_agents):
             logits, value = network.apply(params, dummy_obs, jnp.int32(i))
@@ -304,7 +310,7 @@ class TestAgentSpecificHeads:
         dummy_obs = jnp.ones((obs_dim,))
         params = network.init(key, dummy_obs, jnp.int32(0))
 
-        # Call without agent_id
+        # Call without agent_id (AgentSpecificActorCritic returns 2 values)
         logits_none, value_none = network.apply(params, dummy_obs)
         # Call with agent_id=0
         logits_0, value_0 = network.apply(params, dummy_obs, jnp.int32(0))
@@ -329,6 +335,7 @@ class TestAgentSpecificHeads:
         params = network.init(key, dummy_obs, jnp.int32(0))
 
         # agent_id beyond n_agents should be clamped to last head
+        # (AgentSpecificActorCritic returns 2 values)
         logits_big, value_big = network.apply(
             params, dummy_obs, jnp.int32(100)
         )
@@ -511,7 +518,7 @@ class TestAgentEmbedding:
         agent_id = jnp.int32(0)
 
         params = network.init(key, dummy_obs, agent_id)
-        logits, value = network.apply(params, dummy_obs, agent_id)
+        logits, value, gate = network.apply(params, dummy_obs, agent_id)
 
         assert logits.shape == (5,)
         assert value.shape == ()
@@ -579,7 +586,7 @@ class TestAgentEmbedding:
         # With embedding, same observation + different agent_id should give different outputs
         outputs = []
         for i in range(n_agents):
-            logits, value = network.apply(params, dummy_obs, jnp.int32(i))
+            logits, value, gate = network.apply(params, dummy_obs, jnp.int32(i))
             outputs.append(np.array(logits))
 
         # At least some agents should differ (different embeddings → different encoder input)
@@ -608,12 +615,12 @@ class TestAgentEmbedding:
         params = network.init(key, dummy_obs)
 
         # Call without agent_id — should work fine
-        logits, value = network.apply(params, dummy_obs)
+        logits, value, gate = network.apply(params, dummy_obs)
         assert logits.shape == (5,)
         assert value.shape == ()
 
         # Also works with agent_id=None explicitly
-        logits2, value2 = network.apply(params, dummy_obs, None)
+        logits2, value2, gate2 = network.apply(params, dummy_obs, None)
         np.testing.assert_allclose(np.array(logits), np.array(logits2), atol=1e-6)
 
     def test_agent_specific_with_embedding(self):
@@ -639,7 +646,7 @@ class TestAgentEmbedding:
         # Check embedding exists
         assert "agent_embedding" in params["params"]
 
-        # Forward pass for each agent
+        # Forward pass for each agent (AgentSpecificActorCritic returns 2 values)
         for i in range(n_agents):
             logits, value = network.apply(params, dummy_obs, jnp.int32(i))
             assert logits.shape == (5,)
@@ -669,7 +676,7 @@ class TestAgentEmbedding:
 
         obs = jax.random.normal(key, (obs_dim,))
         for i in range(n_agents):
-            logits, value = forward(obs, jnp.int32(i))
+            logits, value, gate = forward(obs, jnp.int32(i))
             assert logits.shape == (5,)
             assert value.shape == ()
 
@@ -697,7 +704,7 @@ class TestAgentEmbedding:
             lambda obs, aid: network.apply(params, obs, aid),
             in_axes=(0, 0),
         )
-        logits, values = batched_apply(batch_obs, agent_ids)
+        logits, values, gates = batched_apply(batch_obs, agent_ids)
 
         assert logits.shape == (n_agents, 5)
         assert values.shape == (n_agents,)
@@ -721,7 +728,7 @@ class TestAgentEmbedding:
         params = network.init(key, dummy_obs, jnp.int32(0))
 
         def loss_fn(p, agent_id):
-            logits, value = network.apply(p, dummy_obs, agent_id)
+            logits, value, gate = network.apply(p, dummy_obs, agent_id)
             return jnp.sum(logits) + value
 
         grads = jax.grad(loss_fn)(params, jnp.int32(1))

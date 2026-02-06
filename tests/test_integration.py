@@ -117,8 +117,8 @@ class TestIntegration:
         for t in range(config.env.max_steps):
             obs = get_observations(eval_state, config)
             obs_batched = obs[None, :, :]
-            actions = get_deterministic_actions(network, runner_state.params, obs_batched)
-            actions = actions[0]
+            actions, _gate = get_deterministic_actions(network, runner_state.params, obs_batched)
+            actions = actions[0]  # remove batch dimension
             eval_state, rewards, done, info = step(eval_state, actions, config)
             total_eval_reward += float(jnp.sum(rewards))
             if bool(done):
@@ -287,7 +287,8 @@ class TestPhase2Integration:
         for t in range(config.env.max_steps):
             obs = get_observations(state, config)
             obs_batched = obs[None, :, :]
-            actions = get_deterministic_actions(network, params, obs_batched)[0]
+            actions, _gate = get_deterministic_actions(network, params, obs_batched)
+            actions = actions[0]  # remove batch dimension
             state, rewards, done, info = step(state, actions, config)
             total_deaths += int(info["deaths_this_step"])
             # Keep food collected to prevent respawns from helping
@@ -319,7 +320,8 @@ class TestPhase2Integration:
         for t in range(config2.env.max_steps):
             obs = get_observations(state2, config2)
             obs_batched = obs[None, :, :]
-            actions = get_deterministic_actions(network, params, obs_batched)[0]
+            actions, _gate = get_deterministic_actions(network, params, obs_batched)
+            actions = actions[0]  # remove batch dimension
             state2, rewards, done, info = step(state2, actions, config2)
             pop = int(jnp.sum(state2.agent_alive.astype(jnp.int32)))
             pop_history.append(pop)

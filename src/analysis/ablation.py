@@ -171,7 +171,7 @@ def _run_episode_full(
         obs_batched = obs[None, :, :]
 
         # Get deterministic actions: (1, max_agents) -> (max_agents,)
-        actions = get_deterministic_actions(network, params, obs_batched)
+        actions, _gate = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]
 
         # Step environment
@@ -329,7 +329,7 @@ def _run_extended_episode_full(
         obs_batched = obs[None, :, :]
 
         # Get deterministic actions: (1, max_agents) -> (max_agents,)
-        actions = get_deterministic_actions(network, params, obs_batched)
+        actions, _gate = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]
 
         # Step environment (agents will write to field during step)
@@ -833,7 +833,7 @@ def _run_specialization_episode(
     for t in range(config.env.max_steps):
         obs = get_observations(state, config)
         obs_batched = obs[None, :, :]
-        actions = get_deterministic_actions(network, params, obs_batched)
+        actions, _gate = get_deterministic_actions(network, params, obs_batched)
         actions = actions[0]
 
         pre_food = int(jnp.sum(state.food_collected.astype(jnp.int32)))

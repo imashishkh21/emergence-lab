@@ -200,9 +200,9 @@ def run_ours_episode(
         if deterministic:
             from src.agents.policy import get_deterministic_actions
 
-            actions = get_deterministic_actions(network, params, obs_batch)
+            actions, _gate = get_deterministic_actions(network, params, obs_batch)
         else:
-            actions, _, _, _ = sample_actions(network, params, obs_batch, action_key)
+            actions, _, _, _, _gate = sample_actions(network, params, obs_batch, action_key)
 
         actions = actions[0]
 

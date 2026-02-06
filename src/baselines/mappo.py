@@ -402,9 +402,9 @@ def run_mappo_episode(
         # Sample or get deterministic actions
         key, action_key = jax.random.split(key)
         if deterministic:
-            actions = get_deterministic_actions(actor, actor_params, obs_batch)
+            actions, _gate = get_deterministic_actions(actor, actor_params, obs_batch)
         else:
-            actions, _, _, _ = sample_actions(actor, actor_params, obs_batch, action_key)
+            actions, _, _, _, _gate = sample_actions(actor, actor_params, obs_batch, action_key)
 
         # Remove batch dimension
         actions = actions[0]  # (max_agents,)
