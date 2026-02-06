@@ -61,7 +61,7 @@ def reset(key: jax.Array, config: Config) -> EnvState:
 
     # Random food positions - but not too close to nest
     nest_center = config.env.grid_size // 2
-    min_nest_distance = config.nest.radius + config.nest.patch_radius + 1
+    min_nest_distance = config.nest.radius + 1
 
     def sample_valid_food_pos(key: jax.Array) -> jnp.ndarray:
         """Sample a food position that's far enough from nest."""
@@ -296,7 +296,7 @@ def step(
     respawns = food_collected & (respawn_rolls < config.env.food_respawn_prob)
     # Generate new random positions for respawning food - not too close to nest
     nest_center = config.env.grid_size // 2
-    min_nest_distance = config.nest.radius + config.nest.patch_radius + 1
+    min_nest_distance = config.nest.radius + 1
 
     new_food_positions = jax.random.randint(
         pos_key, shape=(num_food, 2), minval=0, maxval=grid_size
