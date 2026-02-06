@@ -56,6 +56,7 @@ class EnvState:
     has_food: jnp.ndarray | None = None              # (max_agents,) bool
     prev_field_at_pos: jnp.ndarray | None = None     # (max_agents, num_channels) float32
     laden_cooldown: jnp.ndarray | None = None        # (max_agents,) bool
+    food_source_pos: jnp.ndarray | None = None       # (max_agents, 2) int32
     # Adaptive field gate: per-agent bias for gate sigmoid (evolved via mutation)
     agent_gate_bias: jnp.ndarray | None = None       # (max_agents, num_channels) float32
     # Hidden food fields (None when hidden_food.enabled=False)

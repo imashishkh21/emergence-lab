@@ -89,6 +89,13 @@ class NestConfig:
     """PPO reward fraction on nest delivery (split signal)."""
     compass_noise_rate: float = 0.10
     """Path integration error rate. Noise std = rate * distance / grid_size."""
+    # Patch scaling parameters
+    patch_radius: int = 2
+    """Radius for counting agents at food source (Chebyshev distance)."""
+    patch_n_cap: int = 6
+    """Max agents for scaling benefit (cap on effective count)."""
+    patch_scaling_enabled: bool = False
+    """Toggle patch throughput scaling for A/B experiments."""
 
 
 @dataclass

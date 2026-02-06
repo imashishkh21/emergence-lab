@@ -59,10 +59,26 @@ def reset(key: jax.Array, config: Config) -> EnvState:
     agent_positions = jnp.zeros((max_agents, 2), dtype=jnp.int32)
     agent_positions = agent_positions.at[:num_agents].set(active_positions)
 
-    # Random food positions (may overlap with each other or agents — that's fine)
-    food_positions = jax.random.randint(
-        k2, shape=(num_food, 2), minval=0, maxval=grid_size
-    )
+    # Random food positions - but not too close to nest
+    nest_center = config.env.grid_size // 2
+    min_nest_distance = config.nest.radius + config.nest.patch_radius + 1
+
+    def sample_valid_food_pos(key: jax.Array) -> jnp.ndarray:
+        """Sample a food position that's far enough from nest."""
+        # Simple approach: sample and reject if too close
+        # For small grids, this is fine
+        pos = jax.random.randint(key, shape=(2,), minval=0, maxval=grid_size)
+        dist_to_nest = jnp.maximum(jnp.abs(pos[0] - nest_center), jnp.abs(pos[1] - nest_center))
+        # If too close, push to edge (simple fix, not perfect but avoids infinite loop)
+        valid_pos = jnp.where(
+            dist_to_nest < min_nest_distance,
+            jnp.array([0, 0], dtype=jnp.int32),  # fallback to corner
+            pos,
+        )
+        return valid_pos
+
+    food_keys = jax.random.split(k2, num_food)
+    food_positions = jax.vmap(sample_valid_food_pos)(food_keys)
 
     # No food collected yet
     food_collected = jnp.zeros((num_food,), dtype=jnp.bool_)
@@ -123,6 +139,7 @@ def reset(key: jax.Array, config: Config) -> EnvState:
     has_food = jnp.zeros((max_agents,), dtype=jnp.bool_)
     prev_field_at_pos = jnp.zeros((max_agents, config.field.num_channels), dtype=jnp.float32)
     laden_cooldown = jnp.zeros((max_agents,), dtype=jnp.bool_)
+    food_source_pos = jnp.zeros((max_agents, 2), dtype=jnp.int32)
 
     # Adaptive field gate: per-agent bias (initialized to 0 = neutral gate)
     agent_gate_bias = None
@@ -145,6 +162,7 @@ def reset(key: jax.Array, config: Config) -> EnvState:
         has_food=has_food,
         prev_field_at_pos=prev_field_at_pos,
         laden_cooldown=laden_cooldown,
+        food_source_pos=food_source_pos,
         agent_gate_bias=agent_gate_bias,
         hidden_food_positions=hidden_food_positions,
         hidden_food_revealed=hidden_food_revealed,
@@ -239,6 +257,18 @@ def step(
     pickup_mask = (food_per_agent > 0) & state.agent_alive & ~state.has_food
     has_food = jnp.where(pickup_mask, True, state.has_food)
 
+    # Get food position for each agent that picked up food
+    agent_food = agent_food_mask.T  # (max_agents, num_food)
+    picked_food_idx = jnp.argmax(agent_food, axis=1)  # (max_agents,)
+    picked_food_pos = state.food_positions[picked_food_idx]  # (max_agents, 2)
+
+    # Store food_source_pos for agents that picked up food, keep previous for others
+    food_source_pos = jnp.where(
+        pickup_mask[:, None],  # (max_agents, 1) -> broadcasts to (max_agents, 2)
+        picked_food_pos,
+        state.food_source_pos,
+    )
+
     # Crop refuel: fill energy to max on food pickup (biological: ant fills
     # personal stomach at food source to fuel the return trip)
     energy_after_food = jnp.where(
@@ -264,9 +294,27 @@ def step(
     respawn_rolls = jax.random.uniform(roll_key, shape=(num_food,))
     # Food respawns if: it was collected (either previously or this step) AND roll < prob
     respawns = food_collected & (respawn_rolls < config.env.food_respawn_prob)
-    # Generate new random positions for respawning food
+    # Generate new random positions for respawning food - not too close to nest
+    nest_center = config.env.grid_size // 2
+    min_nest_distance = config.nest.radius + config.nest.patch_radius + 1
+
     new_food_positions = jax.random.randint(
         pos_key, shape=(num_food, 2), minval=0, maxval=grid_size
+    )
+
+    # Check distance to nest and push away if too close
+    dist_to_nest = jnp.maximum(
+        jnp.abs(new_food_positions[:, 0] - nest_center),
+        jnp.abs(new_food_positions[:, 1] - nest_center),
+    )
+    too_close = dist_to_nest < min_nest_distance
+
+    # Simple fix: if too close, clamp to edge of valid zone
+    # This isn't perfect but avoids nest overlap
+    new_food_positions = jnp.where(
+        too_close[:, None],
+        jnp.zeros_like(new_food_positions),  # fallback positions
+        new_food_positions,
     )
     # Replace positions of respawning food; keep others unchanged
     food_positions = jnp.where(
@@ -419,9 +467,47 @@ def step(
     has_food = jnp.where(delivering, False, has_food)
     laden_cooldown = jnp.where(delivering, False, laden_cooldown)
 
-    # Delivery reward (PPO signal)
+    # --- Patch throughput scaling ---
+    if config.nest.patch_scaling_enabled:
+        # Count agents near each delivering agent's food_source_pos
+        # food_source_pos: (max_agents, 2), new_positions: (max_agents, 2)
+
+        # For each delivering agent, count how many agents are near their food_source_pos
+        # Use the pattern from hidden-food reveal
+        src_rows = food_source_pos[:, 0:1]  # (max_agents, 1)
+        src_cols = food_source_pos[:, 1:2]  # (max_agents, 1)
+        agent_rows = new_positions[:, 0]  # (max_agents,)
+        agent_cols = new_positions[:, 1]  # (max_agents,)
+
+        # Distance from each agent to each food_source_pos
+        row_dist = jnp.abs(src_rows - agent_rows[None, :])  # (max_agents, max_agents)
+        col_dist = jnp.abs(src_cols - agent_cols[None, :])  # (max_agents, max_agents)
+        chebyshev = jnp.maximum(row_dist, col_dist)  # (max_agents, max_agents)
+
+        # Count alive agents within patch_radius of each agent's food_source_pos
+        within_patch = (chebyshev <= config.nest.patch_radius) & state.agent_alive[None, :]
+        agents_at_patch = jnp.sum(within_patch.astype(jnp.int32), axis=1)  # (max_agents,)
+
+        # Apply cap and compute scaling factor: sqrt(n_eff) / n_eff
+        n_eff_i32 = jnp.minimum(agents_at_patch, config.nest.patch_n_cap)
+        n_eff_i32 = jnp.maximum(n_eff_i32, 1)  # Avoid division by zero
+        n_eff = n_eff_i32.astype(jnp.float32)
+        patch_scale = jnp.sqrt(n_eff) / n_eff  # (max_agents,)
+    else:
+        patch_scale = jnp.ones((max_agents,), dtype=jnp.float32)  # No scaling
+
+    # Apply scaling to delivery reward
     delivery_reward = jnp.where(
-        delivering, food_energy_val * config.nest.delivery_reward_fraction, 0.0
+        delivering,
+        food_energy_val * config.nest.delivery_reward_fraction * patch_scale,
+        0.0,
+    )
+
+    # Clear food_source_pos for agents that delivered
+    food_source_pos = jnp.where(
+        delivering[:, None],  # (max_agents, 1) -> broadcasts to (max_agents, 2)
+        jnp.zeros(2, dtype=jnp.int32),  # reset to (0, 0)
+        food_source_pos,
     )
 
     # --- 6. Compute reward ---
@@ -486,6 +572,13 @@ def step(
     # Clear has_food and laden_cooldown on death
     has_food = jnp.where(starved, False, has_food)
     laden_cooldown = jnp.where(starved, False, laden_cooldown)
+
+    # Clear food_source_pos for dead agents
+    food_source_pos = jnp.where(
+        new_alive[:, None],  # alive agents keep their food_source_pos
+        food_source_pos,
+        jnp.zeros(2, dtype=jnp.int32),  # dead agents get reset
+    )
 
     # --- 10. Reproduction ---
     # Auto-reproduction: alive + energy >= threshold + free slot
@@ -674,6 +767,7 @@ def step(
         has_food=has_food,
         prev_field_at_pos=field_state.values[new_positions[:, 0], new_positions[:, 1]],
         laden_cooldown=laden_cooldown,
+        food_source_pos=food_source_pos,
         agent_gate_bias=new_gate_bias,
         hidden_food_positions=hidden_food_positions,
         hidden_food_revealed=hidden_food_revealed,
