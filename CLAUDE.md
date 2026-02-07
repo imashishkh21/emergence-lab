@@ -2,11 +2,11 @@
 
 ## Mission
 
-**Prove that collective intelligence emerges from simple agents + shared medium + evolution — and demonstrate it visually in a way that makes investors say "holy shit."**
+**Build an ADAPTIVE STIGMERGY ENGINE — a system that automatically decides when to activate collective coordination (field ON) vs when to rely on individual behavior (field OFF) based on the task and situation.**
 
-This is a research project. Every code change should serve one question: *does the shared field encode collective knowledge that no individual agent possesses?* The evidence must be rigorous (ablation-tested, statistically significant) AND visceral (visualizations that make emergence undeniable at a glance).
+The core product is not "stigmergy works." It is: *the system knows when coordination is economically justified and activates it selectively.* This requires two things in sequence: (1) a field mechanism that genuinely helps agents in at least one scenario, and (2) an adaptive gate that learns to activate the field only when its marginal value is positive. Every code change should serve this two-step goal. The engine must be robust (ablation-tested, statistically validated) AND visceral (visualizations that make the adaptive gating undeniable at a glance).
 
-## What We've Proven So Far
+## What We've Built So Far
 
 | Phase | Status | Key Result |
 |-------|--------|------------|
@@ -14,10 +14,12 @@ This is a research project. Every code change should serve one question: *does t
 | **Phase 2: Evolutionary Pressure** | COMPLETE | Birth/death/reproduction working; population reaches equilibrium (32/32 maxed); 108 births + 108 deaths = perfect turnover; weight inheritance + mutation |
 | **Phase 3: Specialization Detection** | COMPLETE | Weight divergence tracking, behavioral clustering (K-means + silhouette), species detection, lineage-strategy correlation, specialization ablation (divergent > uniform > random) |
 | **Phase 4/4B: Infrastructure** | COMPLETE | Transfer entropy, division of labor, phase transition detection, dashboard, checkpointing, Kaggle training (9.8M steps) |
-| **Phase 5: Prove Emergence** | COMPLETE | Information-theoretic metrics (O-info, PID, Causal Emergence), baselines (IPPO, ACO, MAPPO), statistical reporting (rliable), publication figures, multi-seed experiments |
+| **Phase 5: Validate Emergence** | COMPLETE | Information-theoretic metrics (O-info, PID, Causal Emergence), baselines (IPPO, ACO, MAPPO), statistical reporting (rliable), benchmark figures, multi-seed experiments |
 | **Phase 6: Biological Pheromone System** | IN PROGRESS | Redesigned field based on 103 research sources; success-gated writes, gradient sensing, nest mechanics, food carry-back |
 
-**Key empirical finding**: Random field HURTS agents (585 < 600 food) — they learned to READ the field for information. The field is not noise; it carries signal. This motivated a complete redesign based on ant biology research (see Phase 6).
+**Key empirical finding (Phase 1-5)**: Random field HURTS agents (585 < 600 food) — they learned to READ the field for information. The field is not noise; it carries signal. This motivated a complete redesign based on ant biology research (see Phase 6).
+
+**Key empirical finding (Phase 6, 8 experiments)**: The field is currently mechanically broken — it never helps under any configuration tested. The field's marginal value is negative whenever agents have redundant food sensing (the K=5 nearest food observation gives agents all the information the field could provide, making the field purely a source of noise and wasted network capacity). Previous attempts at building the adaptive gate failed because there was nothing useful to gate. The path forward is: first fix the field mechanics so stigmergy genuinely works in at least one scenario, then build the adaptive gate on top.
 
 ## The Science
 
@@ -26,6 +28,12 @@ A shared learnable medium (stigmergy) between simple agents, combined with evolu
 1. **Collective knowledge** encoded in field spatial structures
 2. **Behavioral specialization** — scouts, exploiters, balanced agents emerge
 3. **Species formation** — stable, hereditary behavioral clusters
+
+### Adaptive Engine Hypothesis
+The field's marginal value is negative whenever agents have redundant food sensing. An adaptive stigmergy engine must:
+1. **First** operate in a regime where the field genuinely helps (information asymmetry — agents cannot find food without the field)
+2. **Then** learn to activate the field selectively: ON when coordination pays, OFF when individual behavior suffices
+3. The gate can be **evolutionary** (per-agent `gate_bias` mutated on reproduction — population-level selection for field use) or **learned** (gradient-trained gate network that conditions on task features)
 
 ### Biological Inspiration
 - **Ant colony stigmergy**: pheromone trails encode collective knowledge about food sources
@@ -157,7 +165,7 @@ src/
 │   ├── information.py          # Transfer entropy + division of labor [Phase 4]
 │   ├── statistics.py           # rliable integration (IQM, bootstrap CI) [Phase 5]
 │   ├── scaling.py              # Superlinear scaling analysis [Phase 5]
-│   ├── paper_figures.py        # Publication figures (300 DPI, PDF+PNG) [Phase 5]
+│   ├── paper_figures.py        # Benchmark figures (300 DPI, PDF+PNG) [Phase 5]
 │   └── emergence_report.py     # Unified metrics computation + JSON output [Phase 5]
 ├── baselines/                  # [Phase 5]
 │   ├── ippo.py                 # Independent PPO (no field, shared params)
@@ -266,36 +274,54 @@ These patterns are non-negotiable. Violating them causes silent JIT failures or 
 
 ## What Needs to Happen Next
 
-### Phase 6 Immediate Priorities
+### Step 1: Fix the Field Mechanics (Make Stigmergy Work)
 
-1. **Complete pheromone system implementation**: Steps 7-12 of the build plan (food carrying, nest delivery, nest reproduction, success-gated field writes, new observations, integration test). See `docs/plans/2026-02-05-biological-pheromone-system.md` for full spec.
+The field is currently broken — 8 experiments confirm it never helps under any configuration. The root cause: agents' K=5 nearest food observation makes the field redundant. The field cannot compete with direct food sensing, so it adds noise and wastes network capacity.
 
-2. **Hyperparameter sweep**: 69-run sweep notebook is ready. Covers diffusion/decay rates, nest radius, food sip fraction, compass noise, territory write strength. Goal: find the config where field ON beats field OFF.
+**The "nuclear option" to force field dependence:**
+1. **Remove direct food compass** — agents can only sense food through pheromone trails near the nest. Far from the nest, the field is the ONLY way to find food.
+2. **3x3 field patch observation** — replace gradient sensing with a small local field view. Agents read a local patch, not abstract gradients.
+3. **Accumulation + slow decay** — field values accumulate from multiple depositors and persist long enough to form stable trails. Current fast decay wipes signal before agents can exploit it.
+4. **Validate**: field ON must beat field OFF by a statistically significant margin in this forced-dependence scenario. If it does not, the field mechanics are fundamentally flawed and need deeper redesign.
 
-3. **Full 10M step experiment**: Take the best config from the sweep and run a proper long training. This is where trail formation and foraging loops should emerge.
+This is the prerequisite for everything else. Without a regime where the field genuinely helps, there is nothing to gate.
 
-4. **Pheromone system vs field-off baseline**: The moment of truth. If the biological pheromone system reverses the old result (field ON > field OFF), we have proof that the mechanism matters, not just the medium.
+### Step 2: Build the Adaptive Gate (Field ON/OFF Per-Task)
 
-### Evidence Gaps (for the paper / investor demo)
+Once Step 1 proves the field works in at least one scenario, build the adaptive engine:
 
-1. **Visual "holy shit" moment**: Current rendering is basic (heatmap + dots). We need:
+1. **Two-task demo environment**:
+   - **Task A (easy)**: Food is visible/nearby, no coordination needed. Optimal behavior: gate closes, agents forage individually.
+   - **Task B (hard)**: Food is hidden/distant, coordination required. Optimal behavior: gate opens, agents use pheromone trails.
+   - Tasks alternate or are randomly assigned per episode.
+
+2. **Gate mechanism** (two candidate approaches):
+   - **Evolutionary gate**: Each agent has a heritable `gate_bias` parameter mutated on reproduction. Population-level selection pressure drives gate_bias toward 0 (field OFF) in easy tasks and toward 1 (field ON) in hard tasks.
+   - **Learned gate**: A small gate network takes task features as input and outputs a field activation weight [0, 1]. Trained end-to-end via PPO.
+
+3. **Success metric**: The adaptive engine must outperform both always-ON and always-OFF baselines across the task mixture. The gate must demonstrably correlate with task difficulty.
+
+### Engine Requirements (Product Milestones)
+
+1. **Visual diagnostic system**: Current rendering is basic (heatmap + dots). The engine needs:
    - Timelapse of recruitment trails forming during a foraging episode
-   - Side-by-side: pheromone system vs no-field agent behavior
-   - Species visualization: color agents by cluster, show different movement patterns
+   - Side-by-side: field ON vs field OFF agent behavior in hard vs easy tasks
+   - Gate activation visualization: show when/why the engine turns coordination on
    - Channel-separated visualization (recruitment trails vs territory map)
 
-2. **Stronger specialization signal**: Need experiments with `diversity_bonus` and `niche_pressure` tuned to find the sweet spot under the new pheromone system.
+2. **Stronger specialization signal**: Need experiments with `diversity_bonus` and `niche_pressure` tuned to find the sweet spot under the working pheromone system.
 
-3. **Phase transition documentation**: The `EmergenceTracker` and `SpecializationTracker` detect sudden metric changes — we need to capture and visualize these "moments of emergence."
+3. **Phase transition detection**: The `EmergenceTracker` and `SpecializationTracker` detect sudden metric changes — the engine needs to capture and surface these "moments of emergence" automatically.
 
-4. **Scaling experiments**: Does emergence get STRONGER with more agents? More field channels? Larger grid? This is the key demo narrative: "look what happens when you scale."
+4. **Scaling validation**: Does the adaptive engine get BETTER with more agents? More field channels? Larger grid? This is the core engine promise: coordination that improves with scale, activated only when it pays.
 
-### Future Ideas (Phase 7+)
+### Future Engine Capabilities (Phase 7+)
 
 - Channels 2-3: learned neural network writes (DIAL-style communication)
 - Food quality variation (higher quality = stronger pheromone)
 - Nest congestion mechanics (negative feedback when crowded)
 - Lane formation visualization
+- Multi-task curriculum: gradually increase task diversity to train robust gating
 - Multi-species interaction dynamics
 - Competitive/cooperative species relationships
 - Predator-prey dynamics

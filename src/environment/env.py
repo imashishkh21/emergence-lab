@@ -211,8 +211,10 @@ def step(
     ], dtype=jnp.int32)
 
     # Laden agents in cooldown are frozen in place (move every other step)
-    laden_frozen = state.has_food & state.laden_cooldown & state.agent_alive
-    padded_actions = jnp.where(laden_frozen, 0, padded_actions)  # force stay
+    # When continuous_writing is enabled, laden agents move every step (no alternation)
+    if not config.nest.continuous_writing:
+        laden_frozen = state.has_food & state.laden_cooldown & state.agent_alive
+        padded_actions = jnp.where(laden_frozen, 0, padded_actions)  # force stay
 
     deltas = action_deltas[padded_actions]  # (max_agents, 2)
     new_positions = state.agent_positions + deltas
@@ -292,7 +294,9 @@ def step(
     pickup_reward = food_per_agent * food_energy_val * config.nest.pickup_reward_fraction
 
     # Toggle laden_cooldown for agents carrying food (move/write alternation)
-    laden_cooldown = jnp.where(has_food, ~laden_cooldown, laden_cooldown)
+    # When continuous_writing is enabled, skip the toggle (no alternation)
+    if not config.nest.continuous_writing:
+        laden_cooldown = jnp.where(has_food, ~laden_cooldown, laden_cooldown)
 
     # --- 3. Food respawn ---
     # Collected food has food_respawn_prob chance to respawn at a random location
@@ -561,10 +565,11 @@ def step(
     field_state = write_local(field_state, new_positions, territory_values, cap=config.field.field_value_cap)
 
     # Ch0 (recruitment): depends on food_patch_marking mode
+    ch0_strength = config.field.ch0_write_strength
     if config.nest.food_patch_marking:
         # Patch marking: write Ch0 ONLY at food pickup location, one-shot
         recruit_values = jnp.zeros((max_agents, num_ch), dtype=jnp.float32)
-        recruit_values = recruit_values.at[:, 0].set(1.0)
+        recruit_values = recruit_values.at[:, 0].set(ch0_strength)
         recruit_values = recruit_values * pickup_mask[:, None]
         field_state = write_local(
             field_state, food_source_pos, recruit_values,
@@ -573,17 +578,25 @@ def step(
         write_phase = jnp.zeros((max_agents,), dtype=jnp.bool_)
     else:
         # Default: laden agents write during write phase (along return path)
-        write_phase = has_food & laden_cooldown & state.agent_alive
+        # When continuous_writing: ALL laden agents write every step (no cooldown gating)
+        if config.nest.continuous_writing:
+            write_phase = has_food & state.agent_alive
+        else:
+            write_phase = has_food & laden_cooldown & state.agent_alive
         recruit_values = jnp.zeros((max_agents, num_ch), dtype=jnp.float32)
-        recruit_values = recruit_values.at[:, 0].set(1.0)
+        recruit_values = recruit_values.at[:, 0].set(ch0_strength)
         recruit_values = recruit_values * write_phase[:, None]
         field_state = write_local(field_state, new_positions, recruit_values, cap=config.field.field_value_cap)
 
     # --- 8. Energy drain ---
-    # Subtract energy_per_step from alive agents, but write steps are free
-    # (biological: pheromone deposit is chemically cheap, no locomotion cost)
-    is_write_step = write_phase  # laden agents in write phase don't move
-    energy_cost = jnp.where(is_write_step, 0.0, config.evolution.energy_per_step)
+    # Subtract energy_per_step from alive agents
+    # When continuous_writing: agents move AND write, so always pay energy cost
+    # When alternating: write steps are free (no locomotion cost)
+    if config.nest.continuous_writing:
+        energy_cost = config.evolution.energy_per_step
+    else:
+        is_write_step = write_phase  # laden agents in write phase don't move
+        energy_cost = jnp.where(is_write_step, 0.0, config.evolution.energy_per_step)
     energy_drain = jnp.where(
         state.agent_alive,
         jnp.maximum(energy_after_food - energy_cost, 0.0),

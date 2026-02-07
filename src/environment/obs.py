@@ -18,7 +18,7 @@ def obs_dim(config: Config) -> int:
         - own energy (1): normalized to [0, 1]
         - has_food flag (1): 0 or 1
         - nest compass (2): noisy direction to nest center
-        - field spatial (5 * num_channels): N, S, E, W, center per channel
+        - field spatial (spatial_mult * num_channels): 3x3 patch or 5-point cross
         - field temporal (num_channels): dC/dt per channel
         - relative food positions (K * 3): dx, dy, available per food
 
@@ -26,8 +26,9 @@ def obs_dim(config: Config) -> int:
         Total observation size per agent.
     """
     num_ch = config.field.num_channels
+    spatial_mult = 9 if config.field.field_spatial_patch else 5
     food_dim = _K_NEAREST_FOOD * 3
-    return 2 + 1 + 1 + 2 + (5 * num_ch) + num_ch + food_dim
+    return 2 + 1 + 1 + 2 + (spatial_mult * num_ch) + num_ch + food_dim
 
 
 def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
@@ -38,7 +39,7 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
         2. Own energy normalized to [0, 1].
         3. Has food flag (0 or 1).
         4. Noisy compass pointing toward nest center.
-        5. Field spatial gradients (N, S, E, W, center per channel).
+        5. Field spatial gradients (3x3 patch or N, S, E, W, center per channel).
         6. Field temporal derivative (change since last step per channel).
         7. K nearest uncollected food items (dx, dy, available).
 
@@ -68,8 +69,8 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
     # 4. Nest compass with distance-dependent noise
     compass = _compute_compass(state, config)  # (max_agents, 2)
 
-    # 5. Field spatial gradients: N, S, E, W, center per channel
-    field_spatial = _compute_field_spatial(state, config)  # (max_agents, 5*C)
+    # 5. Field spatial: 3x3 patch or 5-point cross per channel
+    field_spatial = _compute_field_spatial(state, config)
 
     # 6. Field temporal derivative
     center_values = state.field_state.values[
@@ -77,12 +78,19 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
     ]  # (max_agents, C)
     field_temporal = center_values - state.prev_field_at_pos  # (max_agents, C)
 
-    # 7. Food observations: exact positions, passive odor, or nothing
-    if config.env.food_obs_enabled:
+    # 7. Food observations: exact positions, passive odor, nest-only compass, or nothing
+    if config.env.nest_only_compass:
+        nest_food_dir = _compute_nest_food_compass(state, config)  # (max_agents, 2)
+        # Pad to 15 dims to maintain food_dim = K*3
+        food_obs = jnp.concatenate(
+            [nest_food_dir, jnp.zeros((config.evolution.max_agents, _K_NEAREST_FOOD * 3 - 2))],
+            axis=-1,
+        )  # (max_agents, K*3)
+    elif config.env.food_obs_enabled:
         food_obs = _compute_food_obs(state, config)  # (max_agents, K*3)
     elif config.env.food_odor_enabled:
         odor = _compute_food_odor(state, config)  # (max_agents, 5)
-        # Pad to 15 dims to maintain obs_dim=45
+        # Pad to 15 dims to maintain obs_dim
         food_obs = jnp.concatenate(
             [odor, jnp.zeros((config.evolution.max_agents, _K_NEAREST_FOOD * 3 - 5))],
             axis=-1,
@@ -135,27 +143,102 @@ def _compute_compass(state: EnvState, config: Config) -> jnp.ndarray:
 
 
 def _compute_field_spatial(state: EnvState, config: Config) -> jnp.ndarray:
-    """Compute field spatial features: N, S, E, W, center per channel.
+    """Compute field spatial features per channel.
+
+    When config.field.field_spatial_patch is True, returns a 3x3 patch
+    (9 values per channel). Otherwise returns the 5-point cross
+    (N, S, E, W, center per channel).
 
     Returns:
-        Array of shape (max_agents, 5 * num_channels).
+        Array of shape (max_agents, spatial_mult * num_channels)
+        where spatial_mult is 9 (patch) or 5 (cross).
     """
     h, w, c = state.field_state.values.shape
     pos = state.agent_positions
     rows, cols = pos[:, 0], pos[:, 1]
 
-    # Center
-    center = state.field_state.values[rows, cols]  # (A, C)
+    if config.field.field_spatial_patch:
+        # 3x3 patch: 9 positions per agent
+        # Row offsets: -1, 0, +1; Col offsets: -1, 0, +1
+        # Layout: row-major (top-left to bottom-right), channels contiguous per position
+        patches = []
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                r = jnp.clip(rows + dr, 0, h - 1)
+                c_idx = jnp.clip(cols + dc, 0, w - 1)
+                patches.append(state.field_state.values[r, c_idx])  # (A, C)
 
-    # Cardinal neighbors with boundary clamping
-    north = state.field_state.values[jnp.clip(rows - 1, 0, h - 1), cols]
-    south = state.field_state.values[jnp.clip(rows + 1, 0, h - 1), cols]
-    west = state.field_state.values[rows, jnp.clip(cols - 1, 0, w - 1)]
-    east = state.field_state.values[rows, jnp.clip(cols + 1, 0, w - 1)]
+        # Stack: (A, 9, C) -> reshape to (A, 9*C)
+        spatial = jnp.stack(patches, axis=1)
+        return spatial.reshape(pos.shape[0], 9 * c)
+    else:
+        # 5-point cross: center + 4 cardinal neighbors
+        center = state.field_state.values[rows, cols]  # (A, C)
 
-    # Stack: (A, 5, C) -> flatten to (A, 5*C)
-    spatial = jnp.stack([north, south, east, west, center], axis=1)
-    return spatial.reshape(pos.shape[0], 5 * c)
+        north = state.field_state.values[jnp.clip(rows - 1, 0, h - 1), cols]
+        south = state.field_state.values[jnp.clip(rows + 1, 0, h - 1), cols]
+        west = state.field_state.values[rows, jnp.clip(cols - 1, 0, w - 1)]
+        east = state.field_state.values[rows, jnp.clip(cols + 1, 0, w - 1)]
+
+        # Stack: (A, 5, C) -> flatten to (A, 5*C)
+        spatial = jnp.stack([north, south, east, west, center], axis=1)
+        return spatial.reshape(pos.shape[0], 5 * c)
+
+
+def _compute_nest_food_compass(state: EnvState, config: Config) -> jnp.ndarray:
+    """Compute direction to nearest uncollected food, only when inside nest.
+
+    Agents inside the nest area (Chebyshev distance to center <= radius)
+    receive a unit vector pointing toward the nearest uncollected food.
+    Agents outside the nest receive (0, 0), forcing reliance on the
+    pheromone field for navigation.
+
+    Returns:
+        Array of shape (max_agents, 2) with direction values in [-1, 1].
+    """
+    grid_size = config.env.grid_size
+    max_agents = config.evolution.max_agents
+    nest_center = jnp.array([grid_size // 2, grid_size // 2], dtype=jnp.int32)
+
+    agent_pos = state.agent_positions  # (max_agents, 2)
+
+    # Chebyshev distance to nest center
+    nest_dist = jnp.max(jnp.abs(agent_pos - nest_center[None, :]), axis=-1)  # (A,)
+    in_nest = nest_dist <= config.nest.radius  # (A,) bool
+
+    # Compute direction to nearest uncollected food
+    agent_pos_f = agent_pos.astype(jnp.float32)  # (A, 2)
+    food_pos_f = state.food_positions.astype(jnp.float32)  # (F, 2)
+
+    # Relative positions: (A, F, 2)
+    rel_pos = food_pos_f[None, :, :] - agent_pos_f[:, None, :]
+
+    # Euclidean distances: (A, F)
+    distances = jnp.sqrt(jnp.sum(rel_pos ** 2, axis=-1) + 1e-8)
+
+    # Mask out collected food with large distance
+    large_dist = jnp.float32(grid_size * 3)
+    distances = jnp.where(state.food_collected[None, :], large_dist, distances)
+
+    # Index of nearest food per agent
+    nearest_idx = jnp.argmin(distances, axis=-1)  # (A,)
+    nearest_dist = distances[jnp.arange(max_agents), nearest_idx]  # (A,)
+
+    # Direction vector to nearest food
+    nearest_rel = rel_pos[jnp.arange(max_agents), nearest_idx]  # (A, 2)
+
+    # Normalize to unit vector (avoid div by zero)
+    norm = jnp.sqrt(jnp.sum(nearest_rel ** 2, axis=-1, keepdims=True) + 1e-8)
+    direction = nearest_rel / norm  # (A, 2), unit vector
+
+    # Zero out if no uncollected food exists
+    has_food_available = (nearest_dist < large_dist)  # (A,)
+    direction = jnp.where(has_food_available[:, None], direction, 0.0)
+
+    # Zero out if agent is outside nest
+    direction = jnp.where(in_nest[:, None], direction, 0.0)
+
+    return direction
 
 
 def _compute_food_odor(state: EnvState, config: Config) -> jnp.ndarray:

@@ -30,6 +30,7 @@ class ActorCritic(nn.Module):
     n_agents: int = 32
     adaptive_gate: bool = False
     num_field_channels: int = 4
+    field_spatial_size: int = 5
     evolutionary_gate_only: bool = False
 
     @nn.compact
@@ -61,7 +62,7 @@ class ActorCritic(nn.Module):
         if self.adaptive_gate:
             c = self.num_field_channels
             non_field_end = 6  # pos + energy + has_food + compass
-            field_spatial_end = non_field_end + 5 * c
+            field_spatial_end = non_field_end + self.field_spatial_size * c
             field_temporal_end = field_spatial_end + c
 
             # Split observation
@@ -99,7 +100,7 @@ class ActorCritic(nn.Module):
             # Apply gate per-channel using tile (handles any batch shape)
             # field_spatial layout: [N0,S0,E0,W0,C0, N1,S1,E1,W1,C1, ...]
             # gate shape: (c,) or (batch, c) -> tile to (5*c,) or (batch, 5*c)
-            gate_tiled = jnp.tile(gate, 5)  # (5*c,)
+            gate_tiled = jnp.tile(gate, self.field_spatial_size)  # (field_spatial_size*c,)
             gated_spatial = field_spatial * gate_tiled
             gated_temporal = field_temporal * gate
 

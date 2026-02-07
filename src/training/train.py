@@ -183,11 +183,13 @@ def create_train_state(config: Config, key: jax.Array) -> RunnerState:
     # Compute observation dimension and create network
     observation_dim = obs_dim(config)
     num_actions = config.agent.num_actions
+    field_spatial_size = 9 if config.field.field_spatial_patch else 5
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        field_spatial_size=field_spatial_size,
         evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
 
@@ -251,11 +253,13 @@ def train_step(
     """
     vec_env = VecEnv(config)
     num_actions = config.agent.num_actions
+    field_spatial_size = 9 if config.field.field_spatial_patch else 5
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        field_spatial_size=field_spatial_size,
         evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
     optimizer = optax.chain(
@@ -564,11 +568,13 @@ def evolve_step(
     """
     vec_env = VecEnv(config)
     num_actions = config.agent.num_actions
+    field_spatial_size = 9 if config.field.field_spatial_patch else 5
     network = ActorCritic(
         hidden_dims=tuple(config.agent.hidden_dims),
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        field_spatial_size=field_spatial_size,
         evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
 

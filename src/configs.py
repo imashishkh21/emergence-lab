@@ -77,6 +77,14 @@ class EnvConfig:
     food_odor_lambda: float = 4.0
     """Decay length scale for passive food odor. Higher = longer range.
     Lambda=4 on grid_size=20 means odor drops to ~37% at 4 cells distance."""
+    nest_only_compass: bool = False
+    """When True, agents get a direction vector to nearest uncollected food
+    ONLY when inside the nest area. Outside the nest, returns (0,0).
+    Forces agents to rely on the pheromone field for navigation away from home.
+    Replaces the 15-dim food obs with [compass_x, compass_y, 0...0]."""
+    min_food_nest_distance: int = 3
+    """Minimum Chebyshev distance from nest center for food spawning.
+    Higher values force agents to travel further, making trails more valuable."""
     hidden_food: HiddenFoodConfig = dataclass_field(default_factory=HiddenFoodConfig)
     """Configuration for hidden food requiring coordination to reveal."""
 
@@ -112,6 +120,10 @@ class NestConfig:
     """When True, pheromone Ch0 is written ONLY at the food pickup location
     (one-shot on pickup), not continuously along the return path. Combined
     with zero diffusion, this turns the field into 'known food locations'."""
+    continuous_writing: bool = False
+    """When True, laden agents move AND write every step (no move/write
+    alternation). Creates continuous trails without gaps. When False (default),
+    laden agents alternate between moving and writing (biological cooldown)."""
 
 
 @dataclass
@@ -147,6 +159,14 @@ class FieldConfig:
     gate_bias_mutation_std: float = 0.02
     """Mutation standard deviation for per-agent gate bias during reproduction.
     Higher values allow faster evolution of field usage preferences."""
+    ch0_write_strength: float = 1.0
+    """Write strength for Ch0 (recruitment) per step by laden agents.
+    Lower values (e.g., 0.08) allow trail accumulation over multiple writes
+    instead of instantly saturating the cell."""
+    field_spatial_patch: bool = False
+    """When True, field spatial observation uses a 3x3 patch per channel
+    (9 values per channel) instead of 5-point cross (N/S/E/W/center = 5 values).
+    Increases field obs from 5*C to 9*C dims, enabling real gradient detection."""
     evolutionary_gate_only: bool = False
     """When True, the gate is controlled entirely by per-agent evolved gate_bias
     (no PPO gradient). gate = sigmoid(gate_bias). This lets evolution decide
