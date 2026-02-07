@@ -456,6 +456,8 @@ def train_step(
     # batch['births_this_step']: (T, num_envs), batch['deaths_this_step']: (T, num_envs)
     metrics['births_this_step'] = jnp.sum(batch['births_this_step'])
     metrics['deaths_this_step'] = jnp.sum(batch['deaths_this_step'])
+    metrics['num_pickups'] = jnp.sum(batch['num_pickups'])
+    metrics['num_deliveries'] = jnp.sum(batch['num_deliveries'])
 
     # Energy stats of alive agents (snapshot from final env state)
     final_env = runner_state.env_state
@@ -584,6 +586,8 @@ def evolve_step(
     metrics['population_size'] = jnp.mean(pop_per_step)
     metrics['births_this_step'] = jnp.sum(batch['births_this_step'])
     metrics['deaths_this_step'] = jnp.sum(batch['deaths_this_step'])
+    metrics['num_pickups'] = jnp.sum(batch['num_pickups'])
+    metrics['num_deliveries'] = jnp.sum(batch['num_deliveries'])
 
     # Energy stats
     final_env = runner_state.env_state

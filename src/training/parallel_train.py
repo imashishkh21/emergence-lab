@@ -455,6 +455,8 @@ def single_seed_train_step(
     metrics['population_size'] = jnp.mean(pop_per_step)
     metrics['births_this_step'] = jnp.sum(batch['births_this_step'])
     metrics['deaths_this_step'] = jnp.sum(batch['deaths_this_step'])
+    metrics['num_pickups'] = jnp.sum(batch['num_pickups'])
+    metrics['num_deliveries'] = jnp.sum(batch['num_deliveries'])
 
     # Sync per-agent params
     env_state = runner_state.env_state
@@ -545,6 +547,8 @@ def collect_evolve_rollout(
             'alive_mask': alive_mask,
             'births_this_step': info['births_this_step'],
             'deaths_this_step': info['deaths_this_step'],
+            'num_pickups': info['num_pickups'],
+            'num_deliveries': info['num_deliveries'],
         }
 
         new_rs = RunnerState(
@@ -607,6 +611,8 @@ def single_seed_evolve_step(
         'population_size': jnp.mean(jnp.sum(alive_f, axis=-1)),
         'births_this_step': jnp.sum(batch['births_this_step']),
         'deaths_this_step': jnp.sum(batch['deaths_this_step']),
+        'num_pickups': jnp.sum(batch['num_pickups']),
+        'num_deliveries': jnp.sum(batch['num_deliveries']),
         # Zero placeholders for gradient metrics
         'total_loss': jnp.float32(0.0),
         'policy_loss': jnp.float32(0.0),

@@ -94,6 +94,8 @@ def collect_rollout(
             'alive_mask': alive_mask,
             'births_this_step': info['births_this_step'],  # (num_envs,)
             'deaths_this_step': info['deaths_this_step'],  # (num_envs,)
+            'num_pickups': info['num_pickups'],  # scalar
+            'num_deliveries': info['num_deliveries'],  # scalar
             'gate': gate,  # (num_envs, max_agents, num_channels)
         }
 
