@@ -524,6 +524,13 @@ def step(
         0.0,
     )
 
+    # Save food source positions for delivering agents (for delivery bonus write)
+    delivery_food_pos = jnp.where(
+        delivering[:, None],
+        food_source_pos,
+        jnp.zeros((max_agents, 2), dtype=jnp.int32),
+    )
+
     # Clear food_source_pos for agents that delivered
     food_source_pos = jnp.where(
         delivering[:, None],  # (max_agents, 1) -> broadcasts to (max_agents, 2)
@@ -587,6 +594,17 @@ def step(
         recruit_values = recruit_values.at[:, 0].set(ch0_strength)
         recruit_values = recruit_values * write_phase[:, None]
         field_state = write_local(field_state, new_positions, recruit_values, cap=config.field.field_value_cap)
+
+    # Ch0 delivery bonus: write at food source position on successful nest delivery
+    # This makes trails encode "paths that paid off" not just "paths someone walked"
+    if config.field.ch0_delivery_bonus > 0.0:
+        delivery_bonus_values = jnp.zeros((max_agents, num_ch), dtype=jnp.float32)
+        delivery_bonus_values = delivery_bonus_values.at[:, 0].set(config.field.ch0_delivery_bonus)
+        delivery_bonus_values = delivery_bonus_values * delivering[:, None]
+        field_state = write_local(
+            field_state, delivery_food_pos, delivery_bonus_values,
+            cap=config.field.field_value_cap,
+        )
 
     # --- 8. Energy drain ---
     # Subtract energy_per_step from alive agents

@@ -176,6 +176,11 @@ class FieldConfig:
     """When True, field spatial observation uses a 3x3 patch per channel
     (9 values per channel) instead of 5-point cross (N/S/E/W/center = 5 values).
     Increases field obs from 5*C to 9*C dims, enabling real gradient detection."""
+    ch0_delivery_bonus: float = 0.0
+    """Extra Ch0 pheromone written at the food SOURCE position on successful
+    nest delivery. Creates value-aligned trails: only paths that led to
+    successful deliveries get reinforced. 0.0 = disabled (default).
+    Recommended: 0.4 (equivalent to ~5 steps of regular writing)."""
     evolutionary_gate_only: bool = False
     """When True, the gate is controlled entirely by per-agent evolved gate_bias
     (no PPO gradient). gate = sigmoid(gate_bias). This lets evolution decide
