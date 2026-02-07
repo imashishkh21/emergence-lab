@@ -560,13 +560,24 @@ def step(
     territory_values = territory_values * state.agent_alive[:, None]
     field_state = write_local(field_state, new_positions, territory_values, cap=config.field.field_value_cap)
 
-    # Ch0 (recruitment): ONLY laden agents during write phase
-    # laden_cooldown was toggled above: agents whose cooldown is now True are in "write" phase
-    write_phase = has_food & laden_cooldown & state.agent_alive
-    recruit_values = jnp.zeros((max_agents, num_ch), dtype=jnp.float32)
-    recruit_values = recruit_values.at[:, 0].set(1.0)
-    recruit_values = recruit_values * write_phase[:, None]
-    field_state = write_local(field_state, new_positions, recruit_values, cap=config.field.field_value_cap)
+    # Ch0 (recruitment): depends on food_patch_marking mode
+    if config.nest.food_patch_marking:
+        # Patch marking: write Ch0 ONLY at food pickup location, one-shot
+        recruit_values = jnp.zeros((max_agents, num_ch), dtype=jnp.float32)
+        recruit_values = recruit_values.at[:, 0].set(1.0)
+        recruit_values = recruit_values * pickup_mask[:, None]
+        field_state = write_local(
+            field_state, food_source_pos, recruit_values,
+            cap=config.field.field_value_cap,
+        )
+        write_phase = jnp.zeros((max_agents,), dtype=jnp.bool_)
+    else:
+        # Default: laden agents write during write phase (along return path)
+        write_phase = has_food & laden_cooldown & state.agent_alive
+        recruit_values = jnp.zeros((max_agents, num_ch), dtype=jnp.float32)
+        recruit_values = recruit_values.at[:, 0].set(1.0)
+        recruit_values = recruit_values * write_phase[:, None]
+        field_state = write_local(field_state, new_positions, recruit_values, cap=config.field.field_value_cap)
 
     # --- 8. Energy drain ---
     # Subtract energy_per_step from alive agents, but write steps are free

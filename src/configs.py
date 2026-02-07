@@ -108,6 +108,10 @@ class NestConfig:
     """Max agents for scaling benefit (cap on effective count)."""
     patch_scaling_enabled: bool = False
     """Toggle patch throughput scaling for A/B experiments."""
+    food_patch_marking: bool = False
+    """When True, pheromone Ch0 is written ONLY at the food pickup location
+    (one-shot on pickup), not continuously along the return path. Combined
+    with zero diffusion, this turns the field into 'known food locations'."""
 
 
 @dataclass
