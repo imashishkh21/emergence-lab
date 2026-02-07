@@ -128,6 +128,11 @@ class NestConfig:
     """When > 0, compass becomes pure random noise beyond this Chebyshev
     distance from nest center. Inside the radius, compass works normally.
     0 = disabled (compass works everywhere with distance-dependent noise)."""
+    nest_food_compass_noise_deg: float = 0.0
+    """Angular noise (degrees) added to the nest food compass direction.
+    Rotates the true food direction by a random angle in [-noise, +noise].
+    Breaks the ballistic straight-line exploit while preserving rough
+    direction for bootstrap. 0.0 = disabled (exact direction)."""
 
 
 @dataclass

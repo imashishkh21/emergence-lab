@@ -255,6 +255,20 @@ def _compute_nest_food_compass(state: EnvState, config: Config) -> jnp.ndarray:
     norm = jnp.sqrt(jnp.sum(nearest_rel ** 2, axis=-1, keepdims=True) + 1e-8)
     direction = nearest_rel / norm  # (A, 2), unit vector
 
+    # Apply angular noise to break ballistic straight-line exploit
+    if config.nest.nest_food_compass_noise_deg > 0.0:
+        noise_rad = config.nest.nest_food_compass_noise_deg * (jnp.pi / 180.0)
+        noise_key = jax.random.fold_in(state.key, state.step + 2000000)
+        angles = jax.random.uniform(
+            noise_key, shape=(max_agents,), minval=-noise_rad, maxval=noise_rad
+        )
+        cos_a = jnp.cos(angles)
+        sin_a = jnp.sin(angles)
+        # 2D rotation: [cos -sin; sin cos] @ [dx, dy]
+        rotated_x = direction[:, 0] * cos_a - direction[:, 1] * sin_a
+        rotated_y = direction[:, 0] * sin_a + direction[:, 1] * cos_a
+        direction = jnp.stack([rotated_x, rotated_y], axis=-1)
+
     # Zero out if no uncollected food exists
     has_food_available = (nearest_dist < large_dist)  # (A,)
     direction = jnp.where(has_food_available[:, None], direction, 0.0)
