@@ -77,9 +77,16 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
     ]  # (max_agents, C)
     field_temporal = center_values - state.prev_field_at_pos  # (max_agents, C)
 
-    # 7. Food observations (zeroed when food_obs_enabled=False)
+    # 7. Food observations: exact positions, passive odor, or nothing
     if config.env.food_obs_enabled:
         food_obs = _compute_food_obs(state, config)  # (max_agents, K*3)
+    elif config.env.food_odor_enabled:
+        odor = _compute_food_odor(state, config)  # (max_agents, 5)
+        # Pad to 15 dims to maintain obs_dim=45
+        food_obs = jnp.concatenate(
+            [odor, jnp.zeros((config.evolution.max_agents, _K_NEAREST_FOOD * 3 - 5))],
+            axis=-1,
+        )  # (max_agents, K*3)
     else:
         food_obs = jnp.zeros(
             (config.evolution.max_agents, _K_NEAREST_FOOD * 3)
@@ -149,6 +156,60 @@ def _compute_field_spatial(state: EnvState, config: Config) -> jnp.ndarray:
     # Stack: (A, 5, C) -> flatten to (A, 5*C)
     spatial = jnp.stack([north, south, east, west, center], axis=1)
     return spatial.reshape(pos.shape[0], 5 * c)
+
+
+def _compute_food_odor(state: EnvState, config: Config) -> jnp.ndarray:
+    """Compute passive food odor at each agent's position.
+
+    Each uncollected food emits exp(-dist/lambda). Agents sense total odor
+    at center + N/S/E/W positions (5 scalar values). This gives a vague
+    sense of "food is nearby" without revealing exact positions.
+
+    Returns:
+        Array of shape (max_agents, 5).
+    """
+    grid_size = config.env.grid_size
+    lam = config.env.food_odor_lambda
+
+    pos = state.agent_positions
+    rows, cols = pos[:, 0], pos[:, 1]
+
+    # 5 sample points per agent: center, N, S, E, W
+    sample_rows = jnp.stack([
+        rows,
+        jnp.clip(rows - 1, 0, grid_size - 1),
+        jnp.clip(rows + 1, 0, grid_size - 1),
+        rows,
+        rows,
+    ], axis=-1)  # (A, 5)
+    sample_cols = jnp.stack([
+        cols,
+        cols,
+        cols,
+        jnp.clip(cols + 1, 0, grid_size - 1),
+        jnp.clip(cols - 1, 0, grid_size - 1),
+    ], axis=-1)  # (A, 5)
+
+    food_pos_f = state.food_positions.astype(jnp.float32)  # (F, 2)
+    collected = state.food_collected  # (F,)
+
+    # Distances: (A, 5, 1) vs (1, 1, F) -> (A, 5, F)
+    dr = sample_rows[:, :, None].astype(jnp.float32) - food_pos_f[None, None, :, 0]
+    dc = sample_cols[:, :, None].astype(jnp.float32) - food_pos_f[None, None, :, 1]
+    dist = jnp.sqrt(dr ** 2 + dc ** 2)  # (A, 5, F)
+
+    odor_per_food = jnp.exp(-dist / lam)  # (A, 5, F)
+
+    # Zero out collected food
+    odor_per_food = jnp.where(collected[None, None, :], 0.0, odor_per_food)
+
+    # Sum over food sources
+    odor = jnp.sum(odor_per_food, axis=-1)  # (A, 5)
+
+    # Normalize to roughly [0, 1]
+    odor = odor / max(1.0, float(config.env.num_food))
+
+    return odor
 
 
 def _compute_food_obs(state: EnvState, config: Config) -> jnp.ndarray:

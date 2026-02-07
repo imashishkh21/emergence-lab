@@ -69,6 +69,14 @@ class EnvConfig:
     """Whether agents can see K-nearest food positions. When False, the 15
     food observation dims are zeroed out, forcing agents to rely on the
     pheromone field for foraging information."""
+    food_odor_enabled: bool = False
+    """Whether agents sense passive food odor (vague magnitude, no direction).
+    Each uncollected food emits exp(-dist/lambda). Agents sense total odor
+    at center+N+S+E+W (5 dims). Replaces the 15 food obs dims when active.
+    Requires food_obs_enabled=False to be meaningful."""
+    food_odor_lambda: float = 4.0
+    """Decay length scale for passive food odor. Higher = longer range.
+    Lambda=4 on grid_size=20 means odor drops to ~37% at 4 cells distance."""
     hidden_food: HiddenFoodConfig = dataclass_field(default_factory=HiddenFoodConfig)
     """Configuration for hidden food requiring coordination to reveal."""
 
