@@ -69,10 +69,18 @@ def reset(key: jax.Array, config: Config) -> EnvState:
         # For small grids, this is fine
         pos = jax.random.randint(key, shape=(2,), minval=0, maxval=grid_size)
         dist_to_nest = jnp.maximum(jnp.abs(pos[0] - nest_center), jnp.abs(pos[1] - nest_center))
-        # If too close, push to edge (simple fix, not perfect but avoids infinite loop)
+        # If too close, push to edge of exclusion zone instead of collapsing to a corner
+        dx = pos[0] - nest_center
+        dy = pos[1] - nest_center
+        dir_r = jnp.sign(dx)
+        dir_c = jnp.sign(dy)
+        dir_r = jnp.where((dir_r == 0) & (dir_c == 0), jnp.int32(1), dir_r)
+        pushed_r = nest_center + dir_r * min_nest_distance
+        pushed_c = nest_center + dir_c * min_nest_distance
+        pushed_pos = jnp.clip(jnp.array([pushed_r, pushed_c], dtype=jnp.int32), 0, grid_size - 1)
         valid_pos = jnp.where(
             dist_to_nest < min_nest_distance,
-            jnp.array([0, 0], dtype=jnp.int32),  # fallback to corner
+            pushed_pos,
             pos,
         )
         return valid_pos
@@ -309,11 +317,20 @@ def step(
     )
     too_close = dist_to_nest < min_nest_distance
 
-    # Simple fix: if too close, clamp to edge of valid zone
-    # This isn't perfect but avoids nest overlap
+    # Push too-close respawns to the edge of the exclusion zone
+    dx = new_food_positions[:, 0] - nest_center
+    dy = new_food_positions[:, 1] - nest_center
+    dir_r = jnp.sign(dx)
+    dir_c = jnp.sign(dy)
+    both_zero = (dir_r == 0) & (dir_c == 0)
+    dir_r = jnp.where(both_zero, jnp.int32(1), dir_r)
+    pushed_r = nest_center + dir_r * min_nest_distance
+    pushed_c = nest_center + dir_c * min_nest_distance
+    pushed_positions = jnp.stack([pushed_r, pushed_c], axis=1).astype(jnp.int32)
+    pushed_positions = jnp.clip(pushed_positions, 0, grid_size - 1)
     new_food_positions = jnp.where(
         too_close[:, None],
-        jnp.zeros_like(new_food_positions),  # fallback positions
+        pushed_positions,
         new_food_positions,
     )
     # Replace positions of respawning food; keep others unchanged
@@ -783,12 +800,17 @@ def step(
         # We can infer from hidden_food_energy_gained: if > 0, food was collected
         hf_collected_this_step = jnp.sum((hidden_food_energy_gained > 0).astype(jnp.float32))
 
+    num_pickups = jnp.sum(pickup_mask.astype(jnp.int32))
+    num_deliveries = jnp.sum(delivering.astype(jnp.int32))
+
     info: dict[str, Any] = {
         "food_collected_this_step": num_collected,
         "total_food_collected": jnp.sum(food_collected.astype(jnp.float32)),
         "deaths_this_step": death_count,
         "births_this_step": birth_count,
         "hidden_food_collected_this_step": hf_collected_this_step,
+        "num_pickups": num_pickups,
+        "num_deliveries": num_deliveries,
     }
 
     return new_state, rewards, done, info
