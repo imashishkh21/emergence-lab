@@ -77,8 +77,13 @@ def get_observations(state: EnvState, config: Config) -> jnp.ndarray:
     ]  # (max_agents, C)
     field_temporal = center_values - state.prev_field_at_pos  # (max_agents, C)
 
-    # 7. Food observations
-    food_obs = _compute_food_obs(state, config)  # (max_agents, K*3)
+    # 7. Food observations (zeroed when food_obs_enabled=False)
+    if config.env.food_obs_enabled:
+        food_obs = _compute_food_obs(state, config)  # (max_agents, K*3)
+    else:
+        food_obs = jnp.zeros(
+            (config.evolution.max_agents, _K_NEAREST_FOOD * 3)
+        )  # (max_agents, K*3)
 
     obs = jnp.concatenate(
         [norm_pos, norm_energy, has_food_obs, compass,

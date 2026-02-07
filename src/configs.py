@@ -65,6 +65,10 @@ class EnvConfig:
     max_steps: int = 500
     observation_radius: int = 5
     food_respawn_prob: float = 0.1
+    food_obs_enabled: bool = True
+    """Whether agents can see K-nearest food positions. When False, the 15
+    food observation dims are zeroed out, forcing agents to rely on the
+    pheromone field for foraging information."""
     hidden_food: HiddenFoodConfig = dataclass_field(default_factory=HiddenFoodConfig)
     """Configuration for hidden food requiring coordination to reveal."""
 
