@@ -457,6 +457,7 @@ def single_seed_train_step(
     metrics['deaths_this_step'] = jnp.sum(batch['deaths_this_step'])
     metrics['num_pickups'] = jnp.sum(batch['num_pickups'])
     metrics['num_deliveries'] = jnp.sum(batch['num_deliveries'])
+    metrics['mean_gate'] = jnp.mean(batch['gate'])
 
     # Sync per-agent params
     env_state = runner_state.env_state
@@ -613,6 +614,7 @@ def single_seed_evolve_step(
         'deaths_this_step': jnp.sum(batch['deaths_this_step']),
         'num_pickups': jnp.sum(batch['num_pickups']),
         'num_deliveries': jnp.sum(batch['num_deliveries']),
+        'mean_gate': jnp.mean(batch['gate']),
         # Zero placeholders for gradient metrics
         'total_loss': jnp.float32(0.0),
         'policy_loss': jnp.float32(0.0),
@@ -1124,6 +1126,7 @@ class ParallelTrainer:
             "population_size": [],
             "num_pickups": [],
             "num_deliveries": [],
+            "mean_gate": [],
         }
 
         t_start = time.time()
