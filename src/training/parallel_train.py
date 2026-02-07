@@ -1122,6 +1122,8 @@ class ParallelTrainer:
             "mean_reward": [],
             "total_loss": [],
             "population_size": [],
+            "num_pickups": [],
+            "num_deliveries": [],
         }
 
         t_start = time.time()
