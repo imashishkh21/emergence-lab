@@ -188,6 +188,7 @@ def create_train_state(config: Config, key: jax.Array) -> RunnerState:
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
 
     # Initialize network parameters
@@ -255,6 +256,7 @@ def train_step(
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
     optimizer = optax.chain(
         optax.clip_by_global_norm(config.train.max_grad_norm),
@@ -567,6 +569,7 @@ def evolve_step(
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
 
     # Collect rollout (agents act, environment evolves)

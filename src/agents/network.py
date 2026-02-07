@@ -30,6 +30,7 @@ class ActorCritic(nn.Module):
     n_agents: int = 32
     adaptive_gate: bool = False
     num_field_channels: int = 4
+    evolutionary_gate_only: bool = False
 
     @nn.compact
     def __call__(
@@ -69,27 +70,31 @@ class ActorCritic(nn.Module):
             field_temporal = x[..., field_spatial_end:field_temporal_end]
             food_obs = x[..., field_temporal_end:]
 
-            # Compute gate from non-field observations (avoids circularity)
-            gate_input = jnp.concatenate([non_field_pre, food_obs], axis=-1)
-            gate_hidden = nn.Dense(
-                16,
-                kernel_init=nn.initializers.orthogonal(jnp.sqrt(2.0)),
-                bias_init=nn.initializers.zeros,
-                name="gate_hidden",
-            )(gate_input)
-            gate_hidden = nn.tanh(gate_hidden)
-            gate_logits = nn.Dense(
-                c,
-                kernel_init=nn.initializers.orthogonal(0.1),
-                bias_init=nn.initializers.zeros,
-                name="gate_head",
-            )(gate_hidden)
+            if self.evolutionary_gate_only and gate_bias is not None:
+                # Evolution-only gate: skip Dense head, use evolved bias directly
+                gate = nn.sigmoid(gate_bias)  # (num_field_channels,)
+            else:
+                # Compute gate from non-field observations (avoids circularity)
+                gate_input = jnp.concatenate([non_field_pre, food_obs], axis=-1)
+                gate_hidden = nn.Dense(
+                    16,
+                    kernel_init=nn.initializers.orthogonal(jnp.sqrt(2.0)),
+                    bias_init=nn.initializers.zeros,
+                    name="gate_hidden",
+                )(gate_input)
+                gate_hidden = nn.tanh(gate_hidden)
+                gate_logits = nn.Dense(
+                    c,
+                    kernel_init=nn.initializers.orthogonal(0.1),
+                    bias_init=nn.initializers.zeros,
+                    name="gate_head",
+                )(gate_hidden)
 
-            # Add per-agent bias if provided (for evolved gate preferences)
-            if gate_bias is not None:
-                gate_logits = gate_logits + gate_bias
+                # Add per-agent bias if provided (for evolved gate preferences)
+                if gate_bias is not None:
+                    gate_logits = gate_logits + gate_bias
 
-            gate = nn.sigmoid(gate_logits)  # (num_field_channels,)
+                gate = nn.sigmoid(gate_logits)  # (num_field_channels,)
 
             # Apply gate per-channel using tile (handles any batch shape)
             # field_spatial layout: [N0,S0,E0,W0,C0, N1,S1,E1,W1,C1, ...]

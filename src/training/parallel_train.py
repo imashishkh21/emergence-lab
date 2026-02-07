@@ -232,6 +232,7 @@ def create_single_seed_state(
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
 
     # Initialize network parameters
@@ -291,6 +292,7 @@ def single_seed_train_step(
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
     optimizer = optax.chain(
         optax.clip_by_global_norm(config.train.max_grad_norm),
@@ -596,6 +598,7 @@ def single_seed_evolve_step(
         num_actions=num_actions,
         adaptive_gate=config.field.adaptive_gate,
         num_field_channels=config.field.num_channels,
+        evolutionary_gate_only=config.field.evolutionary_gate_only,
     )
 
     # Collect rollout using PER-AGENT PARAMS

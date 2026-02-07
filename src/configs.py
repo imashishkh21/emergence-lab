@@ -147,6 +147,10 @@ class FieldConfig:
     gate_bias_mutation_std: float = 0.02
     """Mutation standard deviation for per-agent gate bias during reproduction.
     Higher values allow faster evolution of field usage preferences."""
+    evolutionary_gate_only: bool = False
+    """When True, the gate is controlled entirely by per-agent evolved gate_bias
+    (no PPO gradient). gate = sigmoid(gate_bias). This lets evolution decide
+    when coordination is economically justified."""
 
 
 @dataclass
