@@ -124,6 +124,10 @@ class NestConfig:
     """When True, laden agents move AND write every step (no move/write
     alternation). Creates continuous trails without gaps. When False (default),
     laden agents alternate between moving and writing (biological cooldown)."""
+    compass_cutoff_radius: int = 0
+    """When > 0, compass becomes pure random noise beyond this Chebyshev
+    distance from nest center. Inside the radius, compass works normally.
+    0 = disabled (compass works everywhere with distance-dependent noise)."""
 
 
 @dataclass

@@ -116,6 +116,8 @@ def _compute_compass(state: EnvState, config: Config) -> jnp.ndarray:
     """Compute noisy compass pointing toward nest center.
 
     Noise increases with distance from nest (path integration error).
+    When compass_cutoff_radius > 0, agents beyond that Chebyshev distance
+    from nest receive a random unit vector instead of the true direction.
     Uses jax.random.fold_in(state.key, state.step) for deterministic
     per-step noise without consuming or mutating the PRNG key.
 
@@ -124,6 +126,7 @@ def _compute_compass(state: EnvState, config: Config) -> jnp.ndarray:
     """
     grid_size = config.env.grid_size
     nest_center = jnp.array([grid_size // 2, grid_size // 2], dtype=jnp.float32)
+    nest_center_int = jnp.array([grid_size // 2, grid_size // 2], dtype=jnp.int32)
     agent_pos = state.agent_positions.astype(jnp.float32)
 
     # True direction to nest, normalized by grid_size
@@ -139,6 +142,27 @@ def _compute_compass(state: EnvState, config: Config) -> jnp.ndarray:
     noise_key = jax.random.fold_in(state.key, state.step)
     noise = jax.random.normal(noise_key, shape=true_delta.shape) * noise_std
     compass = jnp.clip(true_delta + noise, -1.0, 1.0)
+
+    if config.nest.compass_cutoff_radius > 0:
+        # Chebyshev distance to nest center
+        cheby_dist = jnp.max(
+            jnp.abs(state.agent_positions - nest_center_int[None, :]), axis=-1
+        )  # (max_agents,)
+        beyond_cutoff = cheby_dist > config.nest.compass_cutoff_radius  # (max_agents,)
+
+        # Random unit vector for agents beyond cutoff
+        rand_key = jax.random.fold_in(state.key, state.step + 1000000)
+        rand_angles = jax.random.uniform(
+            rand_key, shape=(agent_pos.shape[0],), minval=0.0, maxval=2.0 * jnp.pi
+        )
+        rand_compass = jnp.stack(
+            [jnp.cos(rand_angles), jnp.sin(rand_angles)], axis=-1
+        )  # (max_agents, 2)
+        # Normalize to similar magnitude as true compass
+        rand_compass = rand_compass / grid_size
+
+        compass = jnp.where(beyond_cutoff[:, None], rand_compass, compass)
+
     return compass
 
 
